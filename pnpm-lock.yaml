@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
       vite-plus:
         specifier: 0.1.14
         version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
@@ -82,13 +85,6 @@ importers:
       cac:
         specifier: 7.0.0
         version: 7.0.0
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/core:
     dependencies:
@@ -104,52 +100,24 @@ importers:
       postcss:
         specifier: 8.5.8
         version: 8.5.8
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/esbuild:
     dependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/rollup:
     dependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/rspack:
     dependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/turbopack:
     dependencies:
@@ -160,12 +128,6 @@ importers:
       next:
         specifier: 16.2.1
         version: 16.2.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/unplugin:
     dependencies:
@@ -175,39 +137,18 @@ importers:
       unplugin:
         specifier: 3.0.0
         version: 3.0.0
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/vite:
     dependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
   packages/webpack:
     dependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite-plus:
-        specifier: 0.1.14
-        version: 0.1.14(@types/node@24.12.0)(jiti@2.6.1)(typescript@5.9.3)(vite@8.0.3(@types/node@24.12.0)(jiti@2.6.1))
 
 packages:
 

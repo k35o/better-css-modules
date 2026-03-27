@@ -5,13 +5,14 @@
     "node": ">=24.14.1"
   },
   "scripts": {
-    "build": "vp run -r build",
+    "build": "vp run --filter './packages/*' build",
     "test": "vp run -r test",
     "check": "vp check",
-    "typecheck": "vp run -r build && vp run -r typecheck"
+    "typecheck": "vp run -r typecheck"
   },
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {
+    "typescript": "5.9.3",
     "vite-plus": "0.1.14"
   }
 }

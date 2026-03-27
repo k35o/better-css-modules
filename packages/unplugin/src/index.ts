@@ -1,14 +1,14 @@
-import { createUnplugin } from 'unplugin';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { loadConfig, parseFile, writeDts, generateAll } from '@better-css-modules/core';
-import type { Config } from '@better-css-modules/core';
+import { createUnplugin } from "unplugin";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { loadConfig, parseFile, writeDts, generateAll } from "@better-css-modules/core";
+import type { Config } from "@better-css-modules/core";
 
 export interface Options extends Partial<Config> {}
 
 async function removeDts(cssFilePath: string, outDir: string, cwd: string) {
   const relativePath = path.relative(cwd, cssFilePath);
-  const dtsPath = path.resolve(cwd, outDir, relativePath + '.d.ts');
+  const dtsPath = path.resolve(cwd, outDir, relativePath + ".d.ts");
   await fs.rm(dtsPath, { force: true });
 }
 
@@ -17,7 +17,7 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}) => {
   const cwd = process.cwd();
 
   return {
-    name: 'better-css-modules',
+    name: "better-css-modules",
 
     async buildStart() {
       const loaded = await loadConfig(cwd);
@@ -26,9 +26,9 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}) => {
     },
 
     async watchChange(id: string, change: { event: string }) {
-      if (!id.endsWith('.module.css')) return;
+      if (!id.endsWith(".module.css")) return;
 
-      if (change.event === 'delete') {
+      if (change.event === "delete") {
         await removeDts(id, config.outDir, cwd);
         console.log(`[better-css-modules] removed: ${path.relative(cwd, id)}.d.ts`);
         return;
@@ -40,5 +40,3 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}) => {
     },
   };
 });
-
-export default unplugin;

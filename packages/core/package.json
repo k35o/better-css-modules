@@ -19,7 +19,6 @@
     "dist"
   ],
   "scripts": {
-    "build": "vp pack",
     "test": "vp test",
     "typecheck": "tsc --noEmit"
   },
@@ -28,9 +27,5 @@
     "fast-glob": "3.3.3",
     "jiti": "2.6.1",
     "postcss": "8.5.8"
-  },
-  "devDependencies": {
-    "typescript": "5.9.3",
-    "vite-plus": "0.1.14"
   }
 }
