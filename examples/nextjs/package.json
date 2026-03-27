@@ -1,8 +1,8 @@
 {
   "name": "example-nextjs",
   "private": true,
-  "type": "module",
   "license": "MIT",
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

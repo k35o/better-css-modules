@@ -11,7 +11,7 @@
     "build": "vp run --filter './packages/*' build",
     "test": "vp run -r test",
     "check": "vp check",
-    "typecheck": "vp run -r typecheck",
+    "typecheck": "pnpm build && vp run -r typecheck",
     "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
