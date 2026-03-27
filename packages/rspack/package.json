@@ -1,6 +1,6 @@
 {
   "name": "@better-css-modules/rspack",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "author": "k8o",
   "repository": {
@@ -18,7 +18,9 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@better-css-modules/unplugin": "workspace:*"
   }
