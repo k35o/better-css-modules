@@ -7,7 +7,17 @@
     }
   ],
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@better-css-modules/core",
+      "@better-css-modules/cli",
+      "@better-css-modules/vite",
+      "@better-css-modules/webpack",
+      "@better-css-modules/rollup",
+      "@better-css-modules/rspack",
+      "@better-css-modules/esbuild"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
