@@ -1,6 +1,13 @@
 {
   "name": "@better-css-modules/cli",
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "k8o",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k35o/better-css-modules.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "bin": {
     "better-css-modules": "./dist/cli.mjs"

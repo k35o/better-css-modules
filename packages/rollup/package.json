@@ -1,6 +1,13 @@
 {
   "name": "@better-css-modules/rollup",
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "k8o",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k35o/better-css-modules.git",
+    "directory": "packages/rollup"
+  },
   "type": "module",
   "exports": {
     ".": {

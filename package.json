@@ -1,6 +1,12 @@
 {
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "author": "k8o",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k35o/better-css-modules.git"
+  },
   "engines": {
     "node": ">=24.14.1"
   },

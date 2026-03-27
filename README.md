@@ -136,6 +136,25 @@ Add `rootDirs` to your `tsconfig.json` so TypeScript resolves the generated type
 - [examples/vite-react](./examples/vite-react) - Vite + React
 - [examples/nextjs](./examples/nextjs) - Next.js (Turbopack)
 
+## Contributing
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build all packages
+pnpm build
+
+# Run tests
+pnpm test
+
+# Lint and format
+pnpm check
+
+# Add a changeset before submitting a PR
+pnpm changeset
+```
+
 ## License
 
-MIT
+[MIT](./LICENSE)
