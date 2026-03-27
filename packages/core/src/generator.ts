@@ -1,8 +1,8 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import fg from 'fast-glob';
-import { parseFile } from './parser.js';
-import type { Config } from './config.js';
+import fs from "node:fs/promises";
+import path from "node:path";
+import fg from "fast-glob";
+import { parseFile } from "./parser.js";
+import type { Config } from "./config.js";
 
 /**
  * Generate .d.ts content from an array of class names.
@@ -13,7 +13,7 @@ export function generateDts(classNames: string[]): string {
       const key = /^[a-zA-Z_$][\w$]*$/.test(name) ? name : `"${name}"`;
       return `  readonly ${key}: string;`;
     })
-    .join('\n');
+    .join("\n");
 
   return `declare const styles: {\n${properties}\n};\nexport default styles;\n`;
 }
@@ -33,11 +33,11 @@ export async function writeDts(
   cwd: string = process.cwd(),
 ): Promise<string> {
   const relativePath = path.relative(cwd, cssFilePath);
-  const dtsFileName = relativePath + '.d.ts';
+  const dtsFileName = relativePath + ".d.ts";
   const dtsPath = path.resolve(cwd, outDir, dtsFileName);
 
   await fs.mkdir(path.dirname(dtsPath), { recursive: true });
-  await fs.writeFile(dtsPath, generateDts(classNames), 'utf-8');
+  await fs.writeFile(dtsPath, generateDts(classNames), "utf-8");
 
   return dtsPath;
 }

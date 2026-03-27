@@ -12,7 +12,7 @@ pnpm add -D @better-css-modules/rspack
 
 ```ts
 // rspack.config.ts
-import betterCssModules from '@better-css-modules/rspack';
+import betterCssModules from "@better-css-modules/rspack";
 
 export default {
   plugins: [betterCssModules()],
@@ -23,8 +23,8 @@ export default {
 
 ```ts
 betterCssModules({
-  include: ['src/**/*.module.css'],
-  outDir: '__generated__',
+  include: ["src/**/*.module.css"],
+  outDir: "__generated__",
 });
 ```
 

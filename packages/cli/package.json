@@ -8,13 +8,13 @@
     "url": "git+https://github.com/k35o/better-css-modules.git",
     "directory": "packages/cli"
   },
-  "type": "module",
   "bin": {
     "better-css-modules": "./dist/cli.mjs"
   },
   "files": [
     "dist"
   ],
+  "type": "module",
   "dependencies": {
     "@better-css-modules/core": "workspace:*",
     "cac": "7.0.0"

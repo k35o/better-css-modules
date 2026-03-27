@@ -1,6 +1,6 @@
-import { createJiti } from 'jiti';
-import path from 'node:path';
-import fs from 'node:fs';
+import { createJiti } from "jiti";
+import path from "node:path";
+import fs from "node:fs";
 
 export interface Config {
   /** Glob patterns for target files */
@@ -14,9 +14,9 @@ export interface Config {
 }
 
 const defaultConfig: Config = {
-  include: ['src/**/*.module.css'],
+  include: ["src/**/*.module.css"],
   exclude: [],
-  outDir: '__generated__',
+  outDir: "__generated__",
   watch: false,
 };
 
@@ -25,8 +25,8 @@ export function defineConfig(config: Partial<Config>): Config {
 }
 
 export async function loadConfig(cwd: string = process.cwd()): Promise<Config> {
-  const configFileName = 'better-css-modules.config';
-  const extensions = ['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs'];
+  const configFileName = "better-css-modules.config";
+  const extensions = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"];
 
   for (const ext of extensions) {
     const configPath = path.resolve(cwd, configFileName + ext);

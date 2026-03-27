@@ -26,11 +26,11 @@ better-css-modules check
 Place a `better-css-modules.config.ts` in your project root:
 
 ```ts
-import { defineConfig } from '@better-css-modules/core';
+import { defineConfig } from "@better-css-modules/core";
 
 export default defineConfig({
-  include: ['src/**/*.module.css'],
-  outDir: '__generated__',
+  include: ["src/**/*.module.css"],
+  outDir: "__generated__",
 });
 ```
 

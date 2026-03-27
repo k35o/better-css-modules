@@ -1,6 +1,7 @@
 {
   "name": "@better-css-modules/unplugin",
   "version": "0.1.1",
+  "private": true,
   "license": "MIT",
   "author": "k8o",
   "repository": {
@@ -8,20 +9,19 @@
     "url": "git+https://github.com/k35o/better-css-modules.git",
     "directory": "packages/unplugin"
   },
-  "private": true,
+  "files": [
+    "dist"
+  ],
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     }
   },
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
   "dependencies": {
     "@better-css-modules/core": "workspace:*",
     "unplugin": "3.0.0"

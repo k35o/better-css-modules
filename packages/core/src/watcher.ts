@@ -1,7 +1,7 @@
-import { watch } from 'chokidar';
-import { parseFile } from './parser.js';
-import { writeDts } from './generator.js';
-import type { Config } from './config.js';
+import { watch } from "chokidar";
+import { parseFile } from "./parser.js";
+import { writeDts } from "./generator.js";
+import type { Config } from "./config.js";
 
 export function startWatcher(config: Config, cwd: string = process.cwd()) {
   const watcher = watch(config.include, {
@@ -10,15 +10,15 @@ export function startWatcher(config: Config, cwd: string = process.cwd()) {
     ignoreInitial: false,
   });
 
-  watcher.on('add', async (filePath) => {
+  watcher.on("add", async (filePath) => {
     await regenerate(filePath, config.outDir, cwd);
   });
 
-  watcher.on('change', async (filePath) => {
+  watcher.on("change", async (filePath) => {
     await regenerate(filePath, config.outDir, cwd);
   });
 
-  watcher.on('unlink', () => {
+  watcher.on("unlink", () => {
     // TODO: Delete the corresponding .d.ts file
   });
 

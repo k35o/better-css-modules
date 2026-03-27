@@ -21,10 +21,10 @@ import {
   generateAll,
   scanUnusedClasses,
   startWatcher,
-} from '@better-css-modules/core';
+} from "@better-css-modules/core";
 
 // Extract class names from CSS
-const classNames = extractClassNames('.container { color: red; }');
+const classNames = extractClassNames(".container { color: red; }");
 // => ['container']
 
 // Generate .d.ts content
@@ -45,12 +45,12 @@ A webpack-compatible loader is available at `@better-css-modules/core/loader`. T
 ## Configuration
 
 ```ts
-import { defineConfig } from '@better-css-modules/core';
+import { defineConfig } from "@better-css-modules/core";
 
 export default defineConfig({
-  include: ['src/**/*.module.css'],
+  include: ["src/**/*.module.css"],
   exclude: [],
-  outDir: '__generated__',
+  outDir: "__generated__",
   watch: false,
 });
 ```

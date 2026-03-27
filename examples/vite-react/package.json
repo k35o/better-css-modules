@@ -1,8 +1,8 @@
 {
   "name": "example-vite-react",
   "private": true,
-  "type": "module",
   "license": "MIT",
+  "type": "module",
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",

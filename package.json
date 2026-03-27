@@ -1,15 +1,12 @@
 {
   "private": true,
-  "type": "module",
   "license": "MIT",
   "author": "k8o",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/k35o/better-css-modules.git"
   },
-  "engines": {
-    "node": ">=24.14.1"
-  },
+  "type": "module",
   "scripts": {
     "build": "vp run --filter './packages/*' build",
     "test": "vp run -r test",
@@ -17,11 +14,14 @@
     "typecheck": "vp run -r typecheck",
     "release": "pnpm build && changeset publish"
   },
-  "packageManager": "pnpm@10.33.0",
   "devDependencies": {
     "@changesets/changelog-github": "0.6.0",
     "@changesets/cli": "2.30.0",
     "typescript": "5.9.3",
     "vite-plus": "0.1.14"
-  }
+  },
+  "engines": {
+    "node": ">=24.14.1"
+  },
+  "packageManager": "pnpm@10.33.0"
 }

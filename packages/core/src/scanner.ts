@@ -1,7 +1,7 @@
-import fs from 'node:fs/promises';
-import fg from 'fast-glob';
-import path from 'node:path';
-import { parseFile } from './parser.js';
+import fs from "node:fs/promises";
+import fg from "fast-glob";
+import path from "node:path";
+import { parseFile } from "./parser.js";
 
 export interface UnusedClassWarning {
   cssFile: string;
@@ -46,7 +46,7 @@ function findCssModuleImports(tsContent: string): string[] {
  * and detect unused CSS Modules class names.
  */
 export async function scanUnusedClasses(cwd: string): Promise<UnusedClassWarning[]> {
-  const tsFiles = await fg(['**/*.{ts,tsx,js,jsx}', '!node_modules', '!dist', '!__generated__'], {
+  const tsFiles = await fg(["**/*.{ts,tsx,js,jsx}", "!node_modules", "!dist", "!__generated__"], {
     cwd,
     absolute: true,
   });
@@ -54,7 +54,7 @@ export async function scanUnusedClasses(cwd: string): Promise<UnusedClassWarning
   const warnings: UnusedClassWarning[] = [];
 
   for (const tsFile of tsFiles) {
-    const content = await fs.readFile(tsFile, 'utf-8');
+    const content = await fs.readFile(tsFile, "utf-8");
     const cssImports = findCssModuleImports(content);
 
     if (cssImports.length === 0) continue;

@@ -1,7 +1,7 @@
-import { extractClassNames } from './parser.js';
-import { writeDts } from './generator.js';
-import { loadConfig } from './config.js';
-import type { Config } from './config.js';
+import { extractClassNames } from "./parser.js";
+import { writeDts } from "./generator.js";
+import { loadConfig } from "./config.js";
+import type { Config } from "./config.js";
 
 let configPromise: Promise<Config> | undefined;
 

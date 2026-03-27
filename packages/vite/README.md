@@ -12,8 +12,8 @@ pnpm add -D @better-css-modules/vite
 
 ```ts
 // vite.config.ts
-import { defineConfig } from 'vite';
-import betterCssModules from '@better-css-modules/vite';
+import { defineConfig } from "vite";
+import betterCssModules from "@better-css-modules/vite";
 
 export default defineConfig({
   plugins: [betterCssModules()],
@@ -26,8 +26,8 @@ Options can be passed directly to the plugin or configured via `better-css-modul
 
 ```ts
 betterCssModules({
-  include: ['src/**/*.module.css'],
-  outDir: '__generated__',
+  include: ["src/**/*.module.css"],
+  outDir: "__generated__",
 });
 ```
 

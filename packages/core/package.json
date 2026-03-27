@@ -8,7 +8,13 @@
     "url": "git+https://github.com/k35o/better-css-modules.git",
     "directory": "packages/core"
   },
+  "files": [
+    "dist"
+  ],
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.mjs",
@@ -19,12 +25,6 @@
       "require": "./dist/loader.cjs"
     }
   },
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "test": "vp test",
     "typecheck": "tsc --noEmit"

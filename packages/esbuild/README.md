@@ -11,8 +11,8 @@ pnpm add -D @better-css-modules/esbuild
 ## Usage
 
 ```ts
-import esbuild from 'esbuild';
-import betterCssModules from '@better-css-modules/esbuild';
+import esbuild from "esbuild";
+import betterCssModules from "@better-css-modules/esbuild";
 
 esbuild.build({
   plugins: [betterCssModules()],
@@ -23,8 +23,8 @@ esbuild.build({
 
 ```ts
 betterCssModules({
-  include: ['src/**/*.module.css'],
-  outDir: '__generated__',
+  include: ["src/**/*.module.css"],
+  outDir: "__generated__",
 });
 ```
 

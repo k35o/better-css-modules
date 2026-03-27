@@ -12,7 +12,7 @@ pnpm add -D @better-css-modules/webpack
 
 ```ts
 // webpack.config.ts
-import betterCssModules from '@better-css-modules/webpack';
+import betterCssModules from "@better-css-modules/webpack";
 
 export default {
   plugins: [betterCssModules()],
@@ -23,8 +23,8 @@ export default {
 
 ```ts
 betterCssModules({
-  include: ['src/**/*.module.css'],
-  outDir: '__generated__',
+  include: ["src/**/*.module.css"],
+  outDir: "__generated__",
 });
 ```
 

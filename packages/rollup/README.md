@@ -12,7 +12,7 @@ pnpm add -D @better-css-modules/rollup
 
 ```ts
 // rollup.config.ts
-import betterCssModules from '@better-css-modules/rollup';
+import betterCssModules from "@better-css-modules/rollup";
 
 export default {
   plugins: [betterCssModules()],
@@ -23,8 +23,8 @@ export default {
 
 ```ts
 betterCssModules({
-  include: ['src/**/*.module.css'],
-  outDir: '__generated__',
+  include: ["src/**/*.module.css"],
+  outDir: "__generated__",
 });
 ```
 

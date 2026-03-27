@@ -12,16 +12,16 @@ A toolkit for improving the CSS Modules developer experience. Provides automatic
 
 ## Packages
 
-| Package | Description |
-|---|---|
-| [@better-css-modules/core](./packages/core) | Core library: parser, type generator, scanner, watcher, loader |
-| [@better-css-modules/cli](./packages/cli) | CLI for generating types and checking unused classes |
-| [@better-css-modules/vite](./packages/vite) | Vite plugin |
-| [@better-css-modules/webpack](./packages/webpack) | webpack plugin |
-| [@better-css-modules/rollup](./packages/rollup) | Rollup plugin |
-| [@better-css-modules/rspack](./packages/rspack) | Rspack plugin |
-| [@better-css-modules/esbuild](./packages/esbuild) | esbuild plugin |
-| [@better-css-modules/turbopack](./packages/turbopack) | Next.js / Turbopack integration |
+| Package                                               | Description                                                    |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| [@better-css-modules/core](./packages/core)           | Core library: parser, type generator, scanner, watcher, loader |
+| [@better-css-modules/cli](./packages/cli)             | CLI for generating types and checking unused classes           |
+| [@better-css-modules/vite](./packages/vite)           | Vite plugin                                                    |
+| [@better-css-modules/webpack](./packages/webpack)     | webpack plugin                                                 |
+| [@better-css-modules/rollup](./packages/rollup)       | Rollup plugin                                                  |
+| [@better-css-modules/rspack](./packages/rspack)       | Rspack plugin                                                  |
+| [@better-css-modules/esbuild](./packages/esbuild)     | esbuild plugin                                                 |
+| [@better-css-modules/turbopack](./packages/turbopack) | Next.js / Turbopack integration                                |
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ pnpm add -D @better-css-modules/vite
 
 ```ts
 // vite.config.ts
-import betterCssModules from '@better-css-modules/vite';
+import betterCssModules from "@better-css-modules/vite";
 
 export default defineConfig({
   plugins: [betterCssModules()],
@@ -47,7 +47,7 @@ pnpm add -D @better-css-modules/webpack  # or /rspack, /rollup, /esbuild
 ```
 
 ```ts
-import betterCssModules from '@better-css-modules/webpack';
+import betterCssModules from "@better-css-modules/webpack";
 
 export default {
   plugins: [betterCssModules()],
@@ -62,7 +62,7 @@ pnpm add -D @better-css-modules/turbopack
 
 ```ts
 // next.config.ts
-import { withBetterCssModules } from '@better-css-modules/turbopack';
+import { withBetterCssModules } from "@better-css-modules/turbopack";
 
 export default withBetterCssModules();
 ```
@@ -87,12 +87,12 @@ better-css-modules check
 Place a `better-css-modules.config.ts` in your project root. The config is shared across CLI, plugins, and the Turbopack integration.
 
 ```ts
-import { defineConfig } from '@better-css-modules/core';
+import { defineConfig } from "@better-css-modules/core";
 
 export default defineConfig({
-  include: ['src/**/*.module.css'],
+  include: ["src/**/*.module.css"],
   exclude: [],
-  outDir: '__generated__',
+  outDir: "__generated__",
   watch: false,
 });
 ```

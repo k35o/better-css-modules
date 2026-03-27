@@ -1,5 +1,5 @@
-import postcss from 'postcss';
-import fs from 'node:fs/promises';
+import postcss from "postcss";
+import fs from "node:fs/promises";
 
 /**
  * Extract class names from CSS file contents.
@@ -25,6 +25,6 @@ export function extractClassNames(css: string): string[] {
  * Read a CSS Modules file and extract class names.
  */
 export async function parseFile(filePath: string): Promise<string[]> {
-  const css = await fs.readFile(filePath, 'utf-8');
+  const css = await fs.readFile(filePath, "utf-8");
   return extractClassNames(css);
 }
