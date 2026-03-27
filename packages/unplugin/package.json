@@ -1,0 +1,29 @@
+{
+  "name": "@better-css-modules/unplugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vp pack"
+  },
+  "dependencies": {
+    "@better-css-modules/core": "workspace:*",
+    "unplugin": "3.0.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite-plus": "0.1.14"
+  }
+}
