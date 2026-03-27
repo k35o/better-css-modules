@@ -1,0 +1,25 @@
+{
+  "name": "@better-css-modules/rspack",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "vp pack"
+  },
+  "dependencies": {
+    "@better-css-modules/unplugin": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite-plus": "0.1.14"
+  }
+}
