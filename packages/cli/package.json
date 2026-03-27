@@ -1,0 +1,22 @@
+{
+  "name": "@better-css-modules/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "better-css-modules": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vp pack"
+  },
+  "dependencies": {
+    "@better-css-modules/core": "workspace:*",
+    "cac": "7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite-plus": "0.1.14"
+  }
+}
