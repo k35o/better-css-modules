@@ -1,0 +1,36 @@
+{
+  "name": "@better-css-modules/core",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./loader": {
+      "import": "./dist/loader.mjs",
+      "require": "./dist/loader.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chokidar": "5.0.0",
+    "fast-glob": "3.3.3",
+    "jiti": "2.6.1",
+    "postcss": "8.5.8"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite-plus": "0.1.14"
+  }
+}
