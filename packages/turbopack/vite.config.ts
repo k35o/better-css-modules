@@ -11,9 +11,12 @@ export default defineConfig({
   },
   pack: {
     entry: {
-      cli: "src/cli.ts",
+      index: "src/index.ts",
     },
-    dts: true,
+    dts: { resolve: false },
     format: ["esm", "cjs"],
+    deps: {
+      neverBundle: ["next"],
+    },
   },
 });
