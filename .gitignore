@@ -5,3 +5,4 @@ __generated__
 .plan
 *.tsbuildinfo
 .next
+.claude/settings.local.json
