@@ -15,7 +15,8 @@
       "@better-css-modules/webpack",
       "@better-css-modules/rollup",
       "@better-css-modules/rspack",
-      "@better-css-modules/esbuild"
+      "@better-css-modules/esbuild",
+      "@better-css-modules/turbopack"
     ]
   ],
   "linked": [],
