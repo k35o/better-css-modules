@@ -45,4 +45,5 @@ jobs:
           cache: true
 
       - run: vp run -r build
+      - run: vp install
       - run: vp run -r typecheck
