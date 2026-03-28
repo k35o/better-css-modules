@@ -21,6 +21,8 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+
       - uses: voidzero-dev/setup-vp@624fe22ccfe9204a526ac8139186d34297453722 # v1.4.0
         with:
           node-version-file: package.json
