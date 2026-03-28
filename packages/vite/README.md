@@ -33,6 +33,13 @@ betterCssModules({
 });
 ```
 
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files |
+| `exclude` | `string[]` | `[]` | Glob patterns to exclude |
+| `outDir` | `string` | `"__generated__"` | Output directory for generated `.d.ts` files |
+| `silent` | `boolean` | `false` | Suppress console output |
+
 ## License
 
 MIT
