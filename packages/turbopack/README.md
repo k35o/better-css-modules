@@ -27,20 +27,23 @@ export default withBetterCssModules({
 Options can be passed as the second argument or configured via `better-css-modules.config.ts`.
 
 ```ts
-export default withBetterCssModules({}, {
-  include: ["src/**/*.module.css"],
-  exclude: [],
-  outDir: "__generated__",
-  silent: false,
-});
+export default withBetterCssModules(
+  {},
+  {
+    include: ["src/**/*.module.css"],
+    exclude: [],
+    outDir: "__generated__",
+    silent: false,
+  },
+);
 ```
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files |
-| `exclude` | `string[]` | `[]` | Glob patterns to exclude |
-| `outDir` | `string` | `"__generated__"` | Output directory for generated `.d.ts` files |
-| `silent` | `boolean` | `false` | Suppress console output |
+| Option    | Type       | Default                   | Description                                  |
+| --------- | ---------- | ------------------------- | -------------------------------------------- |
+| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files   |
+| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                     |
+| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files |
+| `silent`  | `boolean`  | `false`                   | Suppress console output                      |
 
 ## How It Works
 
