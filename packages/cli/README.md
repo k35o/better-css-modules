@@ -30,7 +30,10 @@ import { defineConfig } from "@better-css-modules/core";
 
 export default defineConfig({
   include: ["src/**/*.module.css"],
+  exclude: [],
   outDir: "__generated__",
+  watch: false,
+  silent: false,
 });
 ```
 

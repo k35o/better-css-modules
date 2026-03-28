@@ -24,7 +24,9 @@ export default {
 ```ts
 betterCssModules({
   include: ["src/**/*.module.css"],
+  exclude: [],
   outDir: "__generated__",
+  silent: false,
 });
 ```
 

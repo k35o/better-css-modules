@@ -27,7 +27,9 @@ Options can be passed directly to the plugin or configured via `better-css-modul
 ```ts
 betterCssModules({
   include: ["src/**/*.module.css"],
+  exclude: [],
   outDir: "__generated__",
+  silent: false,
 });
 ```
 
