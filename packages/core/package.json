@@ -33,6 +33,10 @@
     "chokidar": "5.0.0",
     "fast-glob": "3.3.3",
     "jiti": "2.6.1",
+    "picomatch": "^4.0.4",
     "postcss": "8.5.8"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.2"
   }
 }

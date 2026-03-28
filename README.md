@@ -94,6 +94,7 @@ export default defineConfig({
   exclude: [],
   outDir: "__generated__",
   watch: false,
+  silent: false,
 });
 ```
 

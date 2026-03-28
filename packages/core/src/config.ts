@@ -11,6 +11,8 @@ export interface Config {
   outDir: string;
   /** Watch mode (for CLI) */
   watch: boolean;
+  /** Suppress console output */
+  silent: boolean;
 }
 
 const defaultConfig: Config = {
@@ -18,6 +20,7 @@ const defaultConfig: Config = {
   exclude: [],
   outDir: "__generated__",
   watch: false,
+  silent: false,
 };
 
 export function defineConfig(config: Partial<Config>): Config {
