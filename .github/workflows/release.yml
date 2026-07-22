@@ -4,18 +4,21 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
+# Git and API writes go through the App token; GITHUB_TOKEN only needs the
+# id-token for npm OIDC trusted publishing.
 permissions:
-  contents: write
+  contents: read
   id-token: write
-  pull-requests: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Generate token
         id: generate-token
@@ -36,10 +39,9 @@ jobs:
           node-version-file: package.json
           cache: true
 
-      - name: Create release Pull Request or publish to npm
-        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1.7.0
+      - name: Release
+        uses: k35o/pnpm-release-action@1430aa13b6d2709a6d18251cc90d1864ed9b61de # v0.2.0
         with:
-          publish: pnpm release
-        env:
-          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          build: pnpm build
+          github-token: ${{ steps.generate-token.outputs.token }}
+          auto-merge: true

@@ -2,7 +2,9 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: ["**/CHANGELOG.md"],
+    // .changeset/ (ledger.yaml, changelogs) is generated and owned by pnpm,
+    // so our formatting rules must not apply to it
+    ignorePatterns: ["**/CHANGELOG.md", ".changeset"],
   },
   run: {
     cache: {
