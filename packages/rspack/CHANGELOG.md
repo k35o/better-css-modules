@@ -1,5 +1,12 @@
 # @better-css-modules/rspack
 
+## 0.1.3
+
+### Patch Changes
+
+- Updated dependencies:
+  - @better-css-modules/unplugin@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes

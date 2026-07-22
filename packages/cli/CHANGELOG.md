@@ -1,5 +1,14 @@
 # @better-css-modules/cli
 
+## 0.1.3
+
+### Patch Changes
+
+- Point the `better-css-modules` bin at a committed shim: pnpm only links bins whose target exists at install time, so pointing straight at the build artifact `dist/cli.mjs` left cold checkouts without the executable.
+
+- Updated dependencies:
+  - @better-css-modules/core@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes

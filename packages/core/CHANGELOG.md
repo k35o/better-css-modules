@@ -1,5 +1,11 @@
 # @better-css-modules/core
 
+## 0.1.3
+
+### Patch Changes
+
+- Switch release automation from changesets/action to [pnpm-release-action](https://github.com/k35o/pnpm-release-action) (pnpm built-in release management). No runtime changes.
+
 ## 0.1.2
 
 ### Patch Changes
