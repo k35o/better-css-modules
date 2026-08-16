@@ -10,7 +10,7 @@
   "scripts": {
     "build": "vp run --filter './packages/*' build",
     "test": "vp run -r test",
-    "check": "vp check",
+    "check": "vp run build && vp check",
     "typecheck": "vp run build && vp run -r typecheck"
   },
   "devDependencies": {
