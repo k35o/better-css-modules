@@ -11,11 +11,11 @@
     "build": "vp run --filter './packages/*' build",
     "test": "vp run -r test",
     "check": "vp check",
-    "typecheck": "pnpm build && vp run -r typecheck"
+    "typecheck": "vp run build && vp run -r typecheck"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
-    "vite-plus": "0.1.14"
+    "typescript": "7.0.2",
+    "vite-plus": "0.2.9"
   },
   "engines": {
     "node": ">=24.14.1"
