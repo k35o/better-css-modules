@@ -27,7 +27,7 @@
     "@better-css-modules/unplugin": "workspace:*"
   },
   "devDependencies": {
-    "esbuild": "0.27.7"
+    "esbuild": "0.28.2"
   },
   "peerDependencies": {
     "esbuild": "^0.27.0 || ^0.28.0"
