@@ -1,6 +1,6 @@
 # @better-css-modules/cli
 
-CLI for generating CSS Modules type definitions and detecting unused class names.
+CLI for generating CSS Modules type definitions and reporting unused classes.
 
 ## Install
 
@@ -11,15 +11,28 @@ pnpm add -D @better-css-modules/cli
 ## Usage
 
 ```bash
-# Generate type definitions for all CSS Modules
+# Generate type definitions for all CSS Modules files
 better-css-modules generate
 
-# Watch mode - regenerate on file changes
+# Keep regenerating as files change
 better-css-modules generate --watch
 
-# Detect unused class names
+# Report unused classes and other problems
 better-css-modules check
+
+# Same, as GitHub Actions annotations
+better-css-modules check --format github
 ```
+
+`generate` writes one `.d.ts` per included file under `outDir` and exits with code 1 when it reports any problem (a stylesheet or selector that does not parse, an invalid `composes`). `check` prints one line per problem and exits with code 1 when there is at least one:
+
+```
+src/card.module.css:2:7 error unused-class: .ghost is never used
+src/Card.tsx:3:77 error unanalyzable-usage: dynamic access to src/dyn.module.css hides which classes are used
+src/orphan.module.css:1:1 error unused-module: src/orphan.module.css is never imported
+```
+
+The rules and what they mean are described in the [project README](../../README.md#unused-class-detection).
 
 ## Configuration
 
