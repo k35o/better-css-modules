@@ -20,8 +20,17 @@
       "default": "./dist/index.mjs"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@better-css-modules/unplugin": "workspace:*"
+  },
+  "devDependencies": {
+    "rollup": "4.63.4"
+  },
+  "peerDependencies": {
+    "rollup": "^4.0.0"
   },
   "engines": {
     "node": ">=24.14.1"
