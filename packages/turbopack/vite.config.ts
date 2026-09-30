@@ -5,7 +5,9 @@ export default defineConfig({
     tasks: {
       build: {
         command: "vp pack",
-        input: [{ auto: true }, "!dist/**", "!node_modules/**"],
+        cache: {
+          input: [{ auto: true }, "!dist/**", "!node_modules/**"],
+        },
       },
     },
   },
