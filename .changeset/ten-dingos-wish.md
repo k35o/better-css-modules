@@ -1,7 +1,6 @@
 ---
 "@better-css-modules/core": minor
 "@better-css-modules/cli": minor
-"@better-css-modules/unplugin": minor
 "@better-css-modules/vite": minor
 "@better-css-modules/webpack": minor
 "@better-css-modules/rollup": minor

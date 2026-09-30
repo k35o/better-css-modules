@@ -16,6 +16,8 @@ versioning:
       - "@better-css-modules/rspack"
       - "@better-css-modules/esbuild"
       - "@better-css-modules/turbopack"
+  ignore:
+    - "@better-css-modules/unplugin"
   changelog:
     storage: repository
 
