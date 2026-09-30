@@ -9,6 +9,7 @@ versioning:
   fixed:
     - - "@better-css-modules/core"
       - "@better-css-modules/cli"
+      - "@better-css-modules/unplugin"
       - "@better-css-modules/vite"
       - "@better-css-modules/webpack"
       - "@better-css-modules/rollup"

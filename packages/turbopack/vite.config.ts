@@ -16,7 +16,7 @@ export default defineConfig({
       index: "src/index.ts",
     },
     dts: { resolve: false },
-    format: ["esm", "cjs"],
+    format: ["esm"],
     deps: {
       neverBundle: ["next"],
     },

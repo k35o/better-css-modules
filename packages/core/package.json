@@ -12,25 +12,12 @@
     "dist"
   ],
   "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
-      "types": {
-        "import": "./dist/index.d.mts",
-        "require": "./dist/index.d.cts"
-      },
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
-    },
-    "./loader": {
-      "types": {
-        "import": "./dist/loader.d.mts",
-        "require": "./dist/loader.d.cts"
-      },
-      "import": "./dist/loader.mjs",
-      "require": "./dist/loader.cjs"
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
     }
   },
   "scripts": {
@@ -38,13 +25,24 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@csstools/css-syntax-patches-for-csstree": "1.1.14",
     "chokidar": "5.0.0",
+    "css-tree": "3.2.1",
     "fast-glob": "3.3.3",
     "jiti": "2.6.1",
+    "oxc-parser": "0.151.0",
+    "oxc-resolver": "11.24.2",
     "picomatch": "^4.0.4",
     "postcss": "8.5.8"
   },
   "devDependencies": {
-    "@types/picomatch": "^4.0.2"
+    "@types/css-tree": "3.2.0",
+    "@types/picomatch": "^4.0.2",
+    "lightningcss": "1.33.0",
+    "oxc-walker": "1.1.1",
+    "postcss-modules": "9.0.1"
+  },
+  "engines": {
+    "node": ">=24.14.1"
   }
 }

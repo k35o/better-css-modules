@@ -1,6 +1,6 @@
 # @better-css-modules/turbopack
 
-Next.js / Turbopack integration for better-css-modules. Provides automatic `.d.ts` generation with HMR support via Turbopack's loader system.
+Next.js / Turbopack integration for better-css-modules. Generates `.d.ts` files for CSS Modules when Next.js loads its config and keeps them fresh in development.
 
 ## Install
 
@@ -47,9 +47,11 @@ export default withBetterCssModules(
 
 ## How It Works
 
-- Configures Turbopack rules to run the `@better-css-modules/core/loader` on `*.module.css` files
-- On startup, generates `.d.ts` files for all existing CSS Modules
-- In development, watches for new file additions, changes, and deletions
+- When `next.config.ts` is evaluated, generates `.d.ts` files for every included CSS Modules file
+- In development, watches for file additions, changes and deletions and regenerates the affected `.d.ts`
+- Returns the Next.js config untouched
+
+Turbopack's loader pipeline is not used: its persistent cache skips loaders for unchanged files, loaders on stylesheets are unsupported, and a `*.module.css` loader rule changes the generated class names. Run `better-css-modules check` from `@better-css-modules/cli` for unused-class detection; a production build sees only the files it bundles.
 
 ## TypeScript Setup
 

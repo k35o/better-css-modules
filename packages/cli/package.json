@@ -19,5 +19,8 @@
   "dependencies": {
     "@better-css-modules/core": "workspace:*",
     "cac": "7.0.0"
+  },
+  "engines": {
+    "node": ">=24.14.1"
   }
 }

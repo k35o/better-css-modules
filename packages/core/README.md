@@ -1,6 +1,6 @@
 # @better-css-modules/core
 
-Core library for better-css-modules. Provides CSS Modules parsing, type definition generation, unused class detection, file watching, and a webpack loader.
+Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
 
 ## Install
 
@@ -12,35 +12,96 @@ pnpm add -D @better-css-modules/core
 
 ```ts
 import {
+  analyzeCss,
+  analyzeUsage,
   defineConfig,
-  loadConfig,
-  extractClassNames,
-  parseFile,
-  generateDts,
-  writeDts,
+  formatDiagnostic,
+  formatGitHubAnnotation,
   generateAll,
-  scanUnusedClasses,
+  generateDts,
+  loadConfig,
   startWatcher,
 } from "@better-css-modules/core";
 
-// Extract class names from CSS
-const classNames = extractClassNames(".container { color: red; }");
-// => ['container']
+// Analyze one file: local classes, scoped identifiers, composes, @value,
+// positions and parse problems, all from a single pass.
+const analysis = analyzeCss(".container { color: red; }", "/project/src/a.module.css");
+analysis.exportNames; // => ["container"] — keys of the module's default export
+analysis.classNames; // => ["container"] — local class names only
+analysis.classes; // => [{ name: "container", range: { start: { line: 1, column: 1 }, ... } }]
 
-// Generate .d.ts content
-const dts = generateDts(classNames);
+// Generate .d.ts content for those keys
+const dts = generateDts(analysis.exportNames);
 
-// Generate all .d.ts files based on config
+// Generate every .d.ts the config includes
 const config = await loadConfig(process.cwd());
-await generateAll(config, process.cwd());
+const { written, diagnostics } = await generateAll(config, process.cwd());
 
-// Detect unused class names
-const warnings = await scanUnusedClasses(process.cwd());
+// Find unused classes across the project
+const problems = await analyzeUsage(config, process.cwd());
+for (const problem of problems) {
+  console.log(formatDiagnostic(problem, process.cwd()));
+  // src/a.module.css:3:1 error unused-class: .title is never used
+  console.log(formatGitHubAnnotation(problem, process.cwd()));
+  // ::error file=src/a.module.css,line=3,col=1,endLine=3,endColumn=7,title=unused-class::.title is never used
+}
 ```
 
-## webpack Loader
+### Analysis
 
-A webpack-compatible loader is available at `@better-css-modules/core/loader`. This is used internally by `@better-css-modules/turbopack` for Turbopack integration.
+`analyzeCss(source, file)` returns a `CssModuleAnalysis`:
+
+| Field         | Contents                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------- |
+| `classes`     | Every locally scoped class selector with its source range, in source order                     |
+| `classNames`  | Unique local class names, sorted                                                               |
+| `identifiers` | Locally scoped ids, keyframes names (declared or referenced) and view-transition classes       |
+| `exportNames` | `classNames` plus `identifiers`, sorted: the keys both lightningcss and postcss-modules export |
+| `composes`    | `composes` declarations with the composing class, composed names and their source              |
+| `values`      | `@value` declarations (not exported as keys)                                                   |
+| `root`        | The postcss tree, for consumers that need declarations or at-rules                             |
+| `diagnostics` | Parse problems (`syntax`, `invalid-composes`); the rest of the analysis is still usable        |
+
+Structure comes from postcss; selectors, at-rule preludes and values are parsed with css-tree (with the csstools syntax patches). `:global` / `:local` in all their forms, nesting, `@scope` preludes and escaped names follow CSS Modules semantics. `analyzeCss` throws postcss's `CssSyntaxError` only when the stylesheet itself cannot be parsed; `loadCssModules` turns that into a `syntax` diagnostic.
+
+### Type generation
+
+- `generateDts(keys)` renders the `.d.ts` source.
+- `dtsPathFor(cssFile, { cwd, outDir })` mirrors the path relative to `cwd` under `outDir` and throws for files outside `cwd`.
+- `writeDts(analysis, { cwd, outDir })` / `removeDts(cssFile, { cwd, outDir })` write or delete one file.
+- `generateAll(config, cwd)` does it for every included file and returns `{ written, diagnostics }`.
+
+### Usage analysis
+
+`analyzeUsage(config, cwd)` parses every source file under `cwd` (except `node_modules`, `.git`, `dist`, `.next` and `outDir`) with oxc, resolves imports with oxc-resolver honouring the nearest `tsconfig.json`, aggregates usage per CSS file and returns `Diagnostic[]` sorted by file and position:
+
+- `unused-class` at the first occurrence of the class in the CSS
+- `unused-module` at line 1 of a CSS file nothing imports
+- `unanalyzable-usage` at the source position where usage stops being static: `styles[expr]`, rest destructuring, dynamic `import()`, or the module object being passed around as a value
+
+`composes` counts: a composed class is used whenever the composing class is, including across files named by `from`.
+
+### Diagnostics
+
+```ts
+interface Diagnostic {
+  file: string; // absolute path
+  line: number; // 1-based
+  column: number; // 1-based
+  endLine?: number;
+  endColumn?: number;
+  rule: string;
+  message: string;
+}
+```
+
+`formatDiagnostic` prints `path:line:col error rule: message`; `formatGitHubAnnotation` prints a GitHub Actions `::error` command. `sortDiagnostics` orders by file, line and column.
+
+### Config, matching and watching
+
+- `defineConfig` / `loadConfig(cwd)` read `better-css-modules.config.{ts,mts,cts,js,mjs,cjs}`.
+- `createMatcher(config, cwd)` returns a predicate for "is this path one of the included files"; `findCssModules` and `loadCssModules` list or analyze them.
+- `startWatcher(config, cwd)` regenerates `.d.ts` files as included files change. Run `generateAll` first; the watcher only reacts to changes.
 
 ## Configuration
 

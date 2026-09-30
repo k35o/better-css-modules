@@ -1,49 +1,68 @@
 #!/usr/bin/env node
 import cac from "cac";
 import path from "node:path";
-import { loadConfig, generateAll, scanUnusedClasses, startWatcher } from "@better-css-modules/core";
+import {
+  analyzeUsage,
+  type Diagnostic,
+  formatDiagnostic,
+  formatGitHubAnnotation,
+  generateAll,
+  loadConfig,
+  startWatcher,
+} from "@better-css-modules/core";
+import pkg from "../package.json" with { type: "json" };
 
 const cli = cac("better-css-modules");
 
+function report(diagnostics: Diagnostic[], cwd: string, format: string): void {
+  const formatter = format === "github" ? formatGitHubAnnotation : formatDiagnostic;
+  for (const diagnostic of diagnostics) console.log(formatter(diagnostic, cwd));
+}
+
 cli
   .command("generate", "Generate type definition files")
-  .option("-w, --watch", "Run in watch mode")
+  .option("-w, --watch", "Keep regenerating as files change")
   .action(async (options: { watch?: boolean }) => {
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
+    const { written, diagnostics } = await generateAll(config, cwd);
+
+    if (!config.silent) {
+      console.log(`[better-css-modules] generated ${written.length} file(s)`);
+      for (const dtsPath of written) console.log(`  ${path.relative(cwd, dtsPath)}`);
+    }
+    report(diagnostics, cwd, "text");
 
     if (options.watch || config.watch) {
       console.log("[better-css-modules] watching for changes...");
       startWatcher(config, cwd);
       return;
     }
-
-    const results = await generateAll(config, cwd);
-
-    console.log(`[better-css-modules] generated ${results.length} file(s)`);
-    for (const dtsPath of results) {
-      console.log(`  ${path.relative(cwd, dtsPath)}`);
-    }
-
-    console.log("[better-css-modules] done");
+    if (diagnostics.length > 0) process.exitCode = 1;
   });
 
-cli.command("check", "Detect unused class names").action(async () => {
-  const cwd = process.cwd();
-  const warnings = await scanUnusedClasses(cwd);
+cli
+  .command("check", "Report unused classes and other problems in CSS Modules files")
+  .option("--format <format>", "Output format: text or github", { default: "text" })
+  .action(async (options: { format: string }) => {
+    if (options.format !== "text" && options.format !== "github") {
+      console.error(`[better-css-modules] unknown format "${options.format}"; use text or github`);
+      process.exitCode = 2;
+      return;
+    }
+    const cwd = process.cwd();
+    const config = await loadConfig(cwd);
+    const diagnostics = await analyzeUsage(config, cwd);
 
-  if (warnings.length === 0) {
-    console.log("[better-css-modules] no unused classes found");
-    return;
-  }
-
-  console.log(`[better-css-modules] found ${warnings.length} unused class(es):`);
-  for (const w of warnings) {
-    console.log(`  ${path.relative(cwd, w.cssFile)}: .${w.className}`);
-  }
-  process.exitCode = 1;
-});
+    if (diagnostics.length === 0) {
+      if (!config.silent) console.log("[better-css-modules] no problems found");
+      return;
+    }
+    report(diagnostics, cwd, options.format);
+    console.log(`[better-css-modules] ${diagnostics.length} problem(s)`);
+    process.exitCode = 1;
+  });
 
 cli.help();
-cli.version("0.1.0");
+cli.version(pkg.version);
 cli.parse();

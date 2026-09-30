@@ -14,10 +14,15 @@ export default defineConfig({
   pack: {
     entry: {
       index: "src/index.ts",
-      loader: "src/loader.ts",
     },
     dts: true,
-    format: ["esm", "cjs"],
+    format: ["esm"],
+    deps: {
+      // oxc-walker ships ESM only; loaders that require() their way through the
+      // dependency graph (Next.js reading next.config.ts) cannot load it, so it
+      // travels inside this bundle instead.
+      alwaysBundle: ["oxc-walker"],
+    },
   },
   test: {},
 });
