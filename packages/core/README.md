@@ -1,6 +1,6 @@
 # @better-css-modules/core
 
-Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
+Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
 
 ## Install
 
@@ -81,6 +81,25 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 `composes` counts: a composed class is used whenever the composing class is, including across files named by `from`.
 
+### Token checks
+
+`checkCss(analysis, config)` holds the declarations of one analyzed file to the categories `config.tokens` restricts and returns `Diagnostic[]` sorted by position. It is a pure function: it reads nothing but its arguments, so it runs the same from the CLI, a plugin or a test.
+
+```ts
+import { analyzeCss, checkCss, defineConfig } from "@better-css-modules/core";
+
+const config = defineConfig({ tokens: { color: ["--fg-*"], shadow: true } });
+const analysis = analyzeCss(".a { color: #fff; }", "/project/src/a.module.css");
+checkCss(analysis, config);
+// => [{ line: 1, column: 13, rule: "tokens/color",
+//       message: "#fff is a raw value for color; use a --fg-* token", ... }]
+```
+
+- `tokens/<category>` at a raw value, or at a `var()` of a custom property the category does not allow
+- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason or with an unknown rule
+
+`tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. What passes, what is reported and the table itself are described in the [project README](../../README.md#token-enforcement). `checkCss` throws for a category the table does not define.
+
 ### Diagnostics
 
 ```ts
@@ -114,16 +133,18 @@ export default defineConfig({
   outDir: "__generated__",
   watch: false,
   silent: false,
+  tokens: {},
 });
 ```
 
-| Option    | Type       | Default                   | Description                                  |
-| --------- | ---------- | ------------------------- | -------------------------------------------- |
-| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files   |
-| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                     |
-| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files |
-| `watch`   | `boolean`  | `false`                   | Enable watch mode (CLI only)                 |
-| `silent`  | `boolean`  | `false`                   | Suppress console output                      |
+| Option    | Type       | Default                   | Description                                                       |
+| --------- | ---------- | ------------------------- | ----------------------------------------------------------------- |
+| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                        |
+| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                                          |
+| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                      |
+| `watch`   | `boolean`  | `false`                   | Enable watch mode (CLI only)                                      |
+| `silent`  | `boolean`  | `false`                   | Suppress console output                                           |
+| `tokens`  | `object`   | `{}`                      | Categories held to design tokens: `true` or a list of token names |
 
 ## License
 
