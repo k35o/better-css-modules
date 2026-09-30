@@ -6,12 +6,6 @@ export default defineConfig({
     // so our formatting rules must not apply to it
     ignorePatterns: ["**/CHANGELOG.md", ".changeset"],
   },
-  run: {
-    cache: {
-      tasks: true,
-      scripts: true,
-    },
-  },
   staged: {
     "*.{js,ts,tsx,md}": "vp check --fix",
   },
