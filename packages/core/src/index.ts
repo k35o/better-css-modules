@@ -1,3 +1,4 @@
+export { checkCss } from "./check.js";
 export { defineConfig, loadConfig } from "./config.js";
 export type { Config } from "./config.js";
 export { analyzeCss } from "./css.js";
@@ -25,5 +26,13 @@ export {
   syntaxDiagnosticFrom,
 } from "./project.js";
 export type { LoadResult } from "./project.js";
+export { tokenCategories } from "./tokens.js";
+export type {
+  TokenCategory,
+  TokenCategoryDefinition,
+  TokenSetting,
+  TokensConfig,
+  ValuePart,
+} from "./tokens.js";
 export { analyzeUsage } from "./usage.js";
 export { startWatcher } from "./watcher.js";

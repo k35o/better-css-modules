@@ -3,11 +3,14 @@ import cac from "cac";
 import path from "node:path";
 import {
   analyzeUsage,
+  checkCss,
   type Diagnostic,
   formatDiagnostic,
   formatGitHubAnnotation,
   generateAll,
   loadConfig,
+  loadCssModules,
+  sortDiagnostics,
   startWatcher,
 } from "@better-css-modules/core";
 import pkg from "../package.json" with { type: "json" };
@@ -42,7 +45,7 @@ cli
   });
 
 cli
-  .command("check", "Report unused classes and other problems in CSS Modules files")
+  .command("check", "Report unused classes and values that bypass the design tokens")
   .option("--format <format>", "Output format: text or github", { default: "text" })
   .action(async (options: { format: string }) => {
     if (options.format !== "text" && options.format !== "github") {
@@ -52,7 +55,13 @@ cli
     }
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
-    const diagnostics = await analyzeUsage(config, cwd);
+    // analyzeUsage already reports the files that do not parse; only the ones
+    // that do are checked against the tokens.
+    const { modules } = await loadCssModules(config, cwd);
+    const diagnostics = sortDiagnostics([
+      ...(await analyzeUsage(config, cwd)),
+      ...modules.flatMap((analysis) => checkCss(analysis, config)),
+    ]);
 
     if (diagnostics.length === 0) {
       if (!config.silent) console.log("[better-css-modules] no problems found");
