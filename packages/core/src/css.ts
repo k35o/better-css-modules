@@ -412,7 +412,7 @@ function visitDeclaration(declaration: Declaration, collector: Collector): void 
     ? (node: CssTree.Identifier) => match.isType(node, "keyframes-name")
     : (node: CssTree.Identifier) => !ANIMATION_KEYWORDS.has(node.name.toLowerCase());
   walk(value, {
-    enter(node) {
+    enter(node: CssTree.CssNode) {
       // Arguments of var() and other functions are never animation names.
       if (node.type === "Function") return walk.skip;
       if (node.type === "Identifier" && isName(node)) {
