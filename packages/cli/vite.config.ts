@@ -15,7 +15,6 @@ export default defineConfig({
     entry: {
       cli: "src/cli.ts",
     },
-    dts: true,
-    format: ["esm", "cjs"],
+    format: ["esm"],
   },
 });

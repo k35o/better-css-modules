@@ -1,42 +1,55 @@
 import { createUnplugin } from "unplugin";
-import fs from "node:fs/promises";
 import path from "node:path";
-import { loadConfig, parseFile, writeDts, generateAll } from "@better-css-modules/core";
-import type { Config } from "@better-css-modules/core";
+import {
+  type Config,
+  createMatcher,
+  formatDiagnostic,
+  generateAll,
+  loadConfig,
+  regenerateDts,
+  removeDts,
+} from "@better-css-modules/core";
 
 export interface Options extends Partial<Config> {}
 
-async function removeDts(cssFilePath: string, outDir: string, cwd: string) {
-  const relativePath = path.relative(cwd, cssFilePath);
-  const dtsPath = path.resolve(cwd, outDir, relativePath + ".d.ts");
-  await fs.rm(dtsPath, { force: true });
-}
-
+/**
+ * Bundler plugin that generates `.d.ts` files for the included CSS Modules files
+ * at build start and keeps them in sync with file changes in watch mode. All
+ * analysis lives in `@better-css-modules/core`; the plugin only wires it up.
+ */
 export const unplugin = createUnplugin<Options | undefined>((options = {}) => {
-  let config: Config;
   const cwd = process.cwd();
+  let config: Config | undefined;
+  let matches: ((file: string) => boolean) | undefined;
+
+  const log = (message: string) => {
+    if (!config?.silent) console.log(`[better-css-modules] ${message}`);
+  };
 
   return {
     name: "better-css-modules",
 
     async buildStart() {
-      const loaded = await loadConfig(cwd);
-      config = { ...loaded, ...options };
-      await generateAll(config, cwd);
+      config = { ...(await loadConfig(cwd)), ...options };
+      matches = createMatcher(config, cwd);
+      const { written, diagnostics } = await generateAll(config, cwd);
+      log(`generated ${written.length} file(s)`);
+      for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     },
 
     async watchChange(id: string, change: { event: string }) {
-      if (!id.endsWith(".module.css")) return;
+      if (!config || !matches?.(id)) return;
+      const output = { cwd, outDir: config.outDir };
 
       if (change.event === "delete") {
-        await removeDts(id, config.outDir, cwd);
-        console.log(`[better-css-modules] removed: ${path.relative(cwd, id)}.d.ts`);
+        const dtsPath = await removeDts(id, output);
+        log(`removed: ${path.relative(cwd, dtsPath)}`);
         return;
       }
 
-      const classNames = await parseFile(id);
-      const dtsPath = await writeDts(id, classNames, config.outDir, cwd);
-      console.log(`[better-css-modules] regenerated: ${path.relative(cwd, dtsPath)}`);
+      const { dtsPath, diagnostics } = await regenerateDts(id, output);
+      if (dtsPath) log(`regenerated: ${path.relative(cwd, dtsPath)}`);
+      for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     },
   };
 });
