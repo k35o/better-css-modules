@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vite-plus": "0.2.9"
+    "vite-plus": "catalog:"
   },
   "engines": {
     "node": ">=24.14.1"
