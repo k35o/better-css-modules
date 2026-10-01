@@ -18,6 +18,8 @@ export interface Config {
    * `./` or `../` paths relative to the config, or package specifiers.
    */
   globalCss: string[];
+  /** Cascade layer the bundler plugins wrap every CSS Modules file in; unset leaves files as written */
+  layer?: string;
 }
 
 const defaultConfig: Config = {
