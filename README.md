@@ -230,8 +230,9 @@ These are reported as `tokens/<category>`:
 - Raw values: hex colors, named and system colors, color functions written with channel values (`rgb()`, `oklch()`, `color()`…, also when a `var()` sits among the channels), lengths in any unit (`px`, `rem`, `em`, `cqi`, `vw`…), numbers, times, and keywords that stand for a value (`bold`, `large`).
 - A `var()` of a custom property outside the list: a token of another category, a custom property declared in the file, a name that matches no pattern.
 - A raw value in the fallback of a `var()` (`var(--fg-base, red)`).
+- A custom property declared under a name a list covers (`--fg-mine: red`, or `@property --fg-mine`), whatever its value. Otherwise a module could declare its own `--fg-*` and feed any raw value through the list. The names a list covers are the design system's; `true` reserves none.
 
-Declaring a custom property is always free (`--glow: oklch(0.72 0.17 185)`); using it in a restricted property is what gets reported.
+Any other custom property is free to declare with any value (`--glow: oklch(0.72 0.17 185)`); using it in a restricted property is what gets reported.
 
 Tokens are known by name only; the tool does not read where they are defined. A misspelt name is caught by a list of exact names, and slips through a glob it still matches (`--fg-bsae` matches `--fg-*`).
 

@@ -95,7 +95,7 @@ checkCss(analysis, config);
 //       message: "#fff is a raw value for color; use a --fg-* token", ... }]
 ```
 
-- `tokens/<category>` at a raw value, or at a `var()` of a custom property the category does not allow
+- `tokens/<category>` at a raw value, at a `var()` of a custom property the category does not allow, or at a custom property declared under a name the category's list covers
 - `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason or with an unknown rule
 
 `tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. What passes, what is reported and the table itself are described in the [project README](../../README.md#token-enforcement). `checkCss` throws for a category the table does not define.
