@@ -25,6 +25,9 @@
     "@better-css-modules/core": "workspace:*",
     "unplugin": "3.0.0"
   },
+  "devDependencies": {
+    "vite": "catalog:"
+  },
   "engines": {
     "node": ">=24.14.1"
   }
