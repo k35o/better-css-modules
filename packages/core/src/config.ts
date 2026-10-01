@@ -1,6 +1,7 @@
 import { createJiti } from "jiti";
 import path from "node:path";
 import fs from "node:fs";
+import type { TokensConfig } from "./tokens.js";
 
 export interface Config {
   /** Glob patterns for target files */
@@ -13,6 +14,8 @@ export interface Config {
   watch: boolean;
   /** Suppress console output */
   silent: boolean;
+  /** Token categories `check` holds to design tokens */
+  tokens: TokensConfig;
 }
 
 const defaultConfig: Config = {
@@ -21,6 +24,7 @@ const defaultConfig: Config = {
   outDir: "__generated__",
   watch: false,
   silent: false,
+  tokens: {},
 };
 
 export function defineConfig(config: Partial<Config>): Config {

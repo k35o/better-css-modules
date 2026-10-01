@@ -11,4 +11,4 @@ export const syntax = csstree.fork({
 });
 
 export const { parse, generate, lexer } = syntax;
-export const { walk, ident } = csstree;
+export const { walk, find, ident, property } = csstree;
