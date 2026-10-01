@@ -21,9 +21,6 @@
       "default": "./dist/index.mjs"
     }
   },
-  "scripts": {
-    "test": "vp test"
-  },
   "dependencies": {
     "@better-css-modules/core": "workspace:*",
     "unplugin": "3.0.0"
