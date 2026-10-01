@@ -85,18 +85,25 @@ interface ObjectPatternNode extends AstNode {
   properties: AstNode[];
 }
 
+export interface UsageResult {
+  diagnostics: Diagnostic[];
+  /** The analysis of every included CSS file that parses, at its real path. */
+  modules: CssModuleAnalysis[];
+}
+
 /**
  * Find CSS Modules classes that no source file uses.
  *
  * Usage is aggregated per CSS file across the whole project and reported at
  * the CSS side; places where usage cannot be determined statically (dynamic
  * access, the module object escaping as a value) are reported at the source
- * side instead of guessing.
+ * side instead of guessing. The CSS analyses come back too, so that checks of
+ * their own run without parsing the files again.
  */
 export async function analyzeUsage(
   config: Config,
   cwd: string = process.cwd(),
-): Promise<Diagnostic[]> {
+): Promise<UsageResult> {
   // Resolved imports come back as real paths, so every path here is canonical.
   const root = fs.realpathSync(cwd);
   const cssFiles = (await findCssModules(config, root)).map((file) => fs.realpathSync(file));
@@ -290,7 +297,7 @@ export async function analyzeUsage(
       });
     }
   }
-  return sortDiagnostics(found);
+  return { diagnostics: sortDiagnostics(found), modules };
 }
 
 function collectReferences(
