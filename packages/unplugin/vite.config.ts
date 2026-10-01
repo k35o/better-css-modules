@@ -26,5 +26,8 @@ export default defineConfig({
     dts: true,
     format: ["esm"],
   },
-  test: {},
+  test: {
+    // The tests run real builds with several bundlers.
+    testTimeout: 30_000,
+  },
 });
