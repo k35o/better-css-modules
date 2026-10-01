@@ -35,7 +35,7 @@ src/card.module.css:4:10 error tokens/color: --color-fg-bsae is not defined in t
 src/card.module.css:6:1 error pure/global: :global(.dark) reaches outside this module; switch modes by overriding tokens instead
 ```
 
-The rules and what they mean are described in the project README: [unused class detection](../../README.md#unused-class-detection), [pure CSS Modules](../../README.md#pure-css-modules), which always applies to modules, and [token enforcement](../../README.md#token-enforcement), which reads the tokens from the stylesheets the `globalCss` option lists.
+The rules and what they mean are described in the project README: [unused class detection](../../README.md#unused-class-detection), [pure CSS Modules](../../README.md#pure-css-modules), which always applies to modules, [token enforcement](../../README.md#token-enforcement), which reads the tokens from the stylesheets the `globalCss` option lists, and [cascade layers](../../README.md#cascade-layers), whose rules run when the `layer` option is set. A `layer` the global CSS does not declare is a mistake in the config: `check` prints why and exits with 2.
 
 ## Configuration
 
@@ -62,6 +62,7 @@ export default defineConfig({
 | `watch`     | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
 | `silent`    | `boolean`  | `false`                   | Suppress console output                                             |
 | `globalCss` | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
+| `layer`     | `string`   | unset                     | Cascade layer the plugins wrap every module in                      |
 
 ## License
 

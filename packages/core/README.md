@@ -1,6 +1,6 @@
 # @better-css-modules/core
 
-Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, pure CSS Modules and design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
+Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, pure CSS Modules and design token checks, cascade layer wrapping, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
 
 ## Install
 
@@ -117,6 +117,26 @@ checkCss(analysis, globalCss);
 
 `tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. `categoryOf(name)` gives the category a custom property name belongs to. The rules are described in the project README: [pure CSS Modules](../../README.md#pure-css-modules) and [token enforcement](../../README.md#token-enforcement), with the table itself.
 
+### Cascade layers
+
+```ts
+import { loadConfig, loadGlobalCss, resolveLayer, wrapInLayer } from "@better-css-modules/core";
+
+// layer: "components", and the global CSS declares @layer base, components, utilities;
+const config = await loadConfig(cwd);
+const layer = resolveLayer("components", await loadGlobalCss(config, cwd));
+// => { name: "components", order: ["base", "components", "utilities"] }
+const { code, map } = wrapInLayer(".a { color: red; }", "/project/src/a.module.css", layer);
+// @layer base, components, utilities;
+// @layer components {
+// .a { color: red; }
+// }
+```
+
+- `declaredLayers(globalCss)` lists the layers the global CSS declares at the top level of the cascade, in order: `@layer` statements and blocks and `@import ... layer(name)`, reading the listed stylesheets in turn and each import where it stands. `resolveLayer(name, globalCss)` returns the layer with that order, and throws when the global CSS does not declare it.
+- `wrapInLayer(source, file, layer)` puts the file in the layer behind the statement and returns the CSS with its source map as JSON. `@import` stays in front and imports into the layer. It throws postcss's `CssSyntaxError` at a `composes`, which the CSS Modules transforms get wrong inside a layer. Run it before the bundler's CSS Modules transform; what the plugins do and why is in the [project README](../../README.md#cascade-layers).
+- `checkLayer(analysis, layer)` reports what the wrapping would break in a module: `layer/nested` at an `@layer` and `layer/composes` at a `composes`.
+
 ### Diagnostics
 
 ```ts
@@ -135,7 +155,7 @@ interface Diagnostic {
 
 ### Config, matching and watching
 
-- `defineConfig` / `loadConfig(cwd)` read `better-css-modules.config.{ts,mts,cts,js,mjs,cjs}`.
+- `defineConfig` / `loadConfig(cwd)` read `better-css-modules.config.{ts,mts,cts,js,mjs,cjs}`; `configFile(cwd)` returns its path, or `null` when there is none.
 - `createMatcher(config, cwd)` returns a predicate for "is this path one of the included files"; `findCssModules` and `loadCssModules` list or analyze them.
 - `startWatcher(config, cwd)` regenerates `.d.ts` files as included files change. Run `generateAll` first; the watcher only reacts to changes.
 
@@ -162,6 +182,7 @@ export default defineConfig({
 | `watch`     | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
 | `silent`    | `boolean`  | `false`                   | Suppress console output                                             |
 | `globalCss` | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
+| `layer`     | `string`   | unset                     | Cascade layer the plugins wrap every module in                      |
 
 ## License
 
