@@ -517,12 +517,13 @@ describe("checkCss: declaring a custom property under a token name", () => {
     ]);
   });
 
-  it("reports a registration with @property", () => {
+  // A module cannot register any custom property: @property is global.
+  it("leaves a registration with @property to pure/at-rule", () => {
     const css = '@property --fg-mine { syntax: "<color>"; inherits: false; initial-value: red; }';
-    expect(diagnose(css)).toMatchObject([
-      { rule: "tokens/color", line: 1, column: 11, endColumn: 20 },
+    const analysis = analyzeCss(css, FILE);
+    expect(checkCss(analysis, defineConfig({ tokens: designSystem }))).toMatchObject([
+      { rule: "pure/at-rule", line: 1, column: 1 },
     ]);
-    expect(check(css)).toEqual([message("--fg-mine")]);
   });
 
   it("reports the name once for each category whose list covers it", () => {
@@ -535,9 +536,6 @@ describe("checkCss: declaring a custom property under a token name", () => {
 
   it("leaves names outside every list free", () => {
     expect(check(".a { --glow: red; --FG-mine: red; --spacing-2: 8px; }")).toEqual([]);
-    expect(
-      check('@property --glow { syntax: "<color>"; inherits: false; initial-value: red; }'),
-    ).toEqual([]);
   });
 
   it("reserves no name for a category set to true", () => {

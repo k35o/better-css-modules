@@ -2,7 +2,7 @@ import picomatch from "picomatch";
 import type { AtRule, Declaration, Node } from "postcss";
 import type * as CssTree from "css-tree";
 import type { Config } from "./config.js";
-import { type CssModuleAnalysis, paramsStart, rawValue, type SourcePosition } from "./css.js";
+import { type CssModuleAnalysis, rawValue, type SourcePosition } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { checkPure, PURE_RULES } from "./pure.js";
@@ -172,12 +172,6 @@ export function checkCss(analysis: CssModuleAnalysis, config: Config): Diagnosti
   if (restrictions.size > 0) {
     analysis.root.walkDecls((declaration) => {
       keep(declaration, checkDeclaration(declaration, restrictions, analysis.file));
-    });
-    analysis.root.walkAtRules(/^property$/i, (atRule) => {
-      keep(
-        atRule,
-        checkDeclaredName(atRule.params, paramsStart(atRule), restrictions, analysis.file),
-      );
     });
   }
   return sortDiagnostics(diagnostics);
