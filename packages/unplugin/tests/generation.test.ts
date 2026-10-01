@@ -27,7 +27,7 @@ async function writeFiles(dir: string, files: Record<string, string>): Promise<v
   }
 }
 
-function pluginFor(framework: "vite" | "rollup" | "esbuild"): UnpluginOptions {
+function pluginFor(framework: UnpluginContextMeta["framework"]): UnpluginOptions {
   return unplugin.raw(undefined, { framework } as UnpluginContextMeta) as UnpluginOptions;
 }
 
@@ -93,12 +93,12 @@ describe("generating the types", () => {
     expect(generations()).toBe(1);
   });
 
-  it("generates again when a build starts after the bundler reported a change", async () => {
+  it("generates again when a build starts after Vite reported a change", async () => {
     const dir = await enterProject({
       "src/a.module.css": ".foo { color: red; }",
       "src/main.ts": "export {};\n",
     });
-    const plugin = pluginFor("rollup");
+    const plugin = pluginFor("vite");
     await buildStart(plugin);
 
     // A module created before anything imports it is not reported by watch mode.
@@ -110,15 +110,18 @@ describe("generating the types", () => {
     expect(await dtsOf(dir, "src/b.module.css")).toContain("readonly bar: string;");
   });
 
-  it("generates again on every esbuild rebuild, since esbuild reports no changes", async () => {
-    const dir = await enterProject({ "src/a.module.css": ".foo { color: red; }" });
-    const plugin = pluginFor("esbuild");
-    await buildStart(plugin);
+  it.each(["webpack", "rspack", "rollup", "esbuild"] as const)(
+    "generates on every build start under %s",
+    async (framework) => {
+      const dir = await enterProject({ "src/a.module.css": ".foo { color: red; }" });
+      const plugin = pluginFor(framework);
+      await buildStart(plugin);
 
-    await writeFiles(dir, { "src/a.module.css": ".foo { color: red; }\n.baz { color: green; }" });
-    await buildStart(plugin);
+      await writeFiles(dir, { "src/a.module.css": ".foo { color: red; }\n.baz { color: green; }" });
+      await buildStart(plugin);
 
-    expect(generations()).toBe(2);
-    expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly baz: string;");
-  });
+      expect(generations()).toBe(2);
+      expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly baz: string;");
+    },
+  );
 });

@@ -13,8 +13,8 @@ import {
 export interface Options extends Partial<Config> {}
 
 // Vite starts a build per environment and Vitest a server per project, each
-// with its own buildStart; the types do not depend on which one asks, so the
-// process generates them once per project and config.
+// with its own buildStart; the types do not depend on which one asks, so under
+// Vite the process generates them once per project and config.
 const generations = new Map<string, Promise<void>>();
 
 /**
@@ -26,7 +26,6 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
   const cwd = process.cwd();
   let config: Config | undefined;
   let matches: ((file: string) => boolean) | undefined;
-  let started = false;
 
   const log = (message: string) => {
     if (!config?.silent) console.log(`[better-css-modules] ${message}`);
@@ -42,12 +41,10 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
     name: "better-css-modules",
 
     async buildStart() {
-      // esbuild reports no changed files, so a rebuild is the only sign of one.
-      if (started && meta.framework === "esbuild") generations.clear();
-      started = true;
-
       config = { ...(await loadConfig(cwd)), ...options };
       matches = createMatcher(config, cwd);
+      if (meta.framework !== "vite") return generate(config);
+
       const key = JSON.stringify([cwd, config]);
       if (!generations.has(key)) generations.set(key, generate(config));
       await generations.get(key);
