@@ -77,6 +77,24 @@ describe("check", () => {
     });
   });
 
+  it("holds the modules to the pure rules and leaves the global CSS alone", async () => {
+    const dir = await project({
+      ...card,
+      "src/global.css":
+        '@font-face {\n  font-family: "Inter";\n}\n:root {\n  --color-fg-base: #000;\n}\n.dark {\n  --color-fg-base: #fff;\n}\n',
+      "src/card.module.css": ":global(.dark) .used {\n  color: var(--color-fg-base);\n}\n",
+    });
+    expect(run(dir, "check")).toEqual({
+      status: 1,
+      stdout: [
+        "src/card.module.css:1:1 error pure/global: :global(.dark) reaches outside this module; switch modes by overriding tokens instead",
+        "[better-css-modules] 1 problem(s)",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+
   it("reports a stylesheet that does not parse once", async () => {
     const dir = await project({
       ...card,

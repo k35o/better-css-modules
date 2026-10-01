@@ -47,7 +47,10 @@ cli
   });
 
 cli
-  .command("check", "Report unused classes and values that bypass the design tokens")
+  .command(
+    "check",
+    "Report unused classes, impure modules and values that bypass the design tokens",
+  )
   .option("--format <format>", "Output format: text or github", { default: "text" })
   .action(async (options: { format: string }) => {
     if (options.format !== "text" && options.format !== "github") {
