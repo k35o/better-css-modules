@@ -1,21 +1,22 @@
-import picomatch from "picomatch";
-import type { AtRule, Declaration } from "postcss";
+import type { AtRule, Declaration, Root } from "postcss";
 import type * as CssTree from "css-tree";
-import type { Config } from "./config.js";
-import { type CssModuleAnalysis, paramsStart, type SourcePosition } from "./css.js";
+import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
+import { declaresToken, type GlobalCss, type GlobalCssFile, type Token } from "./global.js";
 import {
+  categoryOf,
   tokenCategories,
   type TokenCategory,
   type TokenCategoryDefinition,
-  type TokensConfig,
   type ValuePart,
 } from "./tokens.js";
 
 const DISABLE_NEXT_LINE = "better-css-modules-disable-next-line";
 
 const RULE_PREFIX = "tokens/";
+const INTERNAL = "tokens/internal";
+const UNDECLARED = "tokens/undeclared";
 
 const CSS_WIDE_KEYWORDS = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
 
@@ -116,22 +117,27 @@ for (const [category, definition] of Object.entries(tokenCategories)) {
   }
 }
 
-/** One category as the config restricts it. */
+/** One category the global CSS declares tokens for. */
 interface Restriction {
   category: TokenCategory;
   keywords: Set<string>;
   percentages: boolean;
-  /** Whether a custom property is a token the config accepts for the category. */
-  allows: (name: string) => boolean;
-  /** Whether a list covers the name, which makes it a token and not a module's to declare. */
-  reserves: (name: string) => boolean;
   /** What to write instead, for messages. */
   hint: string;
 }
 
+/** A stylesheet under check and what the global CSS declares. */
+interface Context {
+  file: string;
+  tokens: Map<string, Token>;
+  restrictions: Map<TokenCategory, Restriction>;
+  /** The stylesheet when it belongs to the global CSS, which declares tokens and may use any. */
+  global: GlobalCssFile | null;
+}
+
 /** A value under check for one category. */
 interface Scope {
-  file: string;
+  context: Context;
   /** The value as written; node offsets index into it. */
   text: string;
   restriction: Restriction;
@@ -148,70 +154,67 @@ type VarReading = "colors" | "one-color" | "unknown";
 type Arithmetic = "none" | "raw" | "token";
 
 /**
- * Check the declarations of a CSS Modules file against the token categories
- * the config restricts.
+ * Check the declarations of a CSS Modules file against the tokens the global
+ * CSS declares.
  *
- * In a property of a restricted category only tokens the config allows, the
- * category's keywords and arithmetic on tokens pass; raw values and other
- * custom properties are reported, and so is a custom property declared under
- * a name a list covers. Pure: reads nothing but its arguments.
+ * Each category the global CSS declares a token for is restricted: in its
+ * properties only its tokens, its keywords and arithmetic on its tokens pass.
+ * Anywhere in the file a token name the global CSS does not declare is
+ * reported, and so is a name it declares without a category prefix, which is
+ * internal to it. A module cannot declare either kind of name. Pure: reads
+ * nothing but its arguments.
  */
-export function checkCss(analysis: CssModuleAnalysis, config: Config): Diagnostic[] {
-  const restrictions = restrictionsOf(config.tokens);
+export function checkCss(analysis: CssModuleAnalysis, globalCss: GlobalCss): Diagnostic[] {
+  return checkRoot(analysis.root, contextOf(analysis.file, globalCss, null));
+}
+
+/**
+ * Check the project's own stylesheets of the global CSS: their declarations
+ * are held to the tokens like a module's, and a mode may only override a
+ * token. A package's stylesheets are left to the package. Pure.
+ */
+export function checkGlobalCss(globalCss: GlobalCss): Diagnostic[] {
+  return sortDiagnostics(
+    globalCss.files
+      .filter(({ checked }) => checked)
+      .flatMap((file) => checkRoot(file.root, contextOf(file.file, globalCss, file))),
+  );
+}
+
+function contextOf(file: string, globalCss: GlobalCss, global: GlobalCssFile | null): Context {
+  const restrictions = new Map<TokenCategory, Restriction>();
+  for (const { category } of globalCss.tokens.values()) {
+    if (!category || restrictions.has(category)) continue;
+    const definition: TokenCategoryDefinition = tokenCategories[category];
+    restrictions.set(category, {
+      category,
+      keywords: new Set(definition.keywords),
+      percentages: definition.percentages ?? false,
+      hint: `use a --${category}-* token`,
+    });
+  }
+  return { file, tokens: globalCss.tokens, restrictions, global };
+}
+
+function checkRoot(root: Root, context: Context): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  const disabled = collectDisabled(analysis, diagnostics);
+  const disabled = collectDisabled(root, context.file, diagnostics);
   const keep = (line: number | undefined, found: Diagnostic[]) => {
     const rules = disabled.get(line ?? 0);
     diagnostics.push(...found.filter((diagnostic) => !rules?.has(diagnostic.rule)));
   };
-  if (restrictions.size > 0) {
-    analysis.root.walkDecls((declaration) => {
-      keep(
-        declaration.source?.start?.line,
-        checkDeclaration(declaration, restrictions, analysis.file),
-      );
+  if (context.tokens.size > 0 || context.global) {
+    root.walkDecls((declaration) => {
+      keep(declaration.source?.start?.line, checkDeclaration(declaration, context));
     });
-    analysis.root.walkAtRules(/^property$/i, (atRule) => {
+    root.walkAtRules(/^property$/i, (atRule) => {
       keep(
         atRule.source?.start?.line,
-        checkDeclaredName(atRule.params, paramsStart(atRule), restrictions, analysis.file),
+        checkDeclaredName(atRule.params, paramsStart(atRule), atRule, context),
       );
     });
   }
   return sortDiagnostics(diagnostics);
-}
-
-function restrictionsOf(tokens: TokensConfig): Map<TokenCategory, Restriction> {
-  const restrictions = new Map<TokenCategory, Restriction>();
-  for (const [category, setting] of Object.entries(tokens)) {
-    if (setting === undefined) continue;
-    if (!Object.hasOwn(tokenCategories, category)) {
-      const known = Object.keys(tokenCategories).join(", ");
-      throw new Error(
-        `[better-css-modules] unknown token category "${category}"; the categories are ${known}`,
-      );
-    }
-    const isList =
-      Array.isArray(setting) &&
-      setting.length > 0 &&
-      setting.every((pattern) => typeof pattern === "string" && pattern !== "");
-    if (setting !== true && !isList) {
-      throw new Error(
-        `[better-css-modules] tokens.${category} must be true or a list of custom property names`,
-      );
-    }
-    const definition: TokenCategoryDefinition = tokenCategories[category as TokenCategory];
-    const inList = setting === true ? null : picomatch(setting);
-    restrictions.set(category as TokenCategory, {
-      category: category as TokenCategory,
-      keywords: new Set(definition.keywords),
-      percentages: definition.percentages ?? false,
-      allows: inList ?? (() => true),
-      reserves: inList ?? (() => false),
-      hint: setting === true ? "use a token through var()" : `use a ${setting.join(" / ")} token`,
-    });
-  }
-  return restrictions;
 }
 
 /**
@@ -219,11 +222,12 @@ function restrictionsOf(tokens: TokensConfig): Map<TokenCategory, Restriction> {
  * rules it silences there. A malformed comment silences nothing and is reported.
  */
 function collectDisabled(
-  analysis: CssModuleAnalysis,
+  root: Root,
+  file: string,
   diagnostics: Diagnostic[],
 ): Map<number, Set<string>> {
   const disabled = new Map<number, Set<string>>();
-  analysis.root.walkComments((comment) => {
+  root.walkComments((comment) => {
     const start = comment.source?.start;
     const end = comment.source?.end;
     if (!start || !end || !comment.text.startsWith(DISABLE_NEXT_LINE)) return;
@@ -235,8 +239,10 @@ function collectDisabled(
       .filter(Boolean);
     const unknown = rules.filter(
       (rule) =>
-        !rule.startsWith(RULE_PREFIX) ||
-        !Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length)),
+        rule !== INTERNAL &&
+        rule !== UNDECLARED &&
+        (!rule.startsWith(RULE_PREFIX) ||
+          !Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length))),
     );
     const problems =
       reason === ""
@@ -246,7 +252,7 @@ function collectDisabled(
           : unknown.map((rule) => `unknown rule "${rule}" in a disable comment`);
     for (const message of problems) {
       diagnostics.push({
-        file: analysis.file,
+        file,
         line: start.line,
         column: start.column,
         endLine: end.line,
@@ -263,74 +269,148 @@ function collectDisabled(
   return disabled;
 }
 
-function checkDeclaration(
-  declaration: Declaration,
-  restrictions: Map<TokenCategory, Restriction>,
-  file: string,
-): Diagnostic[] {
+function checkDeclaration(declaration: Declaration, context: Context): Diagnostic[] {
   const parent = declaration.parent;
   if (parent?.type === "atrule" && DESCRIPTOR_AT_RULES.has((parent as AtRule).name.toLowerCase())) {
     return [];
   }
+  const diagnostics: Diagnostic[] = [];
   const { name, basename, custom } = property(declaration.prop);
-  if (custom) {
-    const start = declaration.source?.start;
-    return start ? checkDeclaredName(declaration.prop, start, restrictions, file) : [];
-  }
-  const parts = (PARTS_BY_PROPERTY.get(name) ?? PARTS_BY_PROPERTY.get(basename) ?? []).filter(
-    ({ category }) => restrictions.has(category),
-  );
-  const whole = parts.filter(({ part }) => WHOLE_VALUE_PARTS.has(part));
-  const active = whole.length > 0 ? whole : parts;
-  if (active.length === 0) return [];
-
   const start = declaration.source?.start;
-  const between = declaration.raws.between ?? "";
-  // postcss moves the `*` or `_` of a property hack out of `prop` and into
-  // `raws.before`, while the declaration still starts on it.
-  const hack = /[*_]$/.test(declaration.raws.before ?? "") ? 1 : 0;
-  const position = start
-    ? declaration.source?.input.fromOffset(
-        start.offset + hack + declaration.prop.length + between.length,
-      )
-    : null;
-  if (!position) return [];
+  if (custom && start) {
+    diagnostics.push(...checkDeclaredName(declaration.prop, start, declaration, context));
+  }
+
+  const position = valueStart(declaration);
+  if (!position) return diagnostics;
   // postcss strips comments from `value`; the raw text keeps positions exact.
   const text = declaration.raws.value?.raw ?? declaration.value;
   // A value css-tree cannot parse (if(), attr() with a type) cannot be judged.
-  const nodes = parseComponents(text, { offset: 0, line: position.line, column: position.col });
-  if (!nodes) return [];
+  const nodes = parseComponents(text, { offset: 0, line: position.line, column: position.column });
+  if (!nodes) return diagnostics;
+  checkReferences(nodes, context, diagnostics);
+  if (custom) return diagnostics;
 
-  const diagnostics: Diagnostic[] = [];
-  for (const { category, part } of active) {
-    const restriction = restrictions.get(category);
-    if (restriction) checkPart(part, nodes, { file, text, restriction, diagnostics });
+  const parts = (PARTS_BY_PROPERTY.get(name) ?? PARTS_BY_PROPERTY.get(basename) ?? []).filter(
+    ({ category }) => context.restrictions.has(category),
+  );
+  const whole = parts.filter(({ part }) => WHOLE_VALUE_PARTS.has(part));
+  for (const { category, part } of whole.length > 0 ? whole : parts) {
+    const restriction = context.restrictions.get(category);
+    if (restriction) checkPart(part, nodes, { context, text, restriction, diagnostics });
   }
   return diagnostics;
 }
 
 /**
- * The value of a custom property is free, but a module that declared one under
- * a name a list covers could feed any raw value through that list. Those names
- * are the design system's.
+ * The value of a custom property is free, but its name is not. A module that
+ * declared a token name could feed any raw value through it, and one that
+ * declared an internal name would change the design system from inside. In
+ * the global CSS, a mode may only override a name declared at `:root`.
  */
 function checkDeclaredName(
   name: string,
   start: SourcePosition,
-  restrictions: Map<TokenCategory, Restriction>,
-  file: string,
+  node: Declaration | AtRule,
+  context: Context,
 ): Diagnostic[] {
-  return [...restrictions.values()]
-    .filter((restriction) => restriction.reserves(name))
-    .map(({ category }) => ({
-      file,
+  const report = (rule: string, message: string): Diagnostic[] => [
+    {
+      file: context.file,
       line: start.line,
       column: start.column,
       endLine: start.line,
       endColumn: start.column + name.length,
-      rule: `${RULE_PREFIX}${category}`,
-      message: `${name} is a ${category} token name and cannot be declared here; rename the custom property`,
-    }));
+      rule,
+      message,
+    },
+  ];
+  if (context.global) {
+    if (context.tokens.has(name) || declaresToken(node, context.global.conditional)) return [];
+    return report(UNDECLARED, `${name} is not declared at :root; a mode can only override a token`);
+  }
+  const category = categoryOf(name);
+  if (category && context.restrictions.has(category)) {
+    return report(
+      `${RULE_PREFIX}${category}`,
+      `${name} is a ${category} token name and cannot be declared here; rename the custom property`,
+    );
+  }
+  if (!category && context.tokens.has(name)) {
+    return report(
+      INTERNAL,
+      `${name} is internal to the global CSS and cannot be declared here; rename the custom property`,
+    );
+  }
+  return [];
+}
+
+/**
+ * Report each var() of a token name the global CSS does not declare, which is
+ * most likely a typo, and, outside the global CSS, of an internal name.
+ */
+function checkReferences(
+  nodes: CssTree.CssNode[],
+  context: Context,
+  diagnostics: Diagnostic[],
+): void {
+  for (const node of nodes) {
+    walk(node, (child: CssTree.CssNode) => {
+      if (child.type !== "Function" || child.name.toLowerCase() !== "var") return;
+      const reference = child.children.first;
+      if (reference?.type === "Identifier") {
+        const { name } = reference;
+        const category = categoryOf(name);
+        if (category && context.restrictions.has(category) && !context.tokens.has(name)) {
+          const suggestion = closestToken(name, category, context.tokens);
+          const message = `${name} is not defined in the global CSS${suggestion ? `; did you mean ${suggestion}?` : ""}`;
+          diagnostics.push(
+            ...diagnosticAt(context.file, child, child, `${RULE_PREFIX}${category}`, message),
+          );
+        } else if (!category && !context.global && context.tokens.has(name)) {
+          const message = `${name} is internal to the global CSS; use a token with a category prefix`;
+          diagnostics.push(...diagnosticAt(context.file, child, child, INTERNAL, message));
+        }
+      }
+      checkReferences(fallbackOf(child), context, diagnostics);
+    });
+  }
+}
+
+/** The declared token of the category nearest to a misspelt name, within two edits. */
+function closestToken(
+  name: string,
+  category: TokenCategory,
+  tokens: Map<string, Token>,
+): string | null {
+  let closest: string | null = null;
+  let best = 3;
+  for (const token of tokens.values()) {
+    if (token.category !== category) continue;
+    const distance = editDistance(name, token.name);
+    if (distance < best) {
+      best = distance;
+      closest = token.name;
+    }
+  }
+  return closest;
+}
+
+/** Optimal string alignment distance: a swap of two neighbours counts as one edit. */
+function editDistance(a: string, b: string): number {
+  const rows = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        rows[i][j] = Math.min(rows[i][j], rows[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return rows[a.length][b.length];
 }
 
 function checkPart(part: ValuePart, nodes: CssTree.CssNode[], scope: Scope): void {
@@ -528,13 +608,20 @@ function checkTimes(nodes: CssTree.CssNode[], scope: Scope): void {
   }
 }
 
-/** Report a `var()` whose custom property the category does not allow. */
+/**
+ * Report a `var()` of a custom property that is not a token of the category.
+ * A name of the category the global CSS does not declare, and outside the
+ * global CSS an internal name, are left to `checkReferences`.
+ */
 function checkToken(node: CssTree.FunctionNode, scope: Scope): void {
   const name = node.children.first;
-  if (name?.type === "Identifier" && !scope.restriction.allows(name.name)) {
-    const { category, hint } = scope.restriction;
-    report(scope, node, node, `${name.name} is not a ${category} token; ${hint}`);
-  }
+  if (name?.type !== "Identifier") return;
+  const { category, hint } = scope.restriction;
+  const own = categoryOf(name.name);
+  if (own === category) return;
+  const { tokens, global } = scope.context;
+  if (own === null && !global && tokens.has(name.name)) return;
+  report(scope, node, node, `${name.name} is not a ${category} token; ${hint}`);
 }
 
 /** The components of the fallback of a `var()`, which css-tree keeps as raw text. */
@@ -544,9 +631,10 @@ function fallbackOf(node: CssTree.FunctionNode): CssTree.CssNode[] {
   return parseComponents(fallback.value, fallback.loc.start) ?? [];
 }
 
+/** Whether the name of a var() says it is a token of the category, declared or misspelt. */
 function allowsReference(node: CssTree.FunctionNode, scope: Scope): boolean {
   const name = node.children.first;
-  return name?.type === "Identifier" && scope.restriction.allows(name.name);
+  return name?.type === "Identifier" && categoryOf(name.name) === scope.restriction.category;
 }
 
 function reportRaw(scope: Scope, first: CssTree.CssNode, last: CssTree.CssNode = first): void {
@@ -562,16 +650,29 @@ function report(
   last: CssTree.CssNode,
   message: string,
 ): void {
-  if (!first.loc || !last.loc) return;
-  scope.diagnostics.push({
-    file: scope.file,
-    line: first.loc.start.line,
-    column: first.loc.start.column,
-    endLine: last.loc.end.line,
-    endColumn: last.loc.end.column,
-    rule: `${RULE_PREFIX}${scope.restriction.category}`,
-    message,
-  });
+  const rule = `${RULE_PREFIX}${scope.restriction.category}`;
+  scope.diagnostics.push(...diagnosticAt(scope.context.file, first, last, rule, message));
+}
+
+function diagnosticAt(
+  file: string,
+  first: CssTree.CssNode,
+  last: CssTree.CssNode,
+  rule: string,
+  message: string,
+): Diagnostic[] {
+  if (!first.loc || !last.loc) return [];
+  return [
+    {
+      file,
+      line: first.loc.start.line,
+      column: first.loc.start.column,
+      endLine: last.loc.end.line,
+      endColumn: last.loc.end.column,
+      rule,
+      message,
+    },
+  ];
 }
 
 function parseComponents(
