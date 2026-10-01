@@ -1,5 +1,5 @@
 export { checkCss, checkGlobalCss } from "./check.js";
-export { defineConfig, loadConfig } from "./config.js";
+export { configFile, defineConfig, loadConfig } from "./config.js";
 export type { Config } from "./config.js";
 export { analyzeCss } from "./css.js";
 export type {
