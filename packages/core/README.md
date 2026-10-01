@@ -1,6 +1,6 @@
 # @better-css-modules/core
 
-Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
+Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, pure CSS Modules and design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
 
 ## Install
 
@@ -81,9 +81,9 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 `composes` counts: a composed class is used whenever the composing class is, including across files named by `from`.
 
-### Token checks
+### Pure and token checks
 
-`checkCss(analysis, config)` holds the declarations of one analyzed file to the categories `config.tokens` restricts and returns `Diagnostic[]` sorted by position. It is a pure function: it reads nothing but its arguments, so it runs the same from the CLI, a plugin or a test.
+`checkCss(analysis, config)` holds one analyzed file to the pure rules and to the categories `config.tokens` restricts, and returns `Diagnostic[]` sorted by position. It is a pure function: it reads nothing but its arguments, so it runs the same from the CLI, a plugin or a test.
 
 ```ts
 import { analyzeCss, checkCss, defineConfig } from "@better-css-modules/core";
@@ -95,10 +95,11 @@ checkCss(analysis, config);
 //       message: "#fff is a raw value for color; use a --fg-* token", ... }]
 ```
 
+- `pure/selector`, `pure/subject`, `pure/global`, `pure/id`, `pure/important` and `pure/at-rule`, always: a selector or subject without a local class, `:global`, an id, `!important`, a global-only at-rule such as `@font-face`
 - `tokens/<category>` at a raw value, at a `var()` of a custom property the category does not allow, or at a custom property declared under a name the category's list covers
-- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason or with an unknown rule
+- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason, with an unknown rule, or naming `pure/selector`
 
-`tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. What passes, what is reported and the table itself are described in the [project README](../../README.md#token-enforcement). `checkCss` throws for a category the table does not define.
+`tokenCategories` is the table the token check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. The rules are described in the project README: [pure CSS Modules](../../README.md#pure-css-modules) and [token enforcement](../../README.md#token-enforcement). `checkCss` throws for a category the table does not define.
 
 ### Diagnostics
 
