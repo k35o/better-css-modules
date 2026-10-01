@@ -490,7 +490,7 @@ function startOf(node: Node): SourcePosition {
 }
 
 /** Where an at-rule's params begin: after `@name` and the whitespace that follows it. */
-function paramsStart(atRule: AtRule): SourcePosition {
+export function paramsStart(atRule: AtRule): SourcePosition {
   const start = startOf(atRule);
   const afterName = atRule.raws.afterName ?? "";
   const lastBreak = afterName.lastIndexOf("\n");

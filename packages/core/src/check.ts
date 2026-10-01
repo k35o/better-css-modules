@@ -2,7 +2,7 @@ import picomatch from "picomatch";
 import type { AtRule, Declaration } from "postcss";
 import type * as CssTree from "css-tree";
 import type { Config } from "./config.js";
-import type { CssModuleAnalysis } from "./css.js";
+import { type CssModuleAnalysis, paramsStart, type SourcePosition } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import {
@@ -123,6 +123,8 @@ interface Restriction {
   percentages: boolean;
   /** Whether a custom property is a token the config accepts for the category. */
   allows: (name: string) => boolean;
+  /** Whether a list covers the name, which makes it a token and not a module's to declare. */
+  reserves: (name: string) => boolean;
   /** What to write instead, for messages. */
   hint: string;
 }
@@ -151,18 +153,29 @@ type Arithmetic = "none" | "raw" | "token";
  *
  * In a property of a restricted category only tokens the config allows, the
  * category's keywords and arithmetic on tokens pass; raw values and other
- * custom properties are reported. Pure: reads nothing but its arguments.
+ * custom properties are reported, and so is a custom property declared under
+ * a name a list covers. Pure: reads nothing but its arguments.
  */
 export function checkCss(analysis: CssModuleAnalysis, config: Config): Diagnostic[] {
   const restrictions = restrictionsOf(config.tokens);
   const diagnostics: Diagnostic[] = [];
   const disabled = collectDisabled(analysis, diagnostics);
+  const keep = (line: number | undefined, found: Diagnostic[]) => {
+    const rules = disabled.get(line ?? 0);
+    diagnostics.push(...found.filter((diagnostic) => !rules?.has(diagnostic.rule)));
+  };
   if (restrictions.size > 0) {
     analysis.root.walkDecls((declaration) => {
-      const rules = disabled.get(declaration.source?.start?.line ?? 0);
-      for (const diagnostic of checkDeclaration(declaration, restrictions, analysis.file)) {
-        if (!rules?.has(diagnostic.rule)) diagnostics.push(diagnostic);
-      }
+      keep(
+        declaration.source?.start?.line,
+        checkDeclaration(declaration, restrictions, analysis.file),
+      );
+    });
+    analysis.root.walkAtRules(/^property$/i, (atRule) => {
+      keep(
+        atRule.source?.start?.line,
+        checkDeclaredName(atRule.params, paramsStart(atRule), restrictions, analysis.file),
+      );
     });
   }
   return sortDiagnostics(diagnostics);
@@ -188,11 +201,13 @@ function restrictionsOf(tokens: TokensConfig): Map<TokenCategory, Restriction> {
       );
     }
     const definition: TokenCategoryDefinition = tokenCategories[category as TokenCategory];
+    const inList = setting === true ? null : picomatch(setting);
     restrictions.set(category as TokenCategory, {
       category: category as TokenCategory,
       keywords: new Set(definition.keywords),
       percentages: definition.percentages ?? false,
-      allows: setting === true ? () => true : picomatch(setting),
+      allows: inList ?? (() => true),
+      reserves: inList ?? (() => false),
       hint: setting === true ? "use a token through var()" : `use a ${setting.join(" / ")} token`,
     });
   }
@@ -258,7 +273,10 @@ function checkDeclaration(
     return [];
   }
   const { name, basename, custom } = property(declaration.prop);
-  if (custom) return [];
+  if (custom) {
+    const start = declaration.source?.start;
+    return start ? checkDeclaredName(declaration.prop, start, restrictions, file) : [];
+  }
   const parts = (PARTS_BY_PROPERTY.get(name) ?? PARTS_BY_PROPERTY.get(basename) ?? []).filter(
     ({ category }) => restrictions.has(category),
   );
@@ -289,6 +307,30 @@ function checkDeclaration(
     if (restriction) checkPart(part, nodes, { file, text, restriction, diagnostics });
   }
   return diagnostics;
+}
+
+/**
+ * The value of a custom property is free, but a module that declared one under
+ * a name a list covers could feed any raw value through that list. Those names
+ * are the design system's.
+ */
+function checkDeclaredName(
+  name: string,
+  start: SourcePosition,
+  restrictions: Map<TokenCategory, Restriction>,
+  file: string,
+): Diagnostic[] {
+  return [...restrictions.values()]
+    .filter((restriction) => restriction.reserves(name))
+    .map(({ category }) => ({
+      file,
+      line: start.line,
+      column: start.column,
+      endLine: start.line,
+      endColumn: start.column + name.length,
+      rule: `${RULE_PREFIX}${category}`,
+      message: `${name} is a ${category} token name and cannot be declared here; rename the custom property`,
+    }));
 }
 
 function checkPart(part: ValuePart, nodes: CssTree.CssNode[], scope: Scope): void {

@@ -332,8 +332,8 @@ describe("checkCss: what passes", () => {
     expect(checkCss(analysis, defineConfig({}))).toEqual([]);
   });
 
-  it("leaves custom property declarations free", () => {
-    const css = ".a { --glow: oklch(0.72 0.17 185 / 0.24); --pad: 13px; --fg-local: red; }";
+  it("leaves the value of a custom property free", () => {
+    const css = ".a { --glow: oklch(0.72 0.17 185 / 0.24); --pad: 13px; }";
     expect(check(css)).toEqual([]);
   });
 
@@ -483,6 +483,69 @@ describe("checkCss: numbers", () => {
 
   it("checks both radii around the slash", () => {
     expect(check(".a { border-radius: var(--radius-md) 0 / 8px; }")).toHaveLength(1);
+  });
+});
+
+// A module that declares `--fg-mine: red` and then uses it would pass the list
+// with a raw value, so the names a list covers are not the module's to declare.
+describe("checkCss: declaring a custom property under a token name", () => {
+  const message = (name: string) =>
+    `tokens/color: ${name} is a color token name and cannot be declared here; rename the custom property`;
+
+  it("reports the declaration at its name", () => {
+    const css = ".a {\n  --fg-mine: red;\n  color: var(--fg-mine);\n}";
+    expect(diagnose(css)).toMatchObject([
+      {
+        file: FILE,
+        rule: "tokens/color",
+        line: 2,
+        column: 3,
+        endLine: 2,
+        endColumn: 12,
+        message:
+          "--fg-mine is a color token name and cannot be declared here; rename the custom property",
+      },
+    ]);
+  });
+
+  it("reports it whatever the value, also for an exact name", () => {
+    expect(check(".a { --bg-base: var(--fg-base); }")).toEqual([message("--bg-base")]);
+    expect(check(":global(.dark) .a { --spacing: 0; }")).toEqual([
+      "tokens/size: --spacing is a size token name and cannot be declared here; rename the custom property",
+    ]);
+  });
+
+  it("reports a registration with @property", () => {
+    const css = '@property --fg-mine { syntax: "<color>"; inherits: false; initial-value: red; }';
+    expect(diagnose(css)).toMatchObject([
+      { rule: "tokens/color", line: 1, column: 11, endColumn: 20 },
+    ]);
+    expect(check(css)).toEqual([message("--fg-mine")]);
+  });
+
+  it("reports the name once for each category whose list covers it", () => {
+    const tokens: TokensConfig = { color: ["--border-*"], radius: ["--border-radius-*"] };
+    expect(check(".a { --border-radius-md: 8px; }", tokens)).toEqual([
+      message("--border-radius-md"),
+      "tokens/radius: --border-radius-md is a radius token name and cannot be declared here; rename the custom property",
+    ]);
+  });
+
+  it("leaves names outside every list free", () => {
+    expect(check(".a { --glow: red; --FG-mine: red; --spacing-2: 8px; }")).toEqual([]);
+    expect(
+      check('@property --glow { syntax: "<color>"; inherits: false; initial-value: red; }'),
+    ).toEqual([]);
+  });
+
+  it("reserves no name for a category set to true", () => {
+    expect(check(".a { --shadow-card: 0 0 4px red; }")).toEqual([]);
+  });
+
+  it("can be silenced like any token rule", () => {
+    const css =
+      ".inverted {\n  /* better-css-modules-disable-next-line tokens/color -- this panel swaps the theme */\n  --fg-base: var(--bg-base);\n}";
+    expect(check(css)).toEqual([]);
   });
 });
 
