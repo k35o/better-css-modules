@@ -2,7 +2,7 @@ import picomatch from "picomatch";
 import type { AtRule, Declaration } from "postcss";
 import type * as CssTree from "css-tree";
 import type { Config } from "./config.js";
-import { type CssModuleAnalysis, paramsStart, type SourcePosition } from "./css.js";
+import { type CssModuleAnalysis, paramsStart, rawValue, type SourcePosition } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import {
@@ -284,19 +284,10 @@ function checkDeclaration(
   const active = whole.length > 0 ? whole : parts;
   if (active.length === 0) return [];
 
-  const start = declaration.source?.start;
-  const between = declaration.raws.between ?? "";
-  // postcss moves the `*` or `_` of a property hack out of `prop` and into
-  // `raws.before`, while the declaration still starts on it.
-  const hack = /[*_]$/.test(declaration.raws.before ?? "") ? 1 : 0;
-  const position = start
-    ? declaration.source?.input.fromOffset(
-        start.offset + hack + declaration.prop.length + between.length,
-      )
-    : null;
-  if (!position) return [];
-  // postcss strips comments from `value`; the raw text keeps positions exact.
-  const text = declaration.raws.value?.raw ?? declaration.value;
+  const value = rawValue(declaration);
+  const position = value ? declaration.source?.input.fromOffset(value.offset) : null;
+  if (!value || !position) return [];
+  const { text } = value;
   // A value css-tree cannot parse (if(), attr() with a type) cannot be judged.
   const nodes = parseComponents(text, { offset: 0, line: position.line, column: position.col });
   if (!nodes) return [];

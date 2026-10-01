@@ -501,6 +501,21 @@ export function paramsStart(atRule: AtRule): SourcePosition {
   return { line: start.line + breaks, column: afterName.length - lastBreak };
 }
 
+/** A declaration's value as written, and the offset in the source where it begins. */
+export function rawValue(declaration: Declaration): { text: string; offset: number } | null {
+  const start = declaration.source?.start;
+  if (!start) return null;
+  // postcss moves the `*` or `_` of a property hack out of `prop` and into
+  // `raws.before`, while the declaration still starts on it.
+  const hack = /[*_]$/.test(declaration.raws.before ?? "") ? 1 : 0;
+  const between = declaration.raws.between ?? "";
+  return {
+    // postcss strips comments from `value`; the raw text keeps positions exact.
+    text: declaration.raws.value?.raw ?? declaration.value,
+    offset: start.offset + hack + declaration.prop.length + between.length,
+  };
+}
+
 function rangeOfNode(node: Node): SourceRange {
   const start = startOf(node);
   const end = node.source?.end;
