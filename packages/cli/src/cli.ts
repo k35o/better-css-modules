@@ -45,7 +45,10 @@ cli
   });
 
 cli
-  .command("check", "Report unused classes and values that bypass the design tokens")
+  .command(
+    "check",
+    "Report unused classes, impure modules and values that bypass the design tokens",
+  )
   .option("--format <format>", "Output format: text or github", { default: "text" })
   .action(async (options: { format: string }) => {
     if (options.format !== "text" && options.format !== "github") {
@@ -56,7 +59,7 @@ cli
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
     // analyzeUsage already reports the files that do not parse; only the ones
-    // that do are checked against the tokens.
+    // that do are checked for purity and against the tokens.
     const { modules } = await loadCssModules(config, cwd);
     const diagnostics = sortDiagnostics([
       ...(await analyzeUsage(config, cwd)),

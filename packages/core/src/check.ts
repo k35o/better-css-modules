@@ -1,10 +1,11 @@
 import picomatch from "picomatch";
-import type { AtRule, Declaration } from "postcss";
+import type { AtRule, Declaration, Node } from "postcss";
 import type * as CssTree from "css-tree";
 import type { Config } from "./config.js";
 import { type CssModuleAnalysis, paramsStart, rawValue, type SourcePosition } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
+import { checkPure, PURE_RULES } from "./pure.js";
 import {
   tokenCategories,
   type TokenCategory,
@@ -148,32 +149,33 @@ type VarReading = "colors" | "one-color" | "unknown";
 type Arithmetic = "none" | "raw" | "token";
 
 /**
- * Check the declarations of a CSS Modules file against the token categories
+ * Check a CSS Modules file against the pure rules and the token categories
  * the config restricts.
  *
- * In a property of a restricted category only tokens the config allows, the
- * category's keywords and arithmetic on tokens pass; raw values and other
- * custom properties are reported, and so is a custom property declared under
- * a name a list covers. Pure: reads nothing but its arguments.
+ * The pure rules always apply: every selector holds a local class, and so does
+ * its subject outside an @scope rooted at one; `:global`, ids, `!important` and
+ * global-only at-rules are reported. In a property of a restricted category
+ * only tokens the config allows, the category's keywords and arithmetic on
+ * tokens pass; raw values and other custom properties are reported, and so is
+ * a custom property declared under a name a list covers. Pure: reads nothing
+ * but its arguments.
  */
 export function checkCss(analysis: CssModuleAnalysis, config: Config): Diagnostic[] {
   const restrictions = restrictionsOf(config.tokens);
   const diagnostics: Diagnostic[] = [];
   const disabled = collectDisabled(analysis, diagnostics);
-  const keep = (line: number | undefined, found: Diagnostic[]) => {
-    const rules = disabled.get(line ?? 0);
+  const keep = (node: Node, found: Diagnostic[]) => {
+    const rules = disabled.get(node.source?.start?.line ?? 0);
     diagnostics.push(...found.filter((diagnostic) => !rules?.has(diagnostic.rule)));
   };
+  checkPure(analysis, keep);
   if (restrictions.size > 0) {
     analysis.root.walkDecls((declaration) => {
-      keep(
-        declaration.source?.start?.line,
-        checkDeclaration(declaration, restrictions, analysis.file),
-      );
+      keep(declaration, checkDeclaration(declaration, restrictions, analysis.file));
     });
     analysis.root.walkAtRules(/^property$/i, (atRule) => {
       keep(
-        atRule.source?.start?.line,
+        atRule,
         checkDeclaredName(atRule.params, paramsStart(atRule), restrictions, analysis.file),
       );
     });
@@ -233,17 +235,12 @@ function collectDisabled(
     const rules = (separator ? body.slice(0, separator.index) : body)
       .split(/[\s,]+/)
       .filter(Boolean);
-    const unknown = rules.filter(
-      (rule) =>
-        !rule.startsWith(RULE_PREFIX) ||
-        !Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length)),
-    );
     const problems =
       reason === ""
         ? ['a disable comment needs a reason: add " -- <why>" after the rule names']
         : rules.length === 0
           ? ["a disable comment must name the rules it disables, such as tokens/color"]
-          : unknown.map((rule) => `unknown rule "${rule}" in a disable comment`);
+          : rules.flatMap(problemsSilencing);
     for (const message of problems) {
       diagnostics.push({
         file: analysis.file,
@@ -261,6 +258,20 @@ function collectDisabled(
     disabled.set(line, new Set([...(disabled.get(line) ?? []), ...rules]));
   });
   return disabled;
+}
+
+/** What is wrong with naming a rule in a disable comment, if anything. */
+function problemsSilencing(rule: string): string[] {
+  // Turbopack builds some of these selectors (`:root`, `html`), so the build
+  // does not stop them; this rule is the one place that does.
+  if (rule === "pure/selector") {
+    return [
+      "pure/selector cannot be disabled: a selector without a local class styles the page, which is the global CSS's job",
+    ];
+  }
+  const isToken =
+    rule.startsWith(RULE_PREFIX) && Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length));
+  return isToken || PURE_RULES.has(rule) ? [] : [`unknown rule "${rule}" in a disable comment`];
 }
 
 function checkDeclaration(

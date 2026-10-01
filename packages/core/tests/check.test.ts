@@ -17,8 +17,10 @@ const designSystem: TokensConfig = {
 
 const COLOR_HINT = "use a --fg-* / --bg-* / --border-* token";
 
+/** The diagnostics of token rules and disable comments; pure.test.ts covers the pure rules. */
 function diagnose(css: string, tokens: TokensConfig = designSystem) {
-  return checkCss(analyzeCss(css, FILE), defineConfig({ tokens }));
+  const diagnostics = checkCss(analyzeCss(css, FILE), defineConfig({ tokens }));
+  return diagnostics.filter((d) => !d.rule.startsWith("pure/"));
 }
 
 /** `rule: message` of every diagnostic, in source order. */
