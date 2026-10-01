@@ -18,7 +18,6 @@ A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` 
 | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
 | [@better-css-modules/core](./packages/core)           | Analysis, type generation, unused-class detection, token checks, watcher, config |
 | [@better-css-modules/cli](./packages/cli)             | `generate` and `check` commands                                                  |
-| [@better-css-modules/unplugin](./packages/unplugin)   | Shared unplugin factory behind the bundler plugins                               |
 | [@better-css-modules/vite](./packages/vite)           | Vite plugin                                                                      |
 | [@better-css-modules/webpack](./packages/webpack)     | webpack plugin                                                                   |
 | [@better-css-modules/rollup](./packages/rollup)       | Rollup plugin                                                                    |

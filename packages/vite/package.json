@@ -24,9 +24,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-css-modules/unplugin": "workspace:*"
+    "@better-css-modules/core": "workspace:*",
+    "unplugin": "3.0.0"
   },
   "devDependencies": {
+    "@better-css-modules/unplugin": "workspace:*",
     "vite": "catalog:"
   },
   "peerDependencies": {

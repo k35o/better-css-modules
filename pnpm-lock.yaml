@@ -149,30 +149,48 @@ importers:
 
   packages/esbuild:
     dependencies:
+      '@better-css-modules/core':
+        specifier: workspace:*
+        version: link:../core
+      unplugin:
+        specifier: 3.0.0
+        version: 3.0.0
+    devDependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
 
   packages/rollup:
     dependencies:
+      '@better-css-modules/core':
+        specifier: workspace:*
+        version: link:../core
+      unplugin:
+        specifier: 3.0.0
+        version: 3.0.0
+    devDependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
       rollup:
         specifier: 4.63.4
         version: 4.63.4
 
   packages/rspack:
     dependencies:
+      '@better-css-modules/core':
+        specifier: workspace:*
+        version: link:../core
+      unplugin:
+        specifier: 3.0.0
+        version: 3.0.0
+    devDependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
-    devDependencies:
       '@rspack/core':
         specifier: 2.2.6
         version: 2.2.6(@swc/helpers@0.5.23)
@@ -198,19 +216,32 @@ importers:
 
   packages/vite:
     dependencies:
-      '@better-css-modules/unplugin':
+      '@better-css-modules/core':
         specifier: workspace:*
-        version: link:../unplugin
+        version: link:../core
+      unplugin:
+        specifier: 3.0.0
+        version: 3.0.0
       vite:
         specifier: npm:@voidzero-dev/vite-plus-core@1.0.0
         version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.12.0)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.51.2)(typescript@7.0.2)'
-
-  packages/webpack:
-    dependencies:
+    devDependencies:
       '@better-css-modules/unplugin':
         specifier: workspace:*
         version: link:../unplugin
+
+  packages/webpack:
+    dependencies:
+      '@better-css-modules/core':
+        specifier: workspace:*
+        version: link:../core
+      unplugin:
+        specifier: 3.0.0
+        version: 3.0.0
     devDependencies:
+      '@better-css-modules/unplugin':
+        specifier: workspace:*
+        version: link:../unplugin
       webpack:
         specifier: 5.111.1
         version: 5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.23)(sharp@0.35.3(@types/node@24.12.0))
@@ -4594,7 +4625,7 @@ snapshots:
   unplugin@3.0.0:
     dependencies:
       '@jridgewell/remapping': 2.3.5
-      picomatch: 4.0.4
+      picomatch: 4.0.7
       webpack-virtual-modules: 0.6.2
 
   update-browserslist-db@1.3.3(browserslist@4.29.0):

@@ -17,5 +17,10 @@ export default defineConfig({
     },
     dts: true,
     format: ["esm"],
+    deps: {
+      // The shared plugin factory is a private workspace package, so it cannot be
+      // a runtime dependency of a published one; it ships inside this bundle.
+      alwaysBundle: ["@better-css-modules/unplugin"],
+    },
   },
 });
