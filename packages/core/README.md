@@ -110,6 +110,7 @@ checkCss(analysis, globalCss);
 ```
 
 - `tokens/<category>` at a raw value, at a `var()` of a custom property that is not a token of the category, at a token name the global CSS does not declare, or at a custom property a module declares under a token name
+- `tokens/breakpoint` at a width in an `@media` condition that is not the value of a breakpoint token, and at a breakpoint token of the project's global CSS whose value is not one length
 - `tokens/internal` at a module's use or declaration of a name the global CSS declares without a category prefix
 - `tokens/undeclared` at a mode of the global CSS that declares a name `:root` does not
 - `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason or with an unknown rule
