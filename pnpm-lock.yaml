@@ -213,6 +213,10 @@ importers:
       unplugin:
         specifier: 3.0.0
         version: 3.0.0
+    devDependencies:
+      vite:
+        specifier: 'catalog:'
+        version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.12.0)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.51.2)(typescript@7.0.2)'
 
   packages/vite:
     dependencies:
