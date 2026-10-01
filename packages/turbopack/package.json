@@ -26,6 +26,9 @@
   "devDependencies": {
     "next": "16.3.1"
   },
+  "peerDependencies": {
+    "next": "^15.0.0 || ^16.0.0"
+  },
   "engines": {
     "node": ">=24.14.1"
   }
