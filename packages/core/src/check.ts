@@ -1,5 +1,11 @@
 import type { AtRule, Declaration, Root } from "postcss";
 import type * as CssTree from "css-tree";
+import {
+  type Breakpoint,
+  breakpointsOf,
+  checkBreakpointToken,
+  checkMediaQuery,
+} from "./breakpoint.js";
 import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
@@ -131,6 +137,7 @@ interface Context {
   file: string;
   tokens: Map<string, Token>;
   restrictions: Map<TokenCategory, Restriction>;
+  breakpoints: Breakpoint[];
   /** The stylesheet when it belongs to the global CSS, which declares tokens and may use any. */
   global: GlobalCssFile | null;
 }
@@ -193,7 +200,8 @@ function contextOf(file: string, globalCss: GlobalCss, global: GlobalCssFile | n
       hint: `use a --${category}-* token`,
     });
   }
-  return { file, tokens: globalCss.tokens, restrictions, global };
+  const breakpoints = breakpointsOf(globalCss.tokens);
+  return { file, tokens: globalCss.tokens, restrictions, breakpoints, global };
 }
 
 function checkRoot(root: Root, context: Context): Diagnostic[] {
@@ -213,6 +221,18 @@ function checkRoot(root: Root, context: Context): Diagnostic[] {
         checkDeclaredName(atRule.params, paramsStart(atRule), atRule, context),
       );
     });
+  }
+  if (context.restrictions.has("breakpoint")) {
+    root.walkAtRules(/^media$/i, (atRule) => {
+      keep(atRule.source?.start?.line, checkMediaQuery(atRule, context.breakpoints, context.file));
+    });
+  }
+  if (context.global) {
+    for (const token of context.tokens.values()) {
+      if (token.file === context.file) {
+        keep(token.node.source?.start?.line, checkBreakpointToken(token));
+      }
+    }
   }
   return sortDiagnostics(diagnostics);
 }

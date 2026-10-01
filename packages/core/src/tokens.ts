@@ -162,6 +162,12 @@ export const tokenCategories = {
     },
     keywords: ["auto"],
   },
+  // A media query cannot use var(); its widths are held to the values of these
+  // tokens instead (breakpoint.ts).
+  breakpoint: {
+    properties: {},
+    keywords: [],
+  },
 } satisfies Record<string, TokenCategoryDefinition>;
 
 export type TokenCategory = keyof typeof tokenCategories;
