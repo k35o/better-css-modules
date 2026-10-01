@@ -35,4 +35,5 @@ export type {
   ValuePart,
 } from "./tokens.js";
 export { analyzeUsage } from "./usage.js";
+export type { UsageResult } from "./usage.js";
 export { startWatcher } from "./watcher.js";

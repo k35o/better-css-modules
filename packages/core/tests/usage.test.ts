@@ -45,7 +45,7 @@ function summarize(real: string, diagnostics: Diagnostic[]) {
 
 async function analyze(files: Record<string, string>) {
   const { dir, real } = await project(files);
-  return summarize(real, await analyzeUsage(config, dir));
+  return summarize(real, (await analyzeUsage(config, dir)).diagnostics);
 }
 
 describe("analyzeUsage", () => {
@@ -68,7 +68,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nexport const A = () => <div className={styles.used} />;",
     });
-    const [diagnostic] = await analyzeUsage(config, dir);
+    const [diagnostic] = (await analyzeUsage(config, dir)).diagnostics;
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.module.css"),
       line: 2,
@@ -85,7 +85,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nconst 見出し = 'a';\nexport const A = () => <div className={styles[見出し]} />;",
     });
-    const [diagnostic] = await analyzeUsage(config, dir);
+    const [diagnostic] = (await analyzeUsage(config, dir)).diagnostics;
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.tsx"),
       line: 3,
@@ -155,6 +155,19 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
     });
-    expect(await analyzeUsage(config, dir)).toMatchObject([{ rule: "syntax", line: 1, column: 1 }]);
+    expect((await analyzeUsage(config, dir)).diagnostics).toMatchObject([
+      { rule: "syntax", line: 1, column: 1 },
+    ]);
+  });
+
+  it("returns the analyses of the stylesheets that parse, at their real paths", async () => {
+    const { dir, real } = await project({
+      "a.module.css": ".a {}",
+      "b.module.css": ".b { color: red;",
+      "a.tsx":
+        "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
+    });
+    const { modules } = await analyzeUsage(config, dir);
+    expect(modules.map((analysis) => analysis.file)).toEqual([path.join(real, "a.module.css")]);
   });
 });

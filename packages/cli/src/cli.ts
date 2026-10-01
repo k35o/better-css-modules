@@ -9,7 +9,6 @@ import {
   formatGitHubAnnotation,
   generateAll,
   loadConfig,
-  loadCssModules,
   sortDiagnostics,
   startWatcher,
 } from "@better-css-modules/core";
@@ -55,12 +54,10 @@ cli
     }
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
-    // analyzeUsage already reports the files that do not parse; only the ones
-    // that do are checked against the tokens.
-    const { modules } = await loadCssModules(config, cwd);
+    const usage = await analyzeUsage(config, cwd);
     const diagnostics = sortDiagnostics([
-      ...(await analyzeUsage(config, cwd)),
-      ...modules.flatMap((analysis) => checkCss(analysis, config)),
+      ...usage.diagnostics,
+      ...usage.modules.flatMap((analysis) => checkCss(analysis, config)),
     ]);
 
     if (diagnostics.length === 0) {
