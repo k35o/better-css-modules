@@ -1,6 +1,6 @@
 # @better-css-modules/core
 
-Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
+Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, pure CSS Modules and design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
 
 ## Install
 
@@ -83,7 +83,7 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 `modules` holds the analysis of every included CSS file that parses, at its real path, so `checkCss` can run on them without parsing the files again.
 
-### Token checks
+### Pure and token checks
 
 `loadGlobalCss(config, cwd)` reads the stylesheets `config.globalCss` lists, follows their `@import` and returns a `GlobalCss`: the stylesheets in cascade order and the tokens they declare. It throws when a stylesheet cannot be resolved or parsed, is not standard CSS, imports itself, or is also an included CSS module. Each `Token` holds:
 
@@ -95,7 +95,7 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 | `file`     | The stylesheet of the declaration the value comes from                                                  |
 | `node`     | That declaration as a postcss node: the last one at `:root`, or the `@property` rule when there is none |
 
-`checkCss(analysis, globalCss)` holds the declarations of one analyzed module to the tokens, and `checkGlobalCss(globalCss)` checks the project's own stylesheets of the global CSS. Both return `Diagnostic[]` sorted by position and are pure functions: they read nothing but their arguments, so they run the same from the CLI, a plugin or a test.
+`checkCss(analysis, globalCss)` holds one analyzed module to the pure rules and the tokens, and `checkGlobalCss(globalCss)` checks the project's own stylesheets of the global CSS, which the pure rules leave alone. Both return `Diagnostic[]` sorted by position and are pure functions: they read nothing but their arguments, so they run the same from the CLI, a plugin or a test.
 
 ```ts
 import { analyzeCss, checkCss, loadConfig, loadGlobalCss } from "@better-css-modules/core";
@@ -109,13 +109,14 @@ checkCss(analysis, globalCss);
 //       message: "--color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?", ... }]
 ```
 
+- `pure/selector`, `pure/subject`, `pure/global`, `pure/id`, `pure/important` and `pure/at-rule` in a module, always: a selector or subject without a local class, `:global`, an id, `!important`, a global-only at-rule such as `@font-face`
 - `tokens/<category>` at a raw value, at a `var()` of a custom property that is not a token of the category, at a token name the global CSS does not declare, or at a custom property a module declares under a token name
 - `tokens/breakpoint` at a width in an `@media` condition that is not the value of a breakpoint token, and at a breakpoint token of the project's global CSS whose value is not one length
 - `tokens/internal` at a module's use or declaration of a name the global CSS declares without a category prefix
 - `tokens/undeclared` at a mode of the global CSS that declares a name `:root` does not
-- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason or with an unknown rule
+- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason, with an unknown rule, or naming `pure/selector`
 
-`tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. `categoryOf(name)` gives the category a custom property name belongs to. What passes, what is reported and the table itself are described in the [project README](../../README.md#token-enforcement).
+`tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. `categoryOf(name)` gives the category a custom property name belongs to. The rules are described in the project README: [pure CSS Modules](../../README.md#pure-css-modules) and [token enforcement](../../README.md#token-enforcement), with the table itself.
 
 ### Diagnostics
 

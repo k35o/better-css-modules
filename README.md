@@ -1,12 +1,13 @@
 # better-css-modules
 
-A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` files for `.module.css`, reports classes nothing uses and holds plain CSS to your design tokens, from one analysis of your CSS and TypeScript.
+A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` files for `.module.css`, reports classes nothing uses, keeps each module pure and holds plain CSS to your design tokens, from one analysis of your CSS and TypeScript.
 
 ## Features
 
 - Extracts the keys a bundler exports from each `.module.css` and writes a `.d.ts` per file
 - Generated types live in one codegen directory (no `.d.ts` files scattered through `src/`)
 - Reports unused classes with `file:line:col`, aggregated across the whole project
+- Keeps each module pure: its selectors style its own classes, with no `:global`, ids, `!important` or global-only at-rules such as `@font-face`
 - Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints
 - Reads CSS with postcss and css-tree, and TypeScript with the oxc parser: `:global`, nesting, `composes`, escaped names, path aliases and re-exports all resolve the way bundlers resolve them
 - Verified against both lightningcss (Turbopack) and postcss-modules (Vite): the generated keys match what either bundler exports
@@ -82,7 +83,7 @@ better-css-modules generate
 # Keep regenerating as files change
 better-css-modules generate --watch
 
-# Report unused classes and values that bypass the design tokens (exit code 1 when any are found)
+# Report unused classes, impure modules and values that bypass the design tokens (exit code 1 when any are found)
 better-css-modules check
 
 # Same, as GitHub Actions annotations
@@ -176,6 +177,63 @@ When usage cannot be determined for a module, the tool reports `unanalyzable-usa
 
 Only ES module syntax in those file types is analyzed: `require()`, and imports from `.vue`, `.svelte`, `.astro` or `.mdx` files, are not seen, so a module used only from there is reported as unused.
 
+## Pure CSS Modules
+
+A `.module.css` holds the styles of one component: they reach only its own classes, and the code that uses the component can override them. `better-css-modules check` holds every CSS module `include` names to that. The stylesheets `globalCss` lists style the page, so they are not held to these rules. The rules always apply; there is no option to turn them off.
+
+```css
+.list > * {
+  margin-block-start: var(--spacing);
+}
+:global(.dark) .list {
+  color: var(--color-fg-base) !important;
+}
+@font-face {
+  font-family: "Inter";
+}
+```
+
+```
+src/list.module.css:1:9 error pure/subject: * is not a local class; style the element through a class of its own, or space children with gap on the parent
+src/list.module.css:4:1 error pure/global: :global(.dark) reaches outside this module; switch modes by overriding tokens instead
+src/list.module.css:5:31 error pure/important: !important defeats overrides from outside the component and the order of @layer
+src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effect only while this module is loaded; move it to the global CSS
+```
+
+| Rule             | Reported at   | What it reports                                                                                                                                                                                                                                                         |
+| ---------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`, `:global(.x)`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)                   |
+| `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                                    |
+| `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`. Modes switch by overriding tokens, not by reaching outside the module                                                                                                                                            |
+| `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                                            |
+| `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                                     |
+| `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@namespace`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS |
+
+- A nested rule is pure through the rule it is nested in, and `&` is a local subject: `.card { &:hover {} }` and `.card { .dark & {} }` pass; `.card { p {} }` is `pure/subject`.
+- A subject is local when it holds a local class (`button.primary:hover`), or is `:is()`, `:where()` or `:nth-child(… of …)` whose every selector has a local subject.
+- A local id makes a selector pure, as it does for bundlers, and `pure/id` reports it. A subject made global or written as an id is reported only as `pure/global` or `pure/id`.
+- `pure/selector` agrees with lightningcss in pure mode; `packages/core/tests/bundler-parity.test.ts` pins this down.
+- `@layer`, `@position-try` and the other at-rules are allowed.
+
+### Markup without classes: `@scope`
+
+Inside an `@scope` rooted at a local class, any element may be the subject. This is for a component that styles HTML it does not write, such as rendered Markdown:
+
+```css
+.prose {
+  @scope {
+    h2 {
+      font-size: var(--font-size-xl);
+    }
+    * + * {
+      margin-block-start: calc(var(--spacing) * 4);
+    }
+  }
+}
+```
+
+The root is the rule the `@scope` is nested in, or the local class of its prelude (`.prose { @scope (.body) to (.aside) { … } }`). Keep the `@scope` nested: bundlers do not count the root of a top-level `@scope (.prose) { p {} }`, so its `p` is reported as `pure/selector`. css-loader (postcss-modules-local-by-default 4.2) also refuses a nested `@scope to (…)` or `@scope (&)`, which Turbopack builds; with css-loader, name the root with a local class.
+
 ## Token enforcement
 
 Design tokens live in plain CSS. List the global stylesheets that declare them, your design system's first and then your own, and `better-css-modules check` holds every CSS module to them.
@@ -259,7 +317,7 @@ These are reported as `tokens/<category>`:
 - A `var()` of a custom property that is not a token of the category: a token of another category, or a custom property declared in the file.
 - A raw value in the fallback of a `var()` (`var(--color-fg-base, red)`).
 - A token name the global CSS does not declare, in any property and in the value of a custom property: most likely a typo. The message names the closest declared token of the category when one is within two edits.
-- A custom property a module declares under a token name of a restricted category (`--color-mine: red`, or `@property --color-mine`), whatever its value. Otherwise a module could declare its own `--color-*` and feed any raw value through the category.
+- A custom property a module declares under a token name of a restricted category (`--color-mine: red`), whatever its value. Otherwise a module could declare its own `--color-*` and feed any raw value through the category. (A module registers no custom property with `@property` at all: that is `pure/at-rule`.)
 
 `tokens/internal` reports a module that uses or declares an internal name, and `tokens/undeclared` a mode that declares a new name.
 
@@ -341,16 +399,21 @@ src/nav.module.css:12:20 error tokens/breakpoint: 768px is not a breakpoint; the
 - `@media` in the project's global CSS is checked like a module's.
 - Not checked: `height` and the other media features, `@container` (the size of a container is the component's, not the page's), `@custom-media`, and the conditions of `@import`.
 
-### Disable comments
+## Disable comments
 
 ```css
+/* better-css-modules-disable-next-line pure/global -- the date picker renders its own markup */
+.calendar :global(.rdp-day) {
+  border-radius: var(--radius-md);
+}
+
 .logo {
   /* better-css-modules-disable-next-line tokens/color -- the brand mark is always white */
   color: #fff;
 }
 ```
 
-The comment silences the rules it names (`tokens/<category>`, `tokens/internal`, `tokens/undeclared`, separated by commas or spaces) for the declaration or `@media` condition that starts on the next line. The reason after `--` is required: a comment without one, without a rule name, or naming a rule that does not exist is reported as `invalid-disable` and silences nothing. There is no file-wide form.
+The comment silences the rules it names (`pure/*`, `tokens/<category>`, `tokens/internal`, `tokens/undeclared`, separated by commas or spaces) for the rule, at-rule or declaration that starts on the next line; above a rule it does not reach the declarations inside it. The reason after `--` is required: a comment without one, without a rule name, or naming a rule that does not exist is reported as `invalid-disable` and silences nothing. `pure/selector` cannot be disabled: a selector without a local class styles the page, which is the global CSS's job, whatever a bundler lets through. There is no file-wide form.
 
 ## TypeScript Setup
 

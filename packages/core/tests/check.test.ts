@@ -33,8 +33,10 @@ const designSystem = globalCssOf(`
 
 const COLOR_HINT = "use a --color-* token";
 
+/** The diagnostics of token rules and disable comments; pure.test.ts covers the pure rules. */
 function diagnose(css: string, globalCss: GlobalCss = designSystem) {
-  return checkCss(analyzeCss(css, FILE), globalCss);
+  const diagnostics = checkCss(analyzeCss(css, FILE), globalCss);
+  return diagnostics.filter((d) => !d.rule.startsWith("pure/"));
 }
 
 /** `rule: message` of every diagnostic, in source order. */
@@ -319,9 +321,6 @@ describe("checkCss: internal names", () => {
     const declared =
       "tokens/internal: --gray-900 is internal to the global CSS and cannot be declared here; rename the custom property";
     expect(check(".a { --gray-900: red; }")).toEqual([declared]);
-    expect(
-      check('@property --gray-900 { syntax: "<color>"; inherits: false; initial-value: red; }'),
-    ).toEqual([declared]);
   });
 
   it("leaves a module's own custom properties free outside the restricted categories", () => {
@@ -584,20 +583,17 @@ describe("checkCss: declaring a custom property under a token name", () => {
     ]);
   });
 
-  it("reports a registration with @property", () => {
+  // A module cannot register any custom property: @property is global.
+  it("leaves a registration with @property to pure/at-rule", () => {
     const css =
       '@property --color-mine { syntax: "<color>"; inherits: false; initial-value: red; }';
-    expect(diagnose(css)).toMatchObject([
-      { rule: "tokens/color", line: 1, column: 11, endColumn: 23 },
+    expect(checkCss(analyzeCss(css, FILE), designSystem)).toMatchObject([
+      { rule: "pure/at-rule", line: 1, column: 1 },
     ]);
-    expect(check(css)).toEqual([message("--color-mine")]);
   });
 
   it("leaves names outside the restricted categories free", () => {
     expect(check(".a { --glow: red; --COLOR-mine: red; --z-index-top: 1; }")).toEqual([]);
-    expect(
-      check('@property --glow { syntax: "<color>"; inherits: false; initial-value: red; }'),
-    ).toEqual([]);
   });
 
   it("can be silenced like any token rule", () => {

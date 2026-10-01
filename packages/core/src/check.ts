@@ -1,4 +1,4 @@
-import type { AtRule, Declaration, Root } from "postcss";
+import type { AtRule, Declaration, Node, Root } from "postcss";
 import type * as CssTree from "css-tree";
 import {
   type Breakpoint,
@@ -10,6 +10,7 @@ import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } 
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { declaresToken, type GlobalCss, type GlobalCssFile, type Token } from "./global.js";
+import { checkPure, PURE_RULES } from "./pure.js";
 import {
   categoryOf,
   tokenCategories,
@@ -161,15 +162,17 @@ type VarReading = "colors" | "one-color" | "unknown";
 type Arithmetic = "none" | "raw" | "token";
 
 /**
- * Check the declarations of a CSS Modules file against the tokens the global
- * CSS declares.
+ * Check a CSS Modules file against the pure rules and the tokens the global CSS
+ * declares.
  *
- * Each category the global CSS declares a token for is restricted: in its
- * properties only its tokens, its keywords and arithmetic on its tokens pass.
- * Anywhere in the file a token name the global CSS does not declare is
- * reported, and so is a name it declares without a category prefix, which is
- * internal to it. A module cannot declare either kind of name. Pure: reads
- * nothing but its arguments.
+ * The pure rules always apply: every selector holds a local class, and so does
+ * its subject outside an @scope rooted at one; `:global`, ids, `!important` and
+ * global-only at-rules are reported. Each category the global CSS declares a
+ * token for is restricted: in its properties only its tokens, its keywords and
+ * arithmetic on its tokens pass. Anywhere in the file a token name the global
+ * CSS does not declare is reported, and so is a name it declares without a
+ * category prefix, which is internal to it. A module cannot declare either kind
+ * of name. Pure: reads nothing but its arguments.
  */
 export function checkCss(analysis: CssModuleAnalysis, globalCss: GlobalCss): Diagnostic[] {
   return checkRoot(analysis.root, contextOf(analysis.file, globalCss, null));
@@ -207,31 +210,29 @@ function contextOf(file: string, globalCss: GlobalCss, global: GlobalCssFile | n
 function checkRoot(root: Root, context: Context): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const disabled = collectDisabled(root, context.file, diagnostics);
-  const keep = (line: number | undefined, found: Diagnostic[]) => {
-    const rules = disabled.get(line ?? 0);
+  const keep = (node: Node, found: Diagnostic[]) => {
+    const rules = disabled.get(node.source?.start?.line ?? 0);
     diagnostics.push(...found.filter((diagnostic) => !rules?.has(diagnostic.rule)));
   };
+  // The global CSS styles the page; only a module is held to the pure rules.
+  if (!context.global) checkPure(root, context.file, keep);
   if (context.tokens.size > 0 || context.global) {
-    root.walkDecls((declaration) => {
-      keep(declaration.source?.start?.line, checkDeclaration(declaration, context));
-    });
+    root.walkDecls((declaration) => keep(declaration, checkDeclaration(declaration, context)));
+  }
+  // In a module pure/at-rule reports every @property, whatever its name.
+  if (context.global) {
     root.walkAtRules(/^property$/i, (atRule) => {
-      keep(
-        atRule.source?.start?.line,
-        checkDeclaredName(atRule.params, paramsStart(atRule), atRule, context),
-      );
+      keep(atRule, checkDeclaredName(atRule.params, paramsStart(atRule), atRule, context));
     });
   }
   if (context.restrictions.has("breakpoint")) {
     root.walkAtRules(/^media$/i, (atRule) => {
-      keep(atRule.source?.start?.line, checkMediaQuery(atRule, context.breakpoints, context.file));
+      keep(atRule, checkMediaQuery(atRule, context.breakpoints, context.file));
     });
   }
   if (context.global) {
     for (const token of context.tokens.values()) {
-      if (token.file === context.file) {
-        keep(token.node.source?.start?.line, checkBreakpointToken(token));
-      }
+      if (token.file === context.file) keep(token.node, checkBreakpointToken(token));
     }
   }
   return sortDiagnostics(diagnostics);
@@ -257,19 +258,12 @@ function collectDisabled(
     const rules = (separator ? body.slice(0, separator.index) : body)
       .split(/[\s,]+/)
       .filter(Boolean);
-    const unknown = rules.filter(
-      (rule) =>
-        rule !== INTERNAL &&
-        rule !== UNDECLARED &&
-        (!rule.startsWith(RULE_PREFIX) ||
-          !Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length))),
-    );
     const problems =
       reason === ""
         ? ['a disable comment needs a reason: add " -- <why>" after the rule names']
         : rules.length === 0
           ? ["a disable comment must name the rules it disables, such as tokens/color"]
-          : unknown.map((rule) => `unknown rule "${rule}" in a disable comment`);
+          : rules.flatMap(problemsSilencing);
     for (const message of problems) {
       diagnostics.push({
         file,
@@ -287,6 +281,23 @@ function collectDisabled(
     disabled.set(line, new Set([...(disabled.get(line) ?? []), ...rules]));
   });
   return disabled;
+}
+
+/** What is wrong with naming a rule in a disable comment, if anything. */
+function problemsSilencing(rule: string): string[] {
+  // Turbopack builds some of these selectors (`:root`, `html`), so the build
+  // does not stop them; this rule is the one place that does.
+  if (rule === "pure/selector") {
+    return [
+      "pure/selector cannot be disabled: a selector without a local class styles the page, which is the global CSS's job",
+    ];
+  }
+  const isToken =
+    rule === INTERNAL ||
+    rule === UNDECLARED ||
+    (rule.startsWith(RULE_PREFIX) &&
+      Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length)));
+  return isToken || PURE_RULES.has(rule) ? [] : [`unknown rule "${rule}" in a disable comment`];
 }
 
 function checkDeclaration(declaration: Declaration, context: Context): Diagnostic[] {
