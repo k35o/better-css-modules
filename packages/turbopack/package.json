@@ -24,6 +24,7 @@
     "@better-css-modules/core": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "24.12.0",
     "next": "16.3.1"
   },
   "peerDependencies": {
