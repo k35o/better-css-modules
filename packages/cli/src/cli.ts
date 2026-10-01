@@ -11,7 +11,6 @@ import {
   generateAll,
   type GlobalCss,
   loadConfig,
-  loadCssModules,
   loadGlobalCss,
   sortDiagnostics,
   startWatcher,
@@ -68,12 +67,10 @@ cli
       process.exitCode = 2;
       return;
     }
-    // analyzeUsage already reports the files that do not parse; only the ones
-    // that do are checked against the tokens.
-    const { modules } = await loadCssModules(config, cwd);
+    const usage = await analyzeUsage(config, cwd);
     const diagnostics = sortDiagnostics([
-      ...(await analyzeUsage(config, cwd)),
-      ...modules.flatMap((analysis) => checkCss(analysis, globalCss)),
+      ...usage.diagnostics,
+      ...usage.modules.flatMap((analysis) => checkCss(analysis, globalCss)),
       ...checkGlobalCss(globalCss),
     ]);
 

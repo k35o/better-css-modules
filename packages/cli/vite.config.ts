@@ -9,6 +9,12 @@ export default defineConfig({
           input: [{ auto: true }, "!dist/**", "!node_modules/**"],
         },
       },
+      test: {
+        command: "vp test",
+        // The tests run the built bin, which loads the built core.
+        dependsOn: ["build", { task: "build", from: "dependencies" }],
+        cache: false,
+      },
     },
   },
   pack: {
@@ -17,4 +23,5 @@ export default defineConfig({
     },
     format: ["esm"],
   },
+  test: {},
 });

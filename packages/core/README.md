@@ -38,7 +38,7 @@ const config = await loadConfig(process.cwd());
 const { written, diagnostics } = await generateAll(config, process.cwd());
 
 // Find unused classes across the project
-const problems = await analyzeUsage(config, process.cwd());
+const { diagnostics: problems } = await analyzeUsage(config, process.cwd());
 for (const problem of problems) {
   console.log(formatDiagnostic(problem, process.cwd()));
   // src/a.module.css:3:1 error unused-class: .title is never used
@@ -73,13 +73,15 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 ### Usage analysis
 
-`analyzeUsage(config, cwd)` parses every source file under `cwd` (except `node_modules`, `.git`, `dist`, `.next` and `outDir`) with oxc, resolves imports with oxc-resolver honouring the nearest `tsconfig.json`, aggregates usage per CSS file and returns `Diagnostic[]` sorted by file and position:
+`analyzeUsage(config, cwd)` parses every source file under `cwd` (except `node_modules`, `.git`, `dist`, `.next` and `outDir`) with oxc, resolves imports with oxc-resolver honouring the nearest `tsconfig.json`, aggregates usage per CSS file and returns `{ diagnostics, modules }`. `diagnostics` are sorted by file and position:
 
 - `unused-class` at the first occurrence of the class in the CSS
 - `unused-module` at line 1 of a CSS file nothing imports
 - `unanalyzable-usage` at the source position where usage stops being static: `styles[expr]`, rest destructuring, dynamic `import()`, or the module object being passed around as a value
 
 `composes` counts: a composed class is used whenever the composing class is, including across files named by `from`.
+
+`modules` holds the analysis of every included CSS file that parses, at its real path, so `checkCss` can run on them without parsing the files again.
 
 ### Token checks
 

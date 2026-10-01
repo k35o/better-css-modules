@@ -31,4 +31,5 @@ export type { LoadResult } from "./project.js";
 export { categoryOf, tokenCategories } from "./tokens.js";
 export type { TokenCategory, TokenCategoryDefinition, ValuePart } from "./tokens.js";
 export { analyzeUsage } from "./usage.js";
+export type { UsageResult } from "./usage.js";
 export { startWatcher } from "./watcher.js";
