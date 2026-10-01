@@ -21,6 +21,9 @@
       "default": "./dist/index.mjs"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@better-css-modules/core": "workspace:*",
     "unplugin": "3.0.0"
