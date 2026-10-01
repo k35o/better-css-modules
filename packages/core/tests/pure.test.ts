@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { checkCss } from "../src/check.js";
-import { defineConfig } from "../src/config.js";
+import postcss from "postcss";
+import { checkCss, checkGlobalCss } from "../src/check.js";
 import { analyzeCss } from "../src/css.js";
+import { globalCssFrom } from "../src/global.js";
 
 const FILE = "/project/src/a.module.css";
 
@@ -13,7 +14,7 @@ const AT_RULE_HINT =
   "is global and takes effect only while this module is loaded; move it to the global CSS";
 
 function diagnose(css: string) {
-  return checkCss(analyzeCss(css, FILE), defineConfig({}));
+  return checkCss(analyzeCss(css, FILE), globalCssFrom([]));
 }
 
 /** `rule: message` of every diagnostic, in source order. */
@@ -332,5 +333,24 @@ describe("checkCss: disable comments for pure rules", () => {
       'invalid-disable: unknown rule "pure/ids" in a disable comment',
       "pure/id: #a is an id; its specificity defeats overrides from outside the component, so use a class",
     ]);
+  });
+});
+
+describe("checkGlobalCss: the global CSS", () => {
+  // It styles the page and defines what modules may not: fonts, registered
+  // properties, modes switched by an ancestor.
+  it("is not held to the pure rules", () => {
+    const file = "/project/src/global.css";
+    const css = [
+      '@font-face { font-family: "Inter"; src: url(inter.woff2); }',
+      '@property --color-accent { syntax: "<color>"; inherits: true; initial-value: red; }',
+      ":root { --color-accent: red; }",
+      ".dark { --color-accent: blue; }",
+      "body > * { margin: 0 !important; }",
+      "#app :global(.x) {}",
+    ].join("\n");
+    const root = postcss.parse(css, { from: file });
+    const globalCss = globalCssFrom([{ file, root, checked: true, conditional: false }]);
+    expect(checkGlobalCss(globalCss).filter((d) => d.rule.startsWith("pure/"))).toEqual([]);
   });
 });

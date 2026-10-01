@@ -6,8 +6,8 @@ import { transform } from "lightningcss";
 import postcss from "postcss";
 import postcssModules from "postcss-modules";
 import { checkCss } from "../src/check.js";
-import { defineConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
+import { globalCssFrom } from "../src/global.js";
 import { cssCases } from "./fixtures/css-cases.js";
 
 // The generated type must list exactly the keys a bundler exports. lightningcss
@@ -115,7 +115,7 @@ describe("pure/selector matches lightningcss's pure mode", () => {
     ".a { @scope (.b) { p {} } }",
     "a { @scope (.b) { p {} } }",
   ])("%s", (css) => {
-    const diagnostics = checkCss(analyzeCss(css, "/x.module.css"), defineConfig({}));
+    const diagnostics = checkCss(analyzeCss(css, "/x.module.css"), globalCssFrom([]));
     const impure = diagnostics.some((diagnostic) => diagnostic.rule === "pure/selector");
     expect(impure).toBe(lightningcssRejectsAsImpure(css));
   });

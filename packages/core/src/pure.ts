@@ -1,6 +1,6 @@
-import type { AtRule, Container, Declaration, Node, Rule } from "postcss";
+import type { AtRule, Container, Declaration, Node, Root, Rule } from "postcss";
 import type * as CssTree from "css-tree";
-import { type CssModuleAnalysis, paramsStart, rawValue, type SourcePosition } from "./css.js";
+import { paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, parse } from "./csstree.js";
 import type { Diagnostic } from "./diagnostic.js";
 
@@ -69,11 +69,11 @@ interface SubjectPart {
  * Check one CSS Module against the pure rules, handing the diagnostics of each
  * rule, at-rule and declaration to `report` with the node they belong to.
  */
-export function checkPure(analysis: CssModuleAnalysis, report: Report): void {
-  const checker: Checker = { file: analysis.file, report };
-  walkContainer(analysis.root, { nested: false, scoped: false, local: true }, checker);
-  analysis.root.walkDecls((declaration) => {
-    if (declaration.important) report(declaration, checkImportant(declaration, analysis.file));
+export function checkPure(root: Root, file: string, report: Report): void {
+  const checker: Checker = { file, report };
+  walkContainer(root, { nested: false, scoped: false, local: true }, checker);
+  root.walkDecls((declaration) => {
+    if (declaration.important) report(declaration, checkImportant(declaration, file));
   });
 }
 
@@ -404,21 +404,23 @@ function checkKeyframesName(atRule: AtRule, file: string): Diagnostic[] {
 }
 
 function checkImportant(declaration: Declaration, file: string): Diagnostic[] {
-  const value = rawValue(declaration);
+  const start = valueStart(declaration);
+  // postcss strips comments from `value`; the raw text keeps positions exact.
+  const value = declaration.raws.value?.raw ?? declaration.value;
   // postcss keeps the flag, with the whitespace and comments around it, apart
   // from the value; it stores the text only when it is not ` !important`.
   const flag = /!\s*important/i.exec(declaration.raws.important ?? " !important");
   const input = declaration.source?.input;
-  if (!value || !flag || !input) return [];
-  const offset = value.offset + value.text.length + flag.index;
-  const start = input.fromOffset(offset);
+  if (!start || !flag || !input) return [];
+  const offset = start.offset + value.length + flag.index;
+  const first = input.fromOffset(offset);
   const end = input.fromOffset(offset + flag[0].length);
-  if (!start || !end) return [];
+  if (!first || !end) return [];
   return [
     {
       file,
-      line: start.line,
-      column: start.col,
+      line: first.line,
+      column: first.col,
       endLine: end.line,
       endColumn: end.col,
       rule: "pure/important",
