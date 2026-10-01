@@ -20,6 +20,30 @@ export default defineConfig({
 });
 ```
 
+## Vite+ with `vite` aliased to its core
+
+The plugin declares `vite` `^7.0.0 || ^8.0.0` as a peer dependency. A Vite+ project that declares `vite` as an alias of the Vite+ core, such as `"vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"` in a catalog, installs a package whose own version is outside that range. pnpm then reports the peer as unmet, as it does for every Vite plugin, and npm stops with `ERESOLVE`. `vp migrate` relaxes the peer for you; if you set up the alias yourself, do the same.
+
+With pnpm, in `pnpm-workspace.yaml`:
+
+```yaml
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: "*"
+```
+
+With npm, override `vite` with the same alias in `package.json`:
+
+```json
+{
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
+  }
+}
+```
+
 ## Options
 
 Options can be passed directly to the plugin or configured via `better-css-modules.config.ts`.
