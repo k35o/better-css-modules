@@ -29,11 +29,8 @@ export function breakpointsOf(tokens: Map<string, Token>): Breakpoint[] {
   const breakpoints: Breakpoint[] = [];
   for (const token of tokens.values()) {
     if (token.category !== "breakpoint") continue;
-    const [node] = token.value;
-    const length = token.value.length === 1 ? lengthOf(node) : null;
-    if (length) {
-      breakpoints.push({ name: token.name, text: generate(node), ...length });
-    }
+    const length = lengthOfToken(token);
+    if (length) breakpoints.push({ name: token.name, text: token.value, ...length });
   }
   return breakpoints;
 }
@@ -83,8 +80,7 @@ export function checkMediaQuery(
  * no media query can be written with it.
  */
 export function checkBreakpointToken(token: Token): Diagnostic[] {
-  const [node] = token.value;
-  if (token.category !== "breakpoint" || (token.value.length === 1 && lengthOf(node))) return [];
+  if (token.category !== "breakpoint" || lengthOfToken(token)) return [];
   const range = token.node.type === "decl" ? valueRange(token.node) : nameRange(token.node);
   if (!range) return [];
   return [
@@ -136,6 +132,18 @@ function problemWith(
       ? `the breakpoints are ${breakpoints.map(({ name, text }) => `${text} (${name})`).join(", ")}`
       : "no --breakpoint-* token is one length";
   return `${raw.replace(/\s+/g, " ")} is not a breakpoint; ${hint}`;
+}
+
+/** The length a token's value is, when it is one. */
+function lengthOfToken(token: Token): Length | null {
+  let value: CssTree.CssNode;
+  try {
+    value = parse(token.value, { context: "value" });
+  } catch {
+    return null;
+  }
+  const nodes = value.type === "Value" ? value.children.toArray() : [];
+  return nodes.length === 1 ? lengthOf(nodes[0]) : null;
 }
 
 /** A length written as one number and unit, or zero. */

@@ -44,12 +44,8 @@ export interface GlobalCssImport {
 export interface Token {
   name: string;
   category: TokenCategory | null;
-  /**
-   * The value, with every var() of another token replaced by that token's
-   * value; empty when css-tree cannot parse it. The nodes carry no positions:
-   * a replaced value comes from another declaration, often another file.
-   */
-  value: CssTree.CssNode[];
+  /** The value as text, with every var() of another token replaced by that token's value. */
+  value: string;
   /** The file of the declaration the value comes from. */
   file: string;
   /**
@@ -142,7 +138,7 @@ export function globalCssFrom(files: GlobalCssFile[]): GlobalCss {
     tokens.set(name, {
       name,
       category: categoryOf(name),
-      value: parseValue(values.get(name) ?? ""),
+      value: values.get(name) ?? "",
       file,
       node,
     });
@@ -257,15 +253,6 @@ function replaceVars(text: string, substitute: (name: string) => string | null):
     result = result.slice(0, start) + replacement + result.slice(end);
   }
   return result;
-}
-
-function parseValue(text: string): CssTree.CssNode[] {
-  try {
-    const value = parse(text, { context: "value" });
-    return value.type === "Value" ? value.children.toArray() : [];
-  } catch {
-    return [];
-  }
 }
 
 /**

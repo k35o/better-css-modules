@@ -5,7 +5,6 @@ import path from "node:path";
 import postcss from "postcss";
 import { checkGlobalCss } from "../src/check.js";
 import { ConfigError, resolveConfig } from "../src/config.js";
-import { generate } from "../src/csstree.js";
 import { type GlobalCss, globalCssFrom, loadGlobalCss } from "../src/global.js";
 import { resolveLayer } from "../src/layer.js";
 
@@ -16,14 +15,9 @@ function read(css: string, { checked = true, conditional = false } = {}): Global
   return globalCssFrom([{ file: GLOBAL, root, checked, conditional, listed: true, imports: [] }]);
 }
 
-/** The value of each token, as css-tree writes it back. */
+/** The value of each token. */
 function values(globalCss: GlobalCss): Record<string, string> {
-  return Object.fromEntries(
-    [...globalCss.tokens.values()].map((token) => [
-      token.name,
-      token.value.map((node) => generate(node)).join(" "),
-    ]),
-  );
+  return Object.fromEntries([...globalCss.tokens.values()].map(({ name, value }) => [name, value]));
 }
 
 describe("globalCssFrom: what declares a token", () => {
@@ -105,11 +99,8 @@ describe("globalCssFrom: values", () => {
     `);
     expect(values(globalCss)).toMatchObject({
       "--breakpoint-md": "48rem",
-      "--color-fg-base": "light-dark(#111,oklch(1 0 0))",
+      "--color-fg-base": "light-dark(#111, oklch(1 0 0))",
     });
-    expect(globalCss.tokens.get("--breakpoint-md")?.value).toMatchObject([
-      { type: "Dimension", value: "48", unit: "rem" },
-    ]);
   });
 
   it("leaves a var() it cannot replace as written", () => {

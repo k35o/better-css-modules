@@ -137,11 +137,8 @@ const ANIMATION_KEYWORDS = new Set([
 ]);
 
 /**
- * Analyze the source of a CSS Modules file.
- *
- * Structure (rules, nesting, at-rules) comes from postcss; selectors, at-rule
- * preludes and values are parsed with css-tree. Throws postcss's
- * `CssSyntaxError` when the stylesheet itself cannot be parsed.
+ * Analyze the source of a CSS Modules file. Throws postcss's `CssSyntaxError`
+ * when the stylesheet itself cannot be parsed.
  */
 export function analyzeCss(source: string, file: string): CssModuleAnalysis {
   const root = postcss.parse(source, { from: file });
