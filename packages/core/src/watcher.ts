@@ -21,8 +21,12 @@ function extractBaseDir(pattern: string): string {
 /**
  * Regenerate `.d.ts` files as the included CSS Modules files change. Callers
  * run `generate` first; the watcher only reacts to changes after that.
+ * Without `persistent`, the watcher does not keep the process alive.
  */
-export function startWatcher(config: ResolvedConfig) {
+export function startWatcher(
+  config: ResolvedConfig,
+  { persistent = true }: { persistent?: boolean } = {},
+) {
   const { root } = config;
   const cwd = process.cwd();
   // chokidar v4+ does not support glob patterns: watch the base directories and
@@ -40,7 +44,7 @@ export function startWatcher(config: ResolvedConfig) {
     return outDir !== root && (resolved === outDir || resolved.startsWith(outDir + path.sep));
   };
 
-  const watcher = watch(baseDirs, { cwd: root, ignoreInitial: true, ignored });
+  const watcher = watch(baseDirs, { cwd: root, ignoreInitial: true, ignored, persistent });
 
   // chokidar with the cwd option emits paths relative to it
   const sync = async (relativePath: string) => {
