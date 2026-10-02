@@ -17,7 +17,13 @@ export type { GlobalCss, GlobalCssFile, GlobalCssImport, Token } from "./global.
 export { formatDiagnostic, formatGitHubAnnotation, sortDiagnostics } from "./diagnostic.js";
 export type { Diagnostic } from "./diagnostic.js";
 export { dtsPathFor, generateAll, generateDts, regenerateDts, removeDts, writeDts } from "./dts.js";
-export type { GenerateResult, OutputOptions, RegenerateResult } from "./dts.js";
+export type {
+  DtsOptions,
+  GenerateResult,
+  GeneratedDts,
+  OutputOptions,
+  RegenerateResult,
+} from "./dts.js";
 export { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "./layer.js";
 export type { Layer, WrapResult } from "./layer.js";
 export {

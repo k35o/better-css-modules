@@ -123,7 +123,7 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       if (!config || !matches) return;
       if (globalFiles.has(id)) globalCss = undefined;
       if (!matches(id)) return;
-      const output = { cwd, outDir: config.outDir };
+      const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
 
       if (change.event === "delete") {
         const dtsPath = await removeDts(id, output);

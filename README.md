@@ -6,6 +6,7 @@ A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` 
 
 - Extracts the keys a bundler exports from each `.module.css` and writes a `.d.ts` per file
 - Generated types live in one codegen directory (no `.d.ts` files scattered through `src/`)
+- Go-to-definition on `styles.container` opens the stylesheet at `.container`, through a declaration map next to each `.d.ts`
 - Reports unused classes with `file:line:col`, aggregated across the whole project
 - Keeps each module pure: its selectors style its own classes, with no `:global`, ids, `!important` or global-only at-rules such as `@font-face`
 - Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints
@@ -60,6 +61,12 @@ export default {
 };
 ```
 
+webpack's css-loader (v7) and Rspack's built-in CSS export each class by name and have no default export. With either, set `namedExports: true` in the [config](#configuration) and import the module as a namespace or by name:
+
+```ts
+import * as styles from "./button.module.css";
+```
+
 ### Next.js (Turbopack)
 
 ```bash
@@ -106,19 +113,21 @@ export default defineConfig({
   outDir: "__generated__",
   watch: false,
   silent: false,
+  namedExports: false,
   globalCss: [],
 });
 ```
 
-| Option      | Type       | Default                   | Description                                                                                                      |
-| ----------- | ---------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `include`   | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                                                                       |
-| `exclude`   | `string[]` | `[]`                      | Glob patterns to exclude                                                                                         |
-| `outDir`    | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                                                                     |
-| `watch`     | `boolean`  | `false`                   | Enable watch mode (CLI only)                                                                                     |
-| `silent`    | `boolean`  | `false`                   | Suppress console output                                                                                          |
-| `globalCss` | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order; see [Token enforcement](#token-enforcement) |
-| `layer`     | `string`   | unset                     | Cascade layer the plugins wrap every module in; see [Cascade layers](#cascade-layers)                            |
+| Option         | Type       | Default                   | Description                                                                                                      |
+| -------------- | ---------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                                                                       |
+| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                                                                         |
+| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                                                                     |
+| `watch`        | `boolean`  | `false`                   | Enable watch mode (CLI only)                                                                                     |
+| `silent`       | `boolean`  | `false`                   | Suppress console output                                                                                          |
+| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export; see [Output Example](#output-example)          |
+| `globalCss`    | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order; see [Token enforcement](#token-enforcement) |
+| `layer`        | `string`   | unset                     | Cascade layer the plugins wrap every module in; see [Cascade layers](#cascade-layers)                            |
 
 ## Output Example
 
@@ -139,9 +148,26 @@ declare const styles: {
   readonly "primary-btn": string;
 };
 export default styles;
+//# sourceMappingURL=button.module.css.d.ts.map
 ```
 
+With `namedExports: true`, the classes are named exports, as webpack's css-loader and Rspack's built-in CSS export them:
+
+```ts
+// __generated__/components/button.module.css.d.ts
+declare const _0: string;
+export { _0 as container };
+declare const _1: string;
+export { _1 as "primary-btn" };
+export declare const __esModule: true;
+//# sourceMappingURL=button.module.css.d.ts.map
+```
+
+`__esModule` makes TypeScript reject `import styles from`, which is `undefined` at runtime under those bundlers; import the module as a namespace (`import * as styles`) or by name (`import { container }`). A class named `default` or `__esModule` is left out of the type: css-loader exports `default` as `_default` while Rspack makes it the default export, so rename it.
+
 The `.d.ts` mirrors the path of the CSS file relative to the project root. Files outside the root are refused rather than written somewhere outside `outDir`.
+
+Next to each `.d.ts` is its declaration map (`button.module.css.d.ts.map`). It ties each key to the selector where the key first appears, so go-to-definition on `styles.container`, or on `container` imported by name, opens the stylesheet at `.container` instead of the generated file.
 
 ## What the type contains
 

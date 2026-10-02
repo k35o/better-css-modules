@@ -27,7 +27,7 @@ export function startWatcher(config: Config, cwd: string = process.cwd()) {
   // filter events with the config's globs.
   const baseDirs = [...new Set(config.include.map(extractBaseDir))];
   const matches = createMatcher(config, cwd);
-  const output = { cwd, outDir: config.outDir };
+  const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
   const log = (message: string) => {
     if (!config.silent) console.log(`[better-css-modules] ${message}`);
   };

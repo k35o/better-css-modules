@@ -50,19 +50,21 @@ export default defineConfig({
   outDir: "__generated__",
   watch: false,
   silent: false,
+  namedExports: false,
   globalCss: [],
 });
 ```
 
-| Option      | Type       | Default                   | Description                                                         |
-| ----------- | ---------- | ------------------------- | ------------------------------------------------------------------- |
-| `include`   | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                          |
-| `exclude`   | `string[]` | `[]`                      | Glob patterns to exclude                                            |
-| `outDir`    | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                        |
-| `watch`     | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
-| `silent`    | `boolean`  | `false`                   | Suppress console output                                             |
-| `globalCss` | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
-| `layer`     | `string`   | unset                     | Cascade layer the plugins wrap every module in                      |
+| Option         | Type       | Default                   | Description                                                         |
+| -------------- | ---------- | ------------------------- | ------------------------------------------------------------------- |
+| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                          |
+| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                            |
+| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                        |
+| `watch`        | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
+| `silent`       | `boolean`  | `false`                   | Suppress console output                                             |
+| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export    |
+| `globalCss`    | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
+| `layer`        | `string`   | unset                     | Cascade layer the plugins wrap every module in                      |
 
 ## License
 

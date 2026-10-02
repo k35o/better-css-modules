@@ -26,12 +26,14 @@ import {
 // Analyze one file: local classes, scoped identifiers, composes, @value,
 // positions and parse problems, all from a single pass.
 const analysis = analyzeCss(".container { color: red; }", "/project/src/a.module.css");
-analysis.exportNames; // => ["container"] — keys of the module's default export
+analysis.exportNames; // => ["container"] — keys the module exports
 analysis.classNames; // => ["container"] — local class names only
 analysis.classes; // => [{ name: "container", range: { start: { line: 1, column: 1 }, ... } }]
 
-// Generate .d.ts content for those keys
-const dts = generateDts(analysis.exportNames);
+// Generate the .d.ts and its declaration map for that file
+const { dts, map } = generateDts(analysis, "/project/__generated__/src/a.module.css.d.ts", {
+  namedExports: false,
+});
 
 // Generate every .d.ts the config includes
 const config = await loadConfig(process.cwd());
@@ -66,9 +68,9 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 ### Type generation
 
-- `generateDts(keys)` renders the `.d.ts` source.
+- `generateDts(analysis, dtsPath, { namedExports })` renders `{ dts, map }`: the `.d.ts` source, with the keys as properties of a default export or as named exports, and its declaration map, which ties each key to where it first appears in the stylesheet.
 - `dtsPathFor(cssFile, { cwd, outDir })` mirrors the path relative to `cwd` under `outDir` and throws for files outside `cwd`.
-- `writeDts(analysis, { cwd, outDir })` / `removeDts(cssFile, { cwd, outDir })` write or delete one file.
+- `writeDts(analysis, { cwd, outDir, namedExports })` writes one `.d.ts` and its map; `removeDts(cssFile, { cwd, outDir })` deletes both.
 - `generateAll(config, cwd)` does it for every included file and returns `{ written, diagnostics }`.
 
 ### Usage analysis
@@ -171,19 +173,21 @@ export default defineConfig({
   outDir: "__generated__",
   watch: false,
   silent: false,
+  namedExports: false,
   globalCss: [],
 });
 ```
 
-| Option      | Type       | Default                   | Description                                                         |
-| ----------- | ---------- | ------------------------- | ------------------------------------------------------------------- |
-| `include`   | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                          |
-| `exclude`   | `string[]` | `[]`                      | Glob patterns to exclude                                            |
-| `outDir`    | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                        |
-| `watch`     | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
-| `silent`    | `boolean`  | `false`                   | Suppress console output                                             |
-| `globalCss` | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
-| `layer`     | `string`   | unset                     | Cascade layer the plugins wrap every module in                      |
+| Option         | Type       | Default                   | Description                                                         |
+| -------------- | ---------- | ------------------------- | ------------------------------------------------------------------- |
+| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                          |
+| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                            |
+| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                        |
+| `watch`        | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
+| `silent`       | `boolean`  | `false`                   | Suppress console output                                             |
+| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export    |
+| `globalCss`    | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
+| `layer`        | `string`   | unset                     | Cascade layer the plugins wrap every module in                      |
 
 ## License
 
