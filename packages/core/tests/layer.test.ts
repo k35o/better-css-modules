@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -266,6 +266,10 @@ describe("resolveLayer", () => {
 });
 
 describe("createLayerWrapper", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   /** A project with the given files, whose config wraps into "components" by `./global.css`. */
   async function projectWith(files: Record<string, string>, config: object = {}) {
     const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "bcm-wrapper-")));
@@ -294,7 +298,18 @@ describe("createLayerWrapper", () => {
     });
     const { order, dependencies } = wrapModule();
     expect(await order).toBe("@layer theme, base, components");
-    expect(dependencies).toEqual([path.join(dir, "theme.css"), path.join(dir, "global.css")]);
+    expect(dependencies).toEqual([path.join(dir, "global.css"), path.join(dir, "theme.css")]);
+  });
+
+  // Turbopack runs the loader of a module that failed again only once a file it depends on changes.
+  it("depends on the files of the global CSS it read before failing to read one", async () => {
+    const { dir, wrapModule } = await projectWith({
+      "global.css": '@import "./theme.css";\n@layer base, components;',
+      "theme.css": ".x {",
+    });
+    const { order, dependencies } = wrapModule();
+    await expect(order).rejects.toThrow("Unclosed block");
+    expect(dependencies).toEqual([path.join(dir, "global.css"), path.join(dir, "theme.css")]);
   });
 
   it("leaves a module as written when the config names no layer", async () => {
@@ -338,6 +353,21 @@ describe("createLayerWrapper", () => {
 
     await touch(1_000_001);
     expect(await wrapModule().order).toBe("@layer reset, components");
+  });
+
+  it("reads the global CSS again when a file is saved just after it was read", async () => {
+    const { dir, wrapModule } = await projectWith({ "global.css": "@layer base, components;" });
+    const file = path.join(dir, "global.css");
+    await fs.utimes(file, 1_000_000, 1_000_000);
+    const readFile = fs.readFile;
+    vi.spyOn(fs, "readFile").mockImplementationOnce(async (...args) => {
+      const content = await readFile(...args);
+      await fs.writeFile(file, "@layer reset, base, components;");
+      await fs.utimes(file, 1_000_001, 1_000_001);
+      return content;
+    });
+    expect(await wrapModule().order).toBe("@layer base, components");
+    expect(await wrapModule().order).toBe("@layer reset, base, components");
   });
 
   it("reads the global CSS again after a read that failed", async () => {

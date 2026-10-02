@@ -85,43 +85,46 @@ export type LayerConfig = ModuleOptions & Pick<ResolvedConfig, "globalCss" | "la
  * files the config includes in the layer it names, and resolves to null for
  * any other file, or for every file when the config names no layer.
  *
- * `depend` receives each file of the global CSS before the layer is resolved,
- * so that the bundler wraps the module again once the layer is declared. The
- * global CSS is read again only after one of its files has changed, and a read
- * that failed is tried again on the next call.
+ * `depend` receives each file of the global CSS it read, also when reading
+ * one failed, before the layer is resolved, so that the bundler wraps the
+ * module again once the file is fixed or the layer declared. The global CSS
+ * is read again only after one of its files has changed, and a read that
+ * failed is tried again on the next call.
  */
 export function createLayerWrapper(
   config: LayerConfig,
 ): (source: string, file: string, depend: (file: string) => void) => Promise<WrapResult | null> {
   const matches = createMatcher(config);
-  let reading: Promise<{ css: GlobalCss; stamps: Map<string, number | null> }> | undefined;
+  /** A read of the global CSS, with the modification time of each file it read. */
+  type Read = { css: Promise<GlobalCss>; stamps: Map<string, number | null> };
+  let last: Read | undefined;
 
-  const read = () => {
-    const promise = loadGlobalCss(config).then((css) => ({
-      css,
-      stamps: new Map(css.files.map(({ file }) => [file, modified(file)])),
-    }));
-    promise.catch(() => {
-      if (reading === promise) reading = undefined;
-    });
-    return promise;
+  const read = (): Read => {
+    const stamps = new Map<string, number | null>();
+    // Stamped before reading, so that a file saved while it is read counts as changed.
+    const css = loadGlobalCss(config, (file) => stamps.set(file, modified(file)));
+    return { css, stamps };
   };
-  const globalCss = async (): Promise<GlobalCss> => {
-    const last = reading;
-    if (last) {
-      const { css, stamps } = await last;
-      if ([...stamps].every(([file, stamp]) => modified(file) === stamp)) return css;
-      if (reading === last) reading = read();
-    }
-    reading ??= read();
-    return (await reading).css;
+  const unchanged = ({ css, stamps }: Read) =>
+    css.then(
+      () => [...stamps].every(([file, stamp]) => modified(file) === stamp),
+      () => false,
+    );
+  const current = async (): Promise<Read> => {
+    const before = last;
+    if (before && (await unchanged(before))) return before;
+    // Calls that waited on the same stale read share the one that replaces it.
+    if (last === undefined || last === before) last = read();
+    return last;
   };
 
   return async (source, file, depend) => {
     if (config.layer === undefined || !matches(file)) return null;
-    const css = await globalCss();
-    for (const { file: dependency } of css.files) depend(dependency);
-    return wrapInLayer(source, file, resolveLayer(config.layer, css));
+    const { css, stamps } = await current();
+    const globalCss = await css.finally(() => {
+      for (const dependency of stamps.keys()) depend(dependency);
+    });
+    return wrapInLayer(source, file, resolveLayer(config.layer, globalCss));
   };
 }
 

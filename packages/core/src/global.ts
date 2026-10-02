@@ -258,12 +258,14 @@ function replaceVars(text: string, substitute: (name: string) => string | null):
 /**
  * Read the global CSS a config lists, following `@import`, and collect its
  * tokens. Throws when a stylesheet cannot be resolved or parsed, imports
- * itself, or is also one of the CSS Modules files.
+ * itself, or is also one of the CSS Modules files. `reading` receives each
+ * stylesheet just before it is read, also when the read then fails.
  */
 export async function loadGlobalCss(
   config: ModuleOptions & Pick<ResolvedConfig, "globalCss">,
+  reading?: (file: string) => void,
 ): Promise<GlobalCss> {
-  const loader = new Loader(config);
+  const loader = new Loader(config, reading);
   for (const entry of config.globalCss) {
     const file = loader.resolve(config.root, entry);
     if (!file) fail(`cannot resolve "${entry}" listed in globalCss`);
@@ -292,7 +294,10 @@ class Loader {
     preferRelative: true,
   });
 
-  constructor(config: ModuleOptions) {
+  constructor(
+    config: ModuleOptions,
+    private readonly reading?: (file: string) => void,
+  ) {
     // The resolver returns real paths, so the project is compared by its real path too.
     this.root = realpathSync(config.root);
     this.isModule = createMatcher({ ...config, root: this.root });
@@ -315,6 +320,7 @@ class Loader {
       fail(`${this.display(file)} is both a CSS module (include) and global CSS (globalCss)`);
     }
 
+    this.reading?.(file);
     let root: Root;
     try {
       root = postcss.parse(await fs.readFile(file, "utf-8"), { from: file });

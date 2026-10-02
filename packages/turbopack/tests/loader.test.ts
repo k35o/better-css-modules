@@ -74,4 +74,13 @@ describe("the Turbopack loader", () => {
     expect(error?.message).toContain('layer "ui" is not declared by the global CSS');
     expect(dependencies).toEqual([path.join(dir, "src/global.css")]);
   });
+
+  it("depends on global CSS it cannot read, to rerun once it is fixed", async () => {
+    await fs.writeFile(path.join(dir, "src/broken.css"), "@layer base, components;\n.x {");
+    const { error, dependencies } = await run("a.module.css", {
+      globalCss: ["./src/broken.css"],
+    });
+    expect(error?.message).toContain("Unclosed block");
+    expect(dependencies).toEqual([path.join(dir, "src/broken.css")]);
+  });
 });
