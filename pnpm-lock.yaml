@@ -126,8 +126,8 @@ importers:
         specifier: 11.24.2
         version: 11.24.2
       picomatch:
-        specifier: ^4.0.4
-        version: 4.0.4
+        specifier: 4.0.7
+        version: 4.0.7
       postcss:
         specifier: 8.5.8
         version: 8.5.8
@@ -142,7 +142,7 @@ importers:
         specifier: 24.12.0
         version: 24.12.0
       '@types/picomatch':
-        specifier: ^4.0.2
+        specifier: 4.0.2
         version: 4.0.2
       lightningcss:
         specifier: 1.33.0
@@ -2617,10 +2617,6 @@ packages:
     resolution: {integrity: sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==}
     engines: {node: '>=8.6'}
 
-  picomatch@4.0.4:
-    resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
-    engines: {node: '>=12'}
-
   picomatch@4.0.7:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
@@ -4645,8 +4641,6 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@2.3.2: {}
-
-  picomatch@4.0.4: {}
 
   picomatch@4.0.7: {}
 
