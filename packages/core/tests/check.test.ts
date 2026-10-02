@@ -134,6 +134,11 @@ describe("checkCss: raw values", () => {
     const css = "@font-face { font-weight: 400 700; }\n@page { margin: 1in; }";
     expect(check(css, declaring("--font-weight-bold", "--spacing"))).toEqual([]);
   });
+
+  it("leaves descriptors in a margin box of @page alone", () => {
+    const css = "@page { @top-center { margin: 13px; color: red; } }";
+    expect(check(css)).toEqual([]);
+  });
 });
 
 describe("checkCss: raw values in shorthands", () => {

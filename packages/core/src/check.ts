@@ -10,7 +10,7 @@ import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } 
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { declaresToken, type GlobalCss, type GlobalCssFile, type Token } from "./global.js";
-import { checkPure, PURE_RULES } from "./pure.js";
+import { checkPure, GLOBAL_AT_RULES, PURE_RULES } from "./pure.js";
 import {
   categoryOf,
   tokenCategories,
@@ -26,17 +26,6 @@ const INTERNAL = "tokens/internal";
 const UNDECLARED = "tokens/undeclared";
 
 const CSS_WIDE_KEYWORDS = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
-
-/** At-rules whose declarations are descriptors rather than properties of an element. */
-const DESCRIPTOR_AT_RULES = new Set([
-  "font-face",
-  "page",
-  "property",
-  "counter-style",
-  "font-palette-values",
-  "view-transition",
-  "color-profile",
-]);
 
 const MATH_FUNCTIONS = new Set([
   "calc",
@@ -301,10 +290,7 @@ function problemsSilencing(rule: string): string[] {
 }
 
 function checkDeclaration(declaration: Declaration, context: Context): Diagnostic[] {
-  const parent = declaration.parent;
-  if (parent?.type === "atrule" && DESCRIPTOR_AT_RULES.has((parent as AtRule).name.toLowerCase())) {
-    return [];
-  }
+  if (isDescriptor(declaration)) return [];
   const diagnostics: Diagnostic[] = [];
   const { name, basename, custom } = property(declaration.prop);
   const start = declaration.source?.start;
@@ -331,6 +317,16 @@ function checkDeclaration(declaration: Declaration, context: Context): Diagnosti
     if (restriction) checkPart(part, nodes, { context, text, restriction, diagnostics });
   }
   return diagnostics;
+}
+
+/** In an at-rule such as @font-face or a margin box of @page, at any depth. */
+function isDescriptor(declaration: Declaration): boolean {
+  for (let node: Node | undefined = declaration.parent; node; node = node.parent) {
+    if (node.type === "atrule" && GLOBAL_AT_RULES.has((node as AtRule).name.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

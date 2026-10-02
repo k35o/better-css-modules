@@ -14,8 +14,12 @@ export const PURE_RULES = new Set([
   "pure/at-rule",
 ]);
 
-/** At-rules that act on the whole document, but only while the module holding them is loaded. */
-const GLOBAL_AT_RULES = new Set([
+/**
+ * At-rules that define something for the whole document, which takes effect
+ * only while the module holding them is loaded. What they hold are
+ * descriptors, not properties of an element.
+ */
+export const GLOBAL_AT_RULES = new Set([
   "font-face",
   "property",
   "import",
