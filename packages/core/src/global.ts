@@ -89,9 +89,6 @@ function isRoot(rule: Rule): boolean {
   return selectors.includes(":root") && selectors.every((s) => s === ":root" || s === ":host");
 }
 
-/** At-rules whose nested at-rules css-tree does not know: margin boxes and feature blocks. */
-const OPAQUE_AT_RULES = new Set(["page", "font-feature-values"]);
-
 /**
  * Whether a node is or sits in an at-rule css-tree does not know, such as
  * Tailwind's `@theme` or `@utility`. That is another tool's syntax, which
@@ -99,12 +96,7 @@ const OPAQUE_AT_RULES = new Set(["page", "font-feature-values"]);
  */
 export function isForeign(node: Node): boolean {
   for (let current: Node | undefined = node; current; current = current.parent) {
-    if (current.type !== "atrule" || lexer.getAtrule((current as AtRule).name)) continue;
-    const parent = current.parent;
-    if (parent?.type === "atrule" && OPAQUE_AT_RULES.has((parent as AtRule).name.toLowerCase())) {
-      continue;
-    }
-    return true;
+    if (current.type === "atrule" && !lexer.getAtrule((current as AtRule).name)) return true;
   }
   return false;
 }

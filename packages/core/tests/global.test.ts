@@ -368,17 +368,6 @@ describe("loadGlobalCss", () => {
     expect([...(await load()).tokens.keys()]).toEqual(["--color-a"]);
   });
 
-  it("accepts the at-rules nested in @page and @font-feature-values", async () => {
-    const { load } = await fixture(
-      {
-        "global.css":
-          '@page { @top-center { content: "x"; } }\n@font-feature-values Font { @styleset { nice: 2; } }',
-      },
-      ["./global.css"],
-    );
-    expect((await load()).files).toHaveLength(1);
-  });
-
   it.each([
     [
       "an entry it cannot resolve",
