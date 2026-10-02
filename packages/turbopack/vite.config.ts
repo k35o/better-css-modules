@@ -12,8 +12,9 @@ export default defineConfig({
       test: {
         command: "vp test",
         // @better-css-modules/core resolves through its dist, which CI does
-        // not build before running the tests.
-        dependsOn: [{ task: "build", from: "dependencies" }],
+        // not build before running the tests, and a test typechecks the
+        // built declarations.
+        dependsOn: ["build", { task: "build", from: "dependencies" }],
         cache: false,
       },
     },

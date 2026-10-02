@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import type { NextConfig } from "next";
-import type { PHASE_TYPE } from "next/constants";
+import type { PHASE_TYPE } from "next/constants.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

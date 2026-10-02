@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import type { PHASE_TYPE } from "next/constants";
+import type { PHASE_TYPE } from "next/constants.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatDiagnostic, generate, loadConfig } from "@better-css-modules/core";
