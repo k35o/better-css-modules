@@ -26,6 +26,8 @@ export interface SourceRange {
 export interface ClassOccurrence {
   name: string;
   range: SourceRange;
+  /** The rule, or the @scope at-rule, whose selector holds it. */
+  node: Rule | AtRule;
 }
 
 /**
@@ -86,6 +88,8 @@ export interface CssModuleAnalysis {
 
 interface Collector {
   file: string;
+  /** The rule or at-rule whose selectors are being visited. */
+  node: Rule | AtRule | null;
   classes: ClassOccurrence[];
   identifiers: ScopedIdentifier[];
   composes: ComposesDeclaration[];
@@ -143,6 +147,7 @@ export function analyzeCss(source: string, file: string): CssModuleAnalysis {
   const root = postcss.parse(source, { from: file });
   const collector: Collector = {
     file,
+    node: null,
     classes: [],
     identifiers: [],
     composes: [],
@@ -188,7 +193,10 @@ function visitRule(rule: Rule, local: boolean, collector: Collector): void {
   let blockLocal = local;
   let singleClass: string | null = null;
   if (trimmed === ":global" || trimmed === ":local") blockLocal = trimmed === ":local";
-  else singleClass = collectSelectorList(selector, startOf(rule), local, collector);
+  else {
+    collector.node = rule;
+    singleClass = collectSelectorList(selector, startOf(rule), local, collector);
+  }
 
   rule.each((child) => {
     if (child.type === "decl" && child.prop.toLowerCase() === "composes") {
@@ -271,7 +279,11 @@ function visitSelector(
   selector.children.forEach((node) => {
     if (node.type === "ClassSelector") {
       if (local && node.loc) {
-        collector.classes.push({ name: ident.decode(node.name), range: rangeOf(node.loc) });
+        collector.classes.push({
+          name: ident.decode(node.name),
+          range: rangeOf(node.loc),
+          node: collector.node!,
+        });
       }
       return;
     }
@@ -369,6 +381,7 @@ function collectScopePrelude(atRule: AtRule, local: boolean, collector: Collecto
     collector.diagnostics.push(syntaxDiagnostic(collector.file, error, base));
     return;
   }
+  collector.node = atRule;
   walk(prelude, {
     visit: "SelectorList",
     enter(node) {

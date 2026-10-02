@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import { parseSync, type ParseResult } from "oxc-parser";
+import type { Node } from "postcss";
 import { ResolverFactory } from "oxc-resolver";
 import { isReferenceIdentifier, ScopeTracker, walk } from "oxc-walker";
 import type { ResolvedConfig } from "./config.js";
@@ -48,6 +49,14 @@ interface ModuleUsage {
 interface Binding {
   css: string;
   namespace: boolean;
+}
+
+/** A usage problem and the CSS Modules file it is about, whose disable comments apply to it. */
+export interface UsageProblem {
+  module: string;
+  /** The node a next-line disable comment must precede, or null when only a file-wide one applies. */
+  node: Node | null;
+  diagnostic: Diagnostic;
 }
 
 interface SourceFile {
@@ -104,7 +113,7 @@ interface ObjectPatternNode extends AstNode {
 export async function analyzeUsage(
   modules: CssModuleAnalysis[],
   config: ResolvedConfig,
-): Promise<Diagnostic[]> {
+): Promise<UsageProblem[]> {
   const root = fs.realpathSync(config.root);
   const byPath = new Map(modules.map((analysis) => [analysis.file, analysis]));
   const usage = new Map<string, ModuleUsage>(
@@ -255,17 +264,21 @@ export async function analyzeUsage(
 
   linkCssReferences(modules, byPath, usage, resolvers);
 
-  const found: Diagnostic[] = [];
+  const found: UsageProblem[] = [];
   const sourcesByPath = new Map(files.map((entry) => [entry.file, entry.source]));
   for (const analysis of modules) {
     const moduleUsage = usage.get(analysis.file)!;
     if (moduleUsage.importers.size === 0) {
       found.push({
-        file: analysis.file,
-        line: 1,
-        column: 1,
-        rule: "usage/unused-module",
-        message: `${rel(analysis.file)} is never imported`,
+        module: analysis.file,
+        node: null,
+        diagnostic: {
+          file: analysis.file,
+          line: 1,
+          column: 1,
+          rule: "usage/unused-module",
+          message: `${rel(analysis.file)} is never imported`,
+        },
       });
       continue;
     }
@@ -273,10 +286,14 @@ export async function analyzeUsage(
       for (const opaque of moduleUsage.opaque) {
         const position = positionAt(sourcesByPath.get(opaque.file) ?? "", opaque.offset);
         found.push({
-          file: opaque.file,
-          ...position,
-          rule: "usage/unanalyzable",
-          message: opaque.message,
+          module: analysis.file,
+          node: null,
+          diagnostic: {
+            file: opaque.file,
+            ...position,
+            rule: "usage/unanalyzable",
+            message: opaque.message,
+          },
         });
       }
       continue;
@@ -288,13 +305,17 @@ export async function analyzeUsage(
     for (const [name, first] of firstOccurrences) {
       if (isUsed(moduleUsage, name)) continue;
       found.push({
-        file: analysis.file,
-        line: first.range.start.line,
-        column: first.range.start.column,
-        endLine: first.range.end.line,
-        endColumn: first.range.end.column,
-        rule: "usage/unused-class",
-        message: `.${name} is never used`,
+        module: analysis.file,
+        node: first.node,
+        diagnostic: {
+          file: analysis.file,
+          line: first.range.start.line,
+          column: first.range.start.column,
+          endLine: first.range.end.line,
+          endColumn: first.range.end.column,
+          rule: "usage/unused-class",
+          message: `.${name} is never used`,
+        },
       });
     }
   }

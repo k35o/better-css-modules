@@ -834,6 +834,67 @@ describe("check", () => {
     ]);
   });
 
+  describe("disable comments for the usage rules", () => {
+    const next = "/* better-css-modules-disable-next-line";
+    const file = "/* better-css-modules-disable";
+    const usedCard = {
+      "src/global.css": "",
+      "src/card.ts": 'import styles from "./card.module.css";\nexport const card = styles.used;\n',
+    };
+
+    it("silences usage/unused-class above the rule of the class's first occurrence", async () => {
+      const dir = await project({
+        ...usedCard,
+        "src/card.module.css": [
+          ".used {}",
+          `${next} usage/unused-class -- the CMS adds these classes */`,
+          ".cms,",
+          ".cms-wide {}",
+          ".used .ghost {}",
+          `${next} usage/unused-class -- a later occurrence */`,
+          ".ghost {}",
+        ].join("\n"),
+      });
+      expect(await run(dir)).toEqual(["src/card.module.css:5:7 usage/unused-class"]);
+    });
+
+    it("silences usage/unused-class and usage/unused-module file-wide", async () => {
+      const dir = await project({
+        ...usedCard,
+        "src/card.module.css": `${file} usage/unused-class -- the CMS adds these classes */\n.used {}\n.cms {}\n`,
+        "src/print.module.css": `${file} usage/unused-module -- loaded by the print preview */\n.page {}\n`,
+      });
+      expect(await run(dir)).toEqual([]);
+    });
+
+    it("leaves usage/unused-module to the file-wide form", async () => {
+      const dir = await project({
+        ...usedCard,
+        "src/card.module.css": ".used {}\n",
+        "src/print.module.css": `${next} usage/unused-module -- loaded by the print preview */\n.page {}\n`,
+      });
+      expect(await run(dir)).toEqual(["src/print.module.css:1:1 usage/unused-module"]);
+    });
+
+    it("silences usage/unanalyzable in the source from the module, counting every class used", async () => {
+      const files = {
+        ...usedCard,
+        "src/card.ts":
+          'import styles from "./card.module.css";\nexport const card = (tone: string) => styles[tone];\n',
+      };
+      const silenced = await project({
+        ...files,
+        "src/card.module.css": `${file} usage/unanalyzable -- the tone comes from the API */\n.loud {}\n.quiet {}\n`,
+      });
+      expect(await run(silenced)).toEqual([]);
+      const nextLine = await project({
+        ...files,
+        "src/card.module.css": `${next} usage/unanalyzable -- the tone comes from the API */\n.loud {}\n`,
+      });
+      expect(await run(nextLine)).toEqual(["src/card.ts:2:39 usage/unanalyzable"]);
+    });
+  });
+
   it("counts the modules and names the token categories it restricts", async () => {
     const dir = await project({
       ...card,

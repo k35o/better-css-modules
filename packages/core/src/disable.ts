@@ -5,8 +5,11 @@ import { problemDisabling } from "./rules.js";
 const DISABLE_NEXT_LINE = "better-css-modules-disable-next-line";
 const DISABLE = "better-css-modules-disable";
 
-/** The diagnostics of `node` that no disable comment silences. */
-export type Keep = (node: Node, found: Diagnostic[]) => Diagnostic[];
+/**
+ * The diagnostics of `node` that no disable comment silences. Those of a null
+ * node can only be silenced file-wide.
+ */
+export type Keep = (node: Node | null, found: Diagnostic[]) => Diagnostic[];
 
 /** The disable comments of one stylesheet. */
 export interface Disabled {
@@ -71,7 +74,7 @@ export function readDisableComments(root: Root, file: string): Disabled {
     byLine.set(line, new Set([...(byLine.get(line) ?? []), ...rules]));
   });
   const keep: Keep = (node, found) => {
-    const rules = byLine.get(node.source?.start?.line ?? 0);
+    const rules = byLine.get(node?.source?.start?.line ?? 0);
     return found.filter(({ rule }) => !fileWide.has(rule) && !rules?.has(rule));
   };
   return { keep, problems };

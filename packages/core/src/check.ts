@@ -11,7 +11,7 @@ import { ConfigError, type ResolvedConfig } from "./config.js";
 import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
-import { readDisableComments } from "./disable.js";
+import { type Keep, readDisableComments } from "./disable.js";
 import {
   declaresToken,
   type GlobalCss,
@@ -30,7 +30,7 @@ import {
   type TokenCategoryDefinition,
   type ValuePart,
 } from "./tokens.js";
-import { analyzeUsage } from "./usage.js";
+import { analyzeUsage, type UsageProblem } from "./usage.js";
 
 const CSS_WIDE_KEYWORDS = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
 
@@ -185,10 +185,17 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
   const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
   // Resolved imports come back as real paths, so the usage analysis needs the modules at theirs.
   const { modules, diagnostics } = await loadCssModules(files.map((file) => fs.realpathSync(file)));
+  const usage = await analyzeUsage(modules, config);
   const found = [
     ...diagnostics,
-    ...(await analyzeUsage(modules, config)),
-    ...modules.flatMap((analysis) => checkCss(analysis, globalCss, layer)),
+    ...modules.flatMap((analysis) =>
+      checkCss(
+        analysis,
+        globalCss,
+        layer,
+        usage.filter(({ module }) => module === analysis.file),
+      ),
+    ),
     ...checkGlobalCss(globalCss),
   ];
   const declared = new Set([...globalCss.tokens.values()].map(({ category }) => category));
@@ -214,14 +221,23 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
  * category prefix, which is internal to it. A module cannot declare either kind
  * of name. `composes` outside a rule of a single local class is reported,
  * which bundlers reject. With a layer, what wrapping the module in it would
- * break is reported too. Pure: reads nothing but its arguments.
+ * break is reported too. The usage problems found about the module are
+ * passed in, so that its disable comments apply to them as well. Pure: reads
+ * nothing but its arguments.
  */
 export function checkCss(
   analysis: CssModuleAnalysis,
   globalCss: GlobalCss,
   layer?: Layer,
+  usage: UsageProblem[] = [],
 ): Diagnostic[] {
-  const diagnostics = checkRoot(analysis.root, contextOf(analysis.file, globalCss, null, layer));
+  const disabled = readDisableComments(analysis.root, analysis.file);
+  const context = contextOf(analysis.file, globalCss, null, layer);
+  const diagnostics = sortDiagnostics([
+    ...disabled.problems,
+    ...checkRoot(analysis.root, context, disabled.keep),
+    ...usage.flatMap(({ node, diagnostic }) => disabled.keep(node, [diagnostic])),
+  ]);
   // In a layer, layer/composes already reports every composes.
   if (layer) return diagnostics;
   const invalid = analysis.composes.filter(({ className }) => className === null);
@@ -248,7 +264,11 @@ export function checkGlobalCss(globalCss: GlobalCss): Diagnostic[] {
   return sortDiagnostics(
     globalCss.files
       .filter(({ checked }) => checked)
-      .flatMap((file) => checkRoot(file.root, contextOf(file.file, globalCss, file))),
+      .flatMap((file) => {
+        const disabled = readDisableComments(file.root, file.file);
+        const context = contextOf(file.file, globalCss, file);
+        return [...disabled.problems, ...checkRoot(file.root, context, disabled.keep)];
+      }),
   );
 }
 
@@ -273,11 +293,10 @@ function contextOf(
   return { file, tokens: globalCss.tokens, restrictions, breakpoints, global, layer };
 }
 
-function checkRoot(root: Root, context: Context): Diagnostic[] {
-  const disabled = readDisableComments(root, context.file);
-  const diagnostics: Diagnostic[] = [...disabled.problems];
+function checkRoot(root: Root, context: Context, disabled: Keep): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
   const keep = (node: Node, found: Diagnostic[]) => {
-    diagnostics.push(...disabled.keep(node, found));
+    diagnostics.push(...disabled(node, found));
   };
   // The global CSS styles the page; only a module is held to the pure rules.
   if (!context.global) checkPure(root, context.file, keep);

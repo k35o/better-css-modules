@@ -13,7 +13,8 @@ async function usageIn(dir: string): Promise<Diagnostic[]> {
   const config = resolveConfig({ include: ["**/*.module.css"] }, dir);
   const files = await Promise.all((await findCssModules(config)).map((file) => fs.realpath(file)));
   const { modules } = await loadCssModules(files);
-  return sortDiagnostics(await analyzeUsage(modules, config));
+  const problems = await analyzeUsage(modules, config);
+  return sortDiagnostics(problems.map(({ diagnostic }) => diagnostic));
 }
 const created: string[] = [];
 
