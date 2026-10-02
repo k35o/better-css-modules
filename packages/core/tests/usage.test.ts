@@ -37,6 +37,7 @@ function summarize(real: string, diagnostics: Diagnostic[]) {
     unanalyzable: diagnostics
       .filter((d) => d.rule === "unanalyzable-usage")
       .map((d) => `${rel(d.file)}:${d.line}:${d.column}`),
+    reasons: diagnostics.filter((d) => d.rule === "unanalyzable-usage").map((d) => d.message),
     other: diagnostics.filter(
       (d) => !["unused-class", "unused-module", "unanalyzable-usage"].includes(d.rule),
     ),
@@ -55,6 +56,9 @@ describe("analyzeUsage", () => {
     expect(summary.orphans).toEqual(orphans ?? []);
     if (unanalyzable) {
       expect(summary.unanalyzable).not.toHaveLength(0);
+      for (const reason of summary.reasons) {
+        expect(reason).toMatch(/^.+, so usage of \S+\.module\.css cannot be determined$/);
+      }
       expect(summary.unused).toEqual([]);
     } else {
       expect(summary.unanalyzable).toEqual([]);
@@ -91,6 +95,8 @@ describe("analyzeUsage", () => {
       line: 3,
       column: 40,
       rule: "unanalyzable-usage",
+      message:
+        "a class is accessed dynamically here, so usage of a.module.css cannot be determined",
     });
   });
 
@@ -147,6 +153,19 @@ describe("analyzeUsage", () => {
     });
     expect(summary.orphans).toEqual([]);
     expect(summary.unanalyzable).toEqual(["a.ts:2:27"]);
+    expect(summary.reasons).toEqual([
+      "the module is imported dynamically here, so usage of a.module.css cannot be determined",
+    ]);
+  });
+
+  it("names `s.default` when the default member of a namespace import escapes", async () => {
+    const summary = await analyze({
+      "a.module.css": ".a {}",
+      "a.ts": "import * as s from './a.module.css';\nexport const all = s.default;",
+    });
+    expect(summary.reasons).toEqual([
+      "s.default escapes as a value here, so usage of a.module.css cannot be determined",
+    ]);
   });
 
   it("surfaces CSS syntax problems alongside usage", async () => {

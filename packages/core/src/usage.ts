@@ -158,7 +158,7 @@ export async function analyzeUsage(
           markOpaque(css, {
             file,
             offset: entry.start,
-            message: `${rel(css)} is re-exported wholesale, so its usage cannot be determined`,
+            message: `the module is re-exported wholesale here, so usage of ${rel(css)} cannot be determined`,
           });
         }
       }
@@ -180,7 +180,7 @@ export async function analyzeUsage(
           markOpaque(css, {
             file,
             offset: entry.start,
-            message: `${rel(css)} is re-exported through another module, so its usage cannot be determined`,
+            message: `the module is re-exported here through another module, so usage of ${rel(css)} cannot be determined`,
           });
         }
       }
@@ -223,7 +223,7 @@ export async function analyzeUsage(
             markOpaque(css, {
               file,
               offset: staticImport.start,
-              message: `${rel(css)} is reached through a namespace import, so its usage cannot be determined`,
+              message: `the module is reached here through a namespace import, so usage of ${rel(css)} cannot be determined`,
             });
           }
           continue;
@@ -246,7 +246,7 @@ export async function analyzeUsage(
       markOpaque(css, {
         file,
         offset: dynamicImport.start,
-        message: `${rel(css)} is imported dynamically, so its usage cannot be determined`,
+        message: `the module is imported dynamically here, so usage of ${rel(css)} cannot be determined`,
       });
     }
     if (result.errors.length > 0) {
@@ -339,11 +339,13 @@ function collectReferences(
 
       const { css } = binding;
       let namespace = binding.namespace;
+      let subject = name;
       let at = throughWrappers(ancestors, ancestors.length - 1);
       let parent = ancestors[at - 1];
       // `s.default` holds what a default import of the module would.
       if (namespace && isObjectOf(parent, ancestors[at]) && staticKeyOf(parent) === "default") {
         namespace = false;
+        subject = `${name}.default`;
         at = throughWrappers(ancestors, at - 1);
         parent = ancestors[at - 1];
       }
@@ -373,7 +375,7 @@ function collectReferences(
         markOpaque(css, {
           file,
           offset: parent.start,
-          message: `dynamic access to ${rel(css)} hides which classes are used`,
+          message: `a class is accessed dynamically here, so usage of ${rel(css)} cannot be determined`,
         });
         return;
       }
@@ -386,7 +388,7 @@ function collectReferences(
               markOpaque(css, {
                 file,
                 offset: property.start,
-                message: `destructuring ${rel(css)} this way hides which classes are used`,
+                message: `the module is destructured here without naming each class, so usage of ${rel(css)} cannot be determined`,
               });
               return;
             }
@@ -398,7 +400,7 @@ function collectReferences(
       markOpaque(css, {
         file,
         offset: node.start,
-        message: `${name} escapes as a value here, so usage of ${rel(css)} cannot be determined`,
+        message: `${subject} escapes as a value here, so usage of ${rel(css)} cannot be determined`,
       });
     },
   });
