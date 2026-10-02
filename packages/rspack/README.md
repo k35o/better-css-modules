@@ -19,6 +19,12 @@ export default {
 };
 ```
 
+Rspack's built-in CSS and css-loader (v7) export each class by name and have no default export. Set `namedExports: true` in `better-css-modules.config.ts`, so that the CLI generates the same types, and import the module as a namespace or by name:
+
+```ts
+import * as styles from "./button.module.css";
+```
+
 ## Options
 
 ```ts
@@ -27,15 +33,17 @@ betterCssModules({
   exclude: [],
   outDir: "__generated__",
   silent: false,
+  namedExports: false,
 });
 ```
 
-| Option    | Type       | Default                   | Description                                  |
-| --------- | ---------- | ------------------------- | -------------------------------------------- |
-| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files   |
-| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                     |
-| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files |
-| `silent`  | `boolean`  | `false`                   | Suppress console output                      |
+| Option         | Type       | Default                   | Description                                                      |
+| -------------- | ---------- | ------------------------- | ---------------------------------------------------------------- |
+| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                       |
+| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                         |
+| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                     |
+| `silent`       | `boolean`  | `false`                   | Suppress console output                                          |
+| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export |
 
 ## License
 
