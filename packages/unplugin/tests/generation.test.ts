@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { UnpluginContextMeta, UnpluginOptions } from "unplugin";
 import { createBuilder } from "vite";
-import { unplugin } from "../src/index.js";
+import { type Options, unplugin } from "../src/index.js";
 
 const created: string[] = [];
 const originalCwd = process.cwd();
@@ -27,8 +27,11 @@ async function writeFiles(dir: string, files: Record<string, string>): Promise<v
   }
 }
 
-function pluginFor(framework: UnpluginContextMeta["framework"]): UnpluginOptions {
-  return unplugin.raw(undefined, { framework } as UnpluginContextMeta) as UnpluginOptions;
+function pluginFor(
+  framework: UnpluginContextMeta["framework"],
+  options?: Options,
+): UnpluginOptions {
+  return unplugin.raw(options, { framework } as UnpluginContextMeta) as UnpluginOptions;
 }
 
 // The hooks do not read their bundler context.
@@ -142,5 +145,19 @@ describe("generating the types", () => {
     await watchChange(plugin, css, "delete");
     await expect(dtsOf(dir, "src/a.module.css")).rejects.toThrow();
     expect(log).toHaveBeenLastCalledWith(`[better-css-modules] removed: ${dts}`);
+  });
+
+  it("reads the config file it is given, resolving against that file's directory", async () => {
+    const dir = await enterProject({
+      "app/better-css-modules.config.mjs": 'export default { include: ["styles/*.module.css"] };\n',
+      "app/styles/a.module.css": ".foo { color: red; }",
+      "styles/b.module.css": ".bar { color: red; }",
+    });
+    await buildStart(pluginFor("rollup", { config: "app/better-css-modules.config.mjs" }));
+
+    expect(await dtsOf(path.join(dir, "app"), "styles/a.module.css")).toContain(
+      "readonly foo: string;",
+    );
+    expect(await fs.readdir(dir)).toEqual(["app", "styles"]);
   });
 });

@@ -1,7 +1,6 @@
 import { createUnplugin, type UnpluginOptions } from "unplugin";
 import path from "node:path";
 import {
-  type Config,
   formatDiagnostic,
   generate,
   loadConfig,
@@ -16,7 +15,13 @@ import {
   wrapInLayer,
 } from "@better-css-modules/core/internal";
 
-export interface Options extends Partial<Config> {}
+export interface Options {
+  /**
+   * Path of the config file, relative to the working directory. By default,
+   * the `better-css-modules.config.*` in the working directory.
+   */
+  config?: string;
+}
 
 // Vite starts a build per environment and Vitest a server per project, each
 // with its own buildStart; the types do not depend on which one asks, so under
@@ -47,8 +52,7 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
   let globalFiles = new Set<string>();
 
   const load = async (): Promise<Setup> => {
-    const base = await loadConfig({ cwd });
-    const loaded = { ...base, ...options, root: base.root, file: base.file };
+    const loaded = await loadConfig({ cwd, config: options.config });
     return { config: loaded, matches: createMatcher(loaded) };
   };
 

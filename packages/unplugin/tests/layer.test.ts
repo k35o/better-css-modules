@@ -19,19 +19,21 @@ const require = createRequire(import.meta.url);
 // Each bundler builds an entry that imports one CSS Modules file, with its CSS
 // Modules transform naming classes `<local>_scoped`.
 
-const options: Options = {
-  include: ["src/**/*.module.css"],
-  globalCss: ["./src/global.css"],
-  layer: "components",
-  silent: true,
-};
-
 let dir: string;
 let previousCwd: string;
 
 beforeAll(async () => {
   // The working directory comes back resolved (/private/var on macOS); so must the paths.
   dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "bcm-unplugin-")));
+  const config = { globalCss: ["./src/global.css"], silent: true };
+  const configs = {
+    "better-css-modules.config.mjs": { ...config, layer: "components" },
+    "no-layer.config.mjs": config,
+    "undeclared-layer.config.mjs": { ...config, layer: "ui" },
+  };
+  for (const [name, content] of Object.entries(configs)) {
+    await fs.writeFile(path.join(dir, name), `export default ${JSON.stringify(content)};\n`);
+  }
   const files = {
     "global.css": "@layer base, components, utilities;\n",
     "button.module.css": ".root { color: red; }\n.root:hover { color: blue; }\n",
@@ -45,7 +47,7 @@ beforeAll(async () => {
   for (const [name, content] of Object.entries(files)) {
     await fs.writeFile(path.join(dir, "src", name), content);
   }
-  // The plugin reads the config and resolves `include` from the working directory.
+  // The plugin reads the config file in the working directory.
   previousCwd = process.cwd();
   process.chdir(dir);
 });
@@ -72,7 +74,7 @@ function layout(css: string): { order: string[]; rules: Record<string, string[]>
 
 type Build = (entry: string, pluginOptions?: Options) => Promise<string>;
 
-const viteCss: Build = async (entry, pluginOptions = options) => {
+const viteCss: Build = async (entry, pluginOptions) => {
   const result = await vite({
     root: dir,
     configFile: false,
@@ -173,7 +175,7 @@ const builds: [name: string, build: Build, scoped: string][] = [
         outDir: `dist/tsdown-${entry}`,
         logLevel: "silent",
         dts: false,
-        plugins: [unplugin.vite(options)],
+        plugins: [unplugin.vite()],
         css: { modules: { generateScopedName: "[local]_scoped" } },
       });
       return fs.readFile(path.join(dir, `dist/tsdown-${entry}/style.css`), "utf-8");
@@ -185,7 +187,7 @@ const builds: [name: string, build: Build, scoped: string][] = [
     async (entry) => {
       const bundle = await rollup({
         input: path.join(dir, `src/${entry}.js`),
-        plugins: [rollupCssModules(), unplugin.rollup(options)],
+        plugins: [rollupCssModules(), unplugin.rollup()],
       });
       const { output } = await bundle.generate({ format: "es" });
       const sheet = output.find((file) => file.fileName === "style.css");
@@ -198,7 +200,7 @@ const builds: [name: string, build: Build, scoped: string][] = [
     async (entry) => {
       const config: Configuration = {
         ...webpackLike(entry, `dist/webpack-${entry}`, MiniCssExtractPlugin.loader),
-        plugins: [new MiniCssExtractPlugin(), unplugin.webpack(options)],
+        plugins: [new MiniCssExtractPlugin(), unplugin.webpack()],
       };
       await run(webpack(config));
       return fs.readFile(path.join(dir, `dist/webpack-${entry}/main.css`), "utf-8");
@@ -210,7 +212,7 @@ const builds: [name: string, build: Build, scoped: string][] = [
     async (entry) => {
       const compiler = rspack({
         ...webpackLike(entry, `dist/rspack-${entry}`, rspack.CssExtractRspackPlugin.loader),
-        plugins: [new rspack.CssExtractRspackPlugin(), unplugin.rspack(options)],
+        plugins: [new rspack.CssExtractRspackPlugin(), unplugin.rspack()],
       });
       await run(compiler);
       return fs.readFile(path.join(dir, `dist/rspack-${entry}/main.css`), "utf-8");
@@ -227,7 +229,7 @@ const builds: [name: string, build: Build, scoped: string][] = [
         write: false,
         outdir: "dist/esbuild",
         logLevel: "silent",
-        plugins: [unplugin.esbuild(options)],
+        plugins: [unplugin.esbuild()],
       });
       return result.outputFiles.find((file) => file.path.endsWith(".css"))?.text ?? "";
     },
@@ -252,15 +254,14 @@ describe("wrapping CSS Modules in a layer", () => {
   });
 
   it("leaves modules as written when the config names no layer", async () => {
-    const { layer: _, ...withoutLayer } = options;
-    expect(layout(await viteCss("button", withoutLayer))).toEqual({
+    expect(layout(await viteCss("button", { config: "no-layer.config.mjs" }))).toEqual({
       order: [],
       rules: { "(none)": [".plain", ".root_scoped", ".root_scoped:hover"] },
     });
   });
 
   it("stops at a layer the global CSS does not declare", async () => {
-    await expect(viteCss("button", { ...options, layer: "ui" })).rejects.toThrow(
+    await expect(viteCss("button", { config: "undeclared-layer.config.mjs" })).rejects.toThrow(
       'layer "ui" is not declared by the global CSS',
     );
   });
