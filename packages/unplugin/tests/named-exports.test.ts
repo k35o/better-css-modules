@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vite-plus/test";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";

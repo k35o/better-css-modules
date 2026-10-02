@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import { CssSyntaxError } from "postcss";
 import { analyzeCss } from "../src/css.js";
 import { cssCases } from "./fixtures/css-cases.js";

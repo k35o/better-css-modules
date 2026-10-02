@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from "vite-plus/test";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";

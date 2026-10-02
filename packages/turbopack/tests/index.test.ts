@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from "vite-plus/test";
 import type { NextConfig } from "next";
 import type { PHASE_TYPE } from "next/constants.js";
 import fs from "node:fs/promises";

@@ -1,4 +1,4 @@
-import { it, expect } from "vitest";
+import { it, expect } from "vite-plus/test";
 import * as core from "../src/index.js";
 
 it("exports only the public API from the main entry", () => {

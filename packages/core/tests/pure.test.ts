@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import postcss, { type AtRule, type Rule } from "postcss";
 import { checkCss, checkGlobalCss } from "../src/check.js";
 import { analyzeCss, type SourcePosition } from "../src/css.js";
