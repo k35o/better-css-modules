@@ -18,7 +18,7 @@ jobs:
           node-version-file: package.json
           cache: true
 
-      - run: vp run -r test
+      - run: vp run test
 
   check:
     name: Lint & Format
@@ -31,8 +31,7 @@ jobs:
           node-version-file: package.json
           cache: true
 
-      - run: vp run build
-      - run: vp check
+      - run: vp run check
 
   typecheck:
     name: Type Check
@@ -45,6 +44,4 @@ jobs:
           node-version-file: package.json
           cache: true
 
-      - run: vp run -r build
-      - run: vp install
-      - run: vp run -r typecheck
+      - run: vp run typecheck
