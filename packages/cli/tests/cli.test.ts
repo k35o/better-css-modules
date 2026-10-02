@@ -376,6 +376,19 @@ describe("--config", () => {
     });
   });
 
+  it("names the global CSS in its errors relative to the cwd", async () => {
+    const dir = await project({
+      "app/better-css-modules.config.mjs": 'export default { globalCss: ["./src/global.css"] };\n',
+      "app/src/global.css": '@import "tailwindcss";\n',
+      "app/src/a.module.css": ".a {}\n",
+    });
+    expect(run(dir, "check", "--config", "app/better-css-modules.config.mjs")).toEqual({
+      status: 2,
+      stdout: "",
+      stderr: '[better-css-modules] app/src/global.css:1:1: cannot resolve "tailwindcss"\n',
+    });
+  });
+
   it("names files in messages relative to the cwd, like the locations", async () => {
     const dir = await project({
       "app/better-css-modules.config.mjs": "export default {};\n",

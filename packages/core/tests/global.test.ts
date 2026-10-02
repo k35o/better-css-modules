@@ -255,6 +255,9 @@ body { color: #000; }`);
   });
 });
 
+/** A file of the fixture, named relative to the cwd. */
+type Rel = (name: string) => string;
+
 describe("loadGlobalCss", () => {
   /** Write files into a fresh directory and load the global CSS the config lists from it. */
   async function fixture(files: Record<string, string>, globalCss: string[], include?: string[]) {
@@ -380,46 +383,53 @@ describe("loadGlobalCss", () => {
       "an entry it cannot resolve",
       { "a.css": "" },
       ["src/a.css"],
-      'cannot resolve "src/a.css" listed in globalCss',
+      () => 'cannot resolve "src/a.css" listed in globalCss',
     ],
     [
       "an import it cannot resolve",
       { "a.css": '@import "./missing.css";' },
       ["./a.css"],
-      'a.css:1:1: cannot resolve "./missing.css"',
+      (rel: Rel) => `${rel("a.css")}:1:1: cannot resolve "./missing.css"`,
     ],
     [
       "an import of a URL",
       { "a.css": '@import url("https://example.com/a.css");' },
       ["./a.css"],
-      "a.css:1:1: global CSS cannot import https://example.com/a.css",
+      (rel: Rel) => `${rel("a.css")}:1:1: global CSS cannot import https://example.com/a.css`,
     ],
     [
       "stylesheets that import each other",
       { "a.css": '@import "./b.css";', "b.css": '@import "./a.css";' },
       ["./a.css"],
-      "a.css → b.css → a.css import each other",
+      (rel: Rel) => `${rel("a.css")} → ${rel("b.css")} → ${rel("a.css")} import each other`,
     ],
     [
       "a stylesheet it cannot parse",
       { "a.css": ":root { --color-a: #000;" },
       ["./a.css"],
-      "a.css:1:1: Unclosed block",
+      (rel: Rel) => `${rel("a.css")}:1:1: Unclosed block`,
     ],
-  ])("refuses %s", async (_name, files, globalCss, message) => {
-    const { load } = await fixture(files, globalCss);
-    await expect(load()).rejects.toThrow(new ConfigError(message));
+    [
+      "an import it cannot read",
+      { "a.css": "@import ./b.css;" },
+      ["./a.css"],
+      (rel: Rel) => `${rel("a.css")}:1:1: cannot read @import ./b.css`,
+    ],
+  ])("refuses %s, naming files relative to the cwd", async (_name, files, globalCss, message) => {
+    const { cwd, load } = await fixture(files, globalCss);
+    const rel = (name: string) => path.relative(process.cwd(), path.join(cwd, name));
+    await expect(load()).rejects.toThrow(new ConfigError(message(rel)));
   });
 
   it("refuses a stylesheet that is also a CSS module", async () => {
-    const { load } = await fixture(
+    const { cwd, load } = await fixture(
       { "src/a.module.css": ":root {}" },
       ["./src/a.module.css"],
       ["src/**/*.module.css"],
     );
-    await expect(load()).rejects.toThrow(ConfigError);
+    const file = path.relative(process.cwd(), path.join(cwd, "src/a.module.css"));
     await expect(load()).rejects.toThrow(
-      "src/a.module.css is both a CSS module (include) and global CSS (globalCss)",
+      new ConfigError(`${file} is both a CSS module (include) and global CSS (globalCss)`),
     );
   });
 

@@ -367,7 +367,8 @@ class Loader {
   }
 
   private display(file: string): string {
-    return path.relative(this.root, file);
+    // Relative to the cwd like the locations of diagnostics, since --config can root the project elsewhere.
+    return path.relative(process.cwd(), file);
   }
 
   private at(file: string, atRule: AtRule): string {
