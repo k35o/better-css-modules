@@ -384,7 +384,7 @@ function collectKeyframesName(atRule: AtRule, collector: Collector): void {
   if (name === "" || name.startsWith(":")) return;
   const start = paramsStart(atRule);
   collector.identifiers.push({
-    name,
+    name: ident.decode(name),
     kind: "keyframes",
     range: { start, end: { line: start.line, column: start.column + atRule.params.length } },
   });
@@ -416,7 +416,7 @@ function visitDeclaration(declaration: Declaration, collector: Collector): void 
       // Arguments of var() and other functions are never animation names.
       if (node.type === "Function") return walk.skip;
       if (node.type === "Identifier" && isName(node)) {
-        collector.identifiers.push({ name: node.name, kind: "keyframes", range });
+        collector.identifiers.push({ name: ident.decode(node.name), kind: "keyframes", range });
       }
     },
   });

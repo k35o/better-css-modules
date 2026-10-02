@@ -86,6 +86,12 @@ export const cssCases: CssCase[] = [
     classes: ["anim"],
   },
   {
+    name: "keyframes-escaped",
+    css: `@keyframes sm\\:fade { to { opacity: 1; } } .a { animation: sm\\:fade 1s; } .b { animation-name: sm\\:fade; }`,
+    expected: ["a", "b", "sm:fade"],
+    classes: ["a", "b"],
+  },
+  {
     name: "keyframes-only",
     css: `@keyframes spin { to { transform: rotate(1turn); } }`,
     expected: ["spin"],
