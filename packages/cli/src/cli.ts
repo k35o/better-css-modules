@@ -31,8 +31,8 @@ cli
   .option("-w, --watch", "Keep regenerating as files change")
   .action(async (options: { watch?: boolean }) => {
     const cwd = process.cwd();
-    const config = await loadConfig(cwd);
-    const { written, diagnostics } = await generateAll(config, cwd);
+    const config = await loadConfig();
+    const { written, diagnostics } = await generateAll(config);
 
     if (!config.silent) {
       console.log(`[better-css-modules] generated ${written.length} file(s)`);
@@ -40,9 +40,9 @@ cli
     }
     report(diagnostics, cwd, "text");
 
-    if (options.watch || config.watch) {
+    if (options.watch) {
       console.log("[better-css-modules] watching for changes...");
-      startWatcher(config, cwd);
+      startWatcher(config);
       return;
     }
     if (diagnostics.length > 0) process.exitCode = 1;
@@ -61,10 +61,10 @@ cli
       return;
     }
     const cwd = process.cwd();
-    const config = await loadConfig(cwd);
+    const config = await loadConfig();
     let globalCss: GlobalCss;
     try {
-      globalCss = await loadGlobalCss(config, cwd);
+      globalCss = await loadGlobalCss(config);
       if (config.layer !== undefined) resolveLayer(config.layer, globalCss);
     } catch (error) {
       // Global CSS that cannot be read is a mistake in the config, not a
@@ -74,7 +74,7 @@ cli
       return;
     }
     const { layer } = config;
-    const usage = await analyzeUsage(config, cwd);
+    const usage = await analyzeUsage(config);
     const diagnostics = sortDiagnostics([
       ...usage.diagnostics,
       ...usage.modules.flatMap((analysis) => checkCss(analysis, globalCss)),

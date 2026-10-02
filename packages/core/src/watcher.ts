@@ -1,6 +1,6 @@
 import path from "node:path";
 import { watch } from "chokidar";
-import type { Config } from "./config.js";
+import type { ResolvedConfig } from "./config.js";
 import { formatDiagnostic } from "./diagnostic.js";
 import { regenerateDts, removeDts } from "./dts.js";
 import { createMatcher } from "./project.js";
@@ -22,18 +22,19 @@ function extractBaseDir(pattern: string): string {
  * Regenerate `.d.ts` files as the included CSS Modules files change. Callers
  * run `generateAll` first; the watcher only reacts to changes after that.
  */
-export function startWatcher(config: Config, cwd: string = process.cwd()) {
+export function startWatcher(config: ResolvedConfig) {
+  const { root } = config;
+  const cwd = process.cwd();
   // chokidar v4+ does not support glob patterns: watch the base directories and
   // filter events with the config's globs.
   const baseDirs = [...new Set(config.include.map(extractBaseDir))];
-  const matches = createMatcher(config, cwd);
-  const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
+  const matches = createMatcher(config);
   const log = (message: string) => {
     if (!config.silent) console.log(`[better-css-modules] ${message}`);
   };
-  const outDir = path.resolve(cwd, config.outDir);
+  const outDir = path.resolve(root, config.outDir);
   const ignored = (watched: string) => {
-    const resolved = path.resolve(cwd, watched);
+    const resolved = path.resolve(root, watched);
     return (
       resolved.split(path.sep).includes("node_modules") ||
       resolved === outDir ||
@@ -41,31 +42,34 @@ export function startWatcher(config: Config, cwd: string = process.cwd()) {
     );
   };
 
-  const watcher = watch(baseDirs, { cwd, ignoreInitial: true, ignored });
+  const watcher = watch(baseDirs, { cwd: root, ignoreInitial: true, ignored });
 
-  // chokidar with the cwd option emits paths relative to cwd
+  // chokidar with the cwd option emits paths relative to it
   const regenerate = async (relativePath: string) => {
-    const file = path.resolve(cwd, relativePath);
+    const file = path.resolve(root, relativePath);
     if (!matches(file)) return;
     try {
-      const { dtsPath, diagnostics } = await regenerateDts(file, output);
+      const { dtsPath, diagnostics } = await regenerateDts(file, config);
       if (dtsPath) log(`generated: ${path.relative(cwd, dtsPath)}`);
       for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     } catch (error) {
-      console.error(`[better-css-modules] error processing ${relativePath}:`, error);
+      console.error(`[better-css-modules] error processing ${path.relative(cwd, file)}:`, error);
     }
   };
 
   watcher.on("add", regenerate);
   watcher.on("change", regenerate);
   watcher.on("unlink", async (relativePath) => {
-    const file = path.resolve(cwd, relativePath);
+    const file = path.resolve(root, relativePath);
     if (!matches(file)) return;
     try {
-      const dtsPath = await removeDts(file, output);
+      const dtsPath = await removeDts(file, config);
       log(`removed: ${path.relative(cwd, dtsPath)}`);
     } catch (error) {
-      console.error(`[better-css-modules] error removing types for ${relativePath}:`, error);
+      console.error(
+        `[better-css-modules] error removing types for ${path.relative(cwd, file)}:`,
+        error,
+      );
     }
   });
 

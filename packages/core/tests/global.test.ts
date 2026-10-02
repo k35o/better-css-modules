@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import postcss from "postcss";
 import { checkGlobalCss } from "../src/check.js";
-import { defineConfig } from "../src/config.js";
+import { resolveConfig } from "../src/config.js";
 import { generate } from "../src/csstree.js";
 import { type GlobalCss, globalCssFrom, loadGlobalCss } from "../src/global.js";
 
@@ -214,8 +214,8 @@ describe("loadGlobalCss", () => {
       await fs.mkdir(path.dirname(path.join(cwd, name)), { recursive: true });
       await fs.writeFile(path.join(cwd, name), content, "utf-8");
     }
-    const config = defineConfig({ globalCss, ...(include ? { include } : {}) });
-    return { cwd, load: () => loadGlobalCss(config, cwd) };
+    const config = resolveConfig({ globalCss, include }, cwd);
+    return { cwd, load: () => loadGlobalCss(config) };
   }
 
   const designSystem = {

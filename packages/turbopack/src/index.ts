@@ -34,15 +34,15 @@ export function withBetterCssModules(
   if (!initialized) {
     initialized = true;
 
-    loadConfig(cwd)
+    loadConfig({ cwd })
       .then(async (loaded) => {
-        const config = { ...loaded, ...options };
-        const { written, diagnostics } = await generateAll(config, cwd);
+        const config = { ...loaded, ...options, root: loaded.root, file: loaded.file };
+        const { written, diagnostics } = await generateAll(config);
         if (!config.silent) console.log(`[better-css-modules] generated ${written.length} file(s)`);
         for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
 
         if (process.env.NODE_ENV === "development") {
-          startWatcher(config, cwd);
+          startWatcher(config);
         }
       })
       .catch((error: unknown) => {

@@ -5,7 +5,7 @@ import path from "node:path";
 import { transform } from "lightningcss";
 import postcss, { CssSyntaxError } from "postcss";
 import postcssModules from "postcss-modules";
-import { defineConfig } from "../src/config.js";
+import { resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
 import { type GlobalCss, loadGlobalCss } from "../src/global.js";
 import { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "../src/layer.js";
@@ -169,7 +169,7 @@ async function globalCssOf(files: Record<string, string>, listed: string[]): Pro
   for (const [name, content] of Object.entries(files)) {
     await fs.writeFile(path.join(dir, name), content);
   }
-  return loadGlobalCss(defineConfig({ globalCss: listed.map((name) => `./${name}`) }), dir);
+  return loadGlobalCss(resolveConfig({ globalCss: listed.map((name) => `./${name}`) }, dir));
 }
 
 const projects: string[] = [];

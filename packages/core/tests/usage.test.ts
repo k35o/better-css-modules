@@ -2,12 +2,12 @@ import { describe, it, expect, afterAll } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { defineConfig } from "../src/config.js";
+import { resolveConfig } from "../src/config.js";
 import type { Diagnostic } from "../src/diagnostic.js";
 import { analyzeUsage } from "../src/usage.js";
 import { tsCases } from "./fixtures/ts-cases.js";
 
-const config = defineConfig({ include: ["**/*.module.css"] });
+const configIn = (dir: string) => resolveConfig({ include: ["**/*.module.css"] }, dir);
 const created: string[] = [];
 
 // The temp dir is a symlink on macOS and is passed as such; diagnostics come
@@ -46,7 +46,7 @@ function summarize(real: string, diagnostics: Diagnostic[]) {
 
 async function analyze(files: Record<string, string>) {
   const { dir, real } = await project(files);
-  return summarize(real, (await analyzeUsage(config, dir)).diagnostics);
+  return summarize(real, (await analyzeUsage(configIn(dir))).diagnostics);
 }
 
 describe("analyzeUsage", () => {
@@ -72,7 +72,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nexport const A = () => <div className={styles.used} />;",
     });
-    const [diagnostic] = (await analyzeUsage(config, dir)).diagnostics;
+    const [diagnostic] = (await analyzeUsage(configIn(dir))).diagnostics;
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.module.css"),
       line: 2,
@@ -89,7 +89,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nconst 見出し = 'a';\nexport const A = () => <div className={styles[見出し]} />;",
     });
-    const [diagnostic] = (await analyzeUsage(config, dir)).diagnostics;
+    const [diagnostic] = (await analyzeUsage(configIn(dir))).diagnostics;
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.tsx"),
       line: 3,
@@ -174,7 +174,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
     });
-    expect((await analyzeUsage(config, dir)).diagnostics).toMatchObject([
+    expect((await analyzeUsage(configIn(dir))).diagnostics).toMatchObject([
       { rule: "syntax", line: 1, column: 1 },
     ]);
   });
@@ -186,7 +186,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
     });
-    const { modules } = await analyzeUsage(config, dir);
+    const { modules } = await analyzeUsage(configIn(dir));
     expect(modules.map((analysis) => analysis.file)).toEqual([path.join(real, "a.module.css")]);
   });
 });

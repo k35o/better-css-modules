@@ -8,6 +8,7 @@ import {
   type GlobalCss,
   loadConfig,
   loadGlobalCss,
+  type ResolvedConfig,
   regenerateDts,
   removeDts,
   resolveLayer,
@@ -22,7 +23,7 @@ export interface Options extends Partial<Config> {}
 const generations = new Map<string, Promise<void>>();
 
 interface Setup {
-  config: Config;
+  config: ResolvedConfig;
   matches: (file: string) => boolean;
 }
 
@@ -35,7 +36,7 @@ interface Setup {
  */
 export const unplugin = createUnplugin<Options | undefined>((options = {}, meta) => {
   const cwd = process.cwd();
-  let config: Config | undefined;
+  let config: ResolvedConfig | undefined;
   let matches: ((file: string) => boolean) | undefined;
   // webpack and Rspack build modules while buildStart still runs, so the
   // transform waits for the same setup instead of reading what it left.
@@ -45,12 +46,13 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
   let globalFiles = new Set<string>();
 
   const load = async (): Promise<Setup> => {
-    const loaded = { ...(await loadConfig(cwd)), ...options };
-    return { config: loaded, matches: createMatcher(loaded, cwd) };
+    const base = await loadConfig({ cwd });
+    const loaded = { ...base, ...options, root: base.root, file: base.file };
+    return { config: loaded, matches: createMatcher(loaded) };
   };
 
-  const readGlobalCss = (config: Config): Promise<GlobalCss> =>
-    loadGlobalCss(config, cwd).then(
+  const readGlobalCss = (config: ResolvedConfig): Promise<GlobalCss> =>
+    loadGlobalCss(config).then(
       (css) => {
         globalFiles = new Set(css.files.map(({ file }) => file));
         return css;
@@ -66,8 +68,8 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
     if (!config?.silent) console.log(`[better-css-modules] ${message}`);
   };
 
-  const generate = async (resolved: Config) => {
-    const { written, diagnostics } = await generateAll(resolved, cwd);
+  const generate = async (resolved: ResolvedConfig) => {
+    const { written, diagnostics } = await generateAll(resolved);
     log(`generated ${written.length} file(s)`);
     for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
   };
@@ -123,15 +125,14 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       if (!config || !matches) return;
       if (globalFiles.has(id)) globalCss = undefined;
       if (!matches(id)) return;
-      const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
 
       if (change.event === "delete") {
-        const dtsPath = await removeDts(id, output);
+        const dtsPath = await removeDts(id, config);
         log(`removed: ${path.relative(cwd, dtsPath)}`);
         return;
       }
 
-      const { dtsPath, diagnostics } = await regenerateDts(id, output);
+      const { dtsPath, diagnostics } = await regenerateDts(id, config);
       if (dtsPath) log(`regenerated: ${path.relative(cwd, dtsPath)}`);
       for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     },

@@ -2,14 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { defineConfig } from "../src/config.js";
+import { type Config, resolveConfig } from "../src/config.js";
 import { createMatcher, findCssModules } from "../src/project.js";
 
 describe("createMatcher", () => {
   const cwd = path.resolve("/project");
   const matches = createMatcher(
-    defineConfig({ include: ["src/**/*.module.css"], exclude: ["src/legacy/**"] }),
-    cwd,
+    resolveConfig({ include: ["src/**/*.module.css"], exclude: ["src/legacy/**"] }, cwd),
   );
 
   it("accepts included files given as absolute or relative paths", () => {
@@ -53,11 +52,11 @@ afterAll(async () => {
 });
 
 /** The fixture files a config takes in, by enumeration and by the matcher. */
-async function selected(config: Parameters<typeof defineConfig>[0]) {
-  const resolved = defineConfig(config);
-  const matches = createMatcher(resolved, cwd);
+async function selected(config: Config) {
+  const resolved = resolveConfig(config, cwd);
+  const matches = createMatcher(resolved);
   return {
-    found: (await findCssModules(resolved, cwd)).map((file) => path.relative(cwd, file)),
+    found: (await findCssModules(resolved)).map((file) => path.relative(cwd, file)),
     matched: FILES.filter((file) => matches(path.join(cwd, file))).sort(),
   };
 }

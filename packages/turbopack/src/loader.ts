@@ -5,6 +5,7 @@ import {
   type GlobalCss,
   loadConfig,
   loadGlobalCss,
+  type ResolvedConfig,
   resolveLayer,
   wrapInLayer,
 } from "@better-css-modules/core";
@@ -26,7 +27,7 @@ interface LoaderContext {
 }
 
 interface Loaded {
-  config: Config;
+  config: ResolvedConfig;
   matches: (file: string) => boolean;
   /** The global CSS last read, with the modification time of each of its files. */
   globalCss?: { css: GlobalCss; stamps: Map<string, number | null> };
@@ -46,7 +47,7 @@ export default async function loader(this: LoaderContext, source: string): Promi
   const loaded = await loadedFor(options);
   const { config, matches } = loaded;
   if (config.layer === undefined || !matches(this.resourcePath)) return source;
-  const globalCss = await globalCssOf(loaded, options.cwd);
+  const globalCss = await globalCssOf(loaded);
   // Before resolving, so that declaring the layer reruns the loader.
   for (const { file } of globalCss.files) this.addDependency(file);
   const layer = resolveLayer(config.layer, globalCss);
@@ -63,9 +64,9 @@ function loadedFor(options: LoaderOptions): Promise<Loaded> {
   if (cached?.key !== key) {
     cached = {
       key,
-      loaded: loadConfig(options.cwd).then((loaded) => {
-        const config = { ...loaded, ...options.overrides };
-        return { config, matches: createMatcher(config, options.cwd) };
+      loaded: loadConfig({ cwd: options.cwd, config: options.config }).then((loaded) => {
+        const config = { ...loaded, ...options.overrides, root: loaded.root, file: loaded.file };
+        return { config, matches: createMatcher(config) };
       }),
     };
   }
@@ -73,10 +74,10 @@ function loadedFor(options: LoaderOptions): Promise<Loaded> {
 }
 
 /** The global CSS, read again only once one of its files has changed. */
-async function globalCssOf(loaded: Loaded, cwd: string): Promise<GlobalCss> {
+async function globalCssOf(loaded: Loaded): Promise<GlobalCss> {
   const last = loaded.globalCss;
   if (last && [...last.stamps].every(([file, stamp]) => modified(file) === stamp)) return last.css;
-  const css = await loadGlobalCss(loaded.config, cwd);
+  const css = await loadGlobalCss(loaded.config);
   loaded.globalCss = { css, stamps: new Map(css.files.map(({ file }) => [file, modified(file)])) };
   return css;
 }

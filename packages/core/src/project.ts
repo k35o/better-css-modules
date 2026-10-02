@@ -3,13 +3,13 @@ import path from "node:path";
 import fg from "fast-glob";
 import picomatch from "picomatch";
 import { CssSyntaxError } from "postcss";
-import type { Config } from "./config.js";
+import type { ResolvedConfig } from "./config.js";
 import { analyzeCss, type CssModuleAnalysis } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 
 /** Globs no `include` pattern should reach: dependencies and the tool's own output. */
-export function defaultIgnore(config: Config): string[] {
-  const outDir = path.posix.normalize(config.outDir).replace(/\/+$/, "");
+export function defaultIgnore(config: ResolvedConfig): string[] {
+  const { outDir } = config;
   // Excluding an outDir that is the root would exclude everything; the .d.ts
   // files then sit next to their stylesheets and match no include pattern.
   return outDir === "." ? ["**/node_modules/**"] : ["**/node_modules/**", `${outDir}/**`];
@@ -20,7 +20,7 @@ export function defaultIgnore(config: Config): string[] {
  * excludes, and an exclude pattern also excludes everything under the
  * directories it names, as a glob's ignore list does with a directory.
  */
-function patternsOf(config: Config): { include: string[]; exclude: string[] } {
+function patternsOf(config: ResolvedConfig): { include: string[]; exclude: string[] } {
   const negated = config.include.filter((pattern) => pattern.startsWith("!"));
   const exclude = [
     ...config.exclude,
@@ -35,23 +35,24 @@ function patternsOf(config: Config): { include: string[]; exclude: string[] } {
 
 /**
  * A predicate telling whether an absolute path is one of the CSS Modules files
- * the config includes. Files outside `cwd` never match.
+ * the config includes. Files outside the root never match.
  */
-export function createMatcher(config: Config, cwd: string): (file: string) => boolean {
+export function createMatcher(config: ResolvedConfig): (file: string) => boolean {
+  const { root } = config;
   const patterns = patternsOf(config);
   const include = picomatch(patterns.include);
   // fast-glob matches its ignore patterns with `dot`, so an exclusion reaches dot directories.
   const exclude = picomatch(patterns.exclude, { dot: true });
   return (file) => {
-    const relative = path.relative(cwd, path.resolve(cwd, file)).split(path.sep).join("/");
+    const relative = path.relative(root, path.resolve(root, file)).split(path.sep).join("/");
     if (relative.startsWith("../") || path.isAbsolute(relative)) return false;
     return include(relative) && !exclude(relative);
   };
 }
 
-export async function findCssModules(config: Config, cwd: string): Promise<string[]> {
+export async function findCssModules(config: ResolvedConfig): Promise<string[]> {
   const { include, exclude } = patternsOf(config);
-  const files = await fg(include, { cwd, ignore: exclude, absolute: true });
+  const files = await fg(include, { cwd: config.root, ignore: exclude, absolute: true });
   return files.sort();
 }
 
@@ -78,8 +79,8 @@ export interface LoadResult {
   diagnostics: Diagnostic[];
 }
 
-export async function loadCssModules(config: Config, cwd: string): Promise<LoadResult> {
-  return loadCssModuleFiles(await findCssModules(config, cwd));
+export async function loadCssModules(config: ResolvedConfig): Promise<LoadResult> {
+  return loadCssModuleFiles(await findCssModules(config));
 }
 
 export async function loadCssModuleFiles(files: string[]): Promise<LoadResult> {

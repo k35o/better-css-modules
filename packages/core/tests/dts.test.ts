@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { SourceMapConsumer } from "source-map-js";
-import { defineConfig } from "../src/config.js";
+import { resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
 import { dtsPathFor, generateAll, generateDts, regenerateDts, removeDts } from "../src/dts.js";
 
@@ -172,7 +172,7 @@ describe("generateDts with named exports", () => {
 });
 
 describe("dtsPathFor", () => {
-  const options = { cwd: "/project", outDir: "__generated__" };
+  const options = { root: "/project", outDir: "__generated__" };
 
   it("mirrors the path relative to the root under outDir", () => {
     expect(dtsPathFor("/project/src/a.module.css", options)).toBe(
@@ -198,8 +198,8 @@ describe("generateAll", () => {
       "src/skip.css": ".css {}",
       "node_modules/dep/src/x.module.css": ".dep {}",
     });
-    const config = defineConfig({ include: ["**/*.module.css"] });
-    const { written, diagnostics } = await generateAll(config, dir);
+    const config = resolveConfig({ include: ["**/*.module.css"] }, dir);
+    const { written, diagnostics } = await generateAll(config);
 
     expect(written).toEqual([path.join(dir, "__generated__", "src", "a.module.css.d.ts")]);
     const generated = generateDts(
@@ -213,7 +213,7 @@ describe("generateAll", () => {
       { file: path.join(dir, "src", "broken.module.css"), rule: "syntax", line: 1, column: 1 },
     ]);
 
-    await removeDts(path.join(dir, "src", "a.module.css"), { cwd: dir, outDir: "__generated__" });
+    await removeDts(path.join(dir, "src", "a.module.css"), config);
     await expect(fs.access(written[0])).rejects.toThrow();
     await expect(fs.access(`${written[0]}.map`)).rejects.toThrow();
   });
@@ -223,7 +223,7 @@ describe("regenerateDts", () => {
   it("leaves an up-to-date .d.ts untouched and keeps it when the stylesheet breaks", async () => {
     const dir = await project({ "src/a.module.css": ".a {}" });
     const cssFile = path.join(dir, "src", "a.module.css");
-    const output = { cwd: dir, outDir: "__generated__", namedExports: false };
+    const output = resolveConfig({}, dir);
 
     const first = await regenerateDts(cssFile, output);
     expect(first).toMatchObject({ dtsPath: dtsPathFor(cssFile, output), diagnostics: [] });
@@ -267,7 +267,7 @@ describe("named exports under TypeScript", () => {
         "",
       ].join("\n"),
     });
-    await generateAll(defineConfig({ include: ["src/**/*.module.css"], namedExports: true }), dir);
+    await generateAll(resolveConfig({ namedExports: true }, dir));
 
     const { stdout } = spawnSync(process.execPath, [TSC, "-p", ".", "--pretty", "false"], {
       cwd: dir,

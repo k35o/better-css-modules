@@ -10,7 +10,7 @@ import postcss, {
 } from "postcss";
 import { ResolverFactory } from "oxc-resolver";
 import type * as CssTree from "css-tree";
-import type { Config } from "./config.js";
+import type { ResolvedConfig } from "./config.js";
 import { lexer, parse, walk } from "./csstree.js";
 import { createMatcher } from "./project.js";
 import { categoryOf, type TokenCategory } from "./tokens.js";
@@ -207,10 +207,10 @@ function parseValue(text: string): CssTree.CssNode[] {
  * tokens. Throws when a stylesheet cannot be resolved or parsed, is not
  * standard CSS, imports itself, or is also one of the CSS Modules files.
  */
-export async function loadGlobalCss(config: Config, cwd: string): Promise<GlobalCss> {
-  const loader = new Loader(config, cwd);
+export async function loadGlobalCss(config: ResolvedConfig): Promise<GlobalCss> {
+  const loader = new Loader(config);
   for (const entry of config.globalCss) {
-    const file = loader.resolve(cwd, entry);
+    const file = loader.resolve(config.root, entry);
     if (!file) fail(`cannot resolve "${entry}" listed in globalCss`);
     await loader.load(file, false, []);
   }
@@ -240,10 +240,10 @@ class Loader {
     preferRelative: true,
   });
 
-  constructor(config: Config, cwd: string) {
+  constructor(config: ResolvedConfig) {
     // The resolver returns real paths, so the project is compared by its real path too.
-    this.root = realpathSync(cwd);
-    this.isModule = createMatcher(config, this.root);
+    this.root = realpathSync(config.root);
+    this.isModule = createMatcher({ ...config, root: this.root });
   }
 
   resolve(directory: string, specifier: string): string | null {

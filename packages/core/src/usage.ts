@@ -4,7 +4,7 @@ import fg from "fast-glob";
 import { parseSync, type ParseResult } from "oxc-parser";
 import { ResolverFactory } from "oxc-resolver";
 import { isReferenceIdentifier, ScopeTracker, walk } from "oxc-walker";
-import type { Config } from "./config.js";
+import type { ResolvedConfig } from "./config.js";
 import type { CssModuleAnalysis, SourcePosition } from "./css.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { defaultIgnore, findCssModules, loadCssModuleFiles } from "./project.js";
@@ -107,13 +107,10 @@ export interface UsageResult {
  * side instead of guessing. The CSS analyses come back too, so that checks of
  * their own run without parsing the files again.
  */
-export async function analyzeUsage(
-  config: Config,
-  cwd: string = process.cwd(),
-): Promise<UsageResult> {
+export async function analyzeUsage(config: ResolvedConfig): Promise<UsageResult> {
   // Resolved imports come back as real paths, so every path here is canonical.
-  const root = fs.realpathSync(cwd);
-  const cssFiles = (await findCssModules(config, root)).map((file) => fs.realpathSync(file));
+  const root = fs.realpathSync(config.root);
+  const cssFiles = (await findCssModules(config)).map((file) => fs.realpathSync(file));
   const { modules, diagnostics } = await loadCssModuleFiles(cssFiles);
   const byPath = new Map(modules.map((analysis) => [analysis.file, analysis]));
   const usage = new Map<string, ModuleUsage>(
@@ -493,7 +490,7 @@ function isUsed(moduleUsage: ModuleUsage, name: string): boolean {
   );
 }
 
-async function findSources(config: Config, cwd: string): Promise<string[]> {
+async function findSources(config: ResolvedConfig, cwd: string): Promise<string[]> {
   const ignore = [...defaultIgnore(config), ...IGNORED_DIRS.map((dir) => `**/${dir}/**`)];
   const files = await fg(SOURCE_GLOBS, { cwd, ignore, absolute: true });
   return files.filter((file) => !/\.d\.[mc]?ts$/.test(file)).sort();

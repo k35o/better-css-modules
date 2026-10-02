@@ -1,21 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { SourceMapGenerator } from "source-map-js";
-import type { Config } from "./config.js";
+import type { ResolvedConfig } from "./config.js";
 import type { CssModuleAnalysis, SourcePosition, SourceRange } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { loadCssModule, loadCssModules, syntaxDiagnosticFrom } from "./project.js";
 
-export interface OutputOptions {
-  /** Project root; generated files mirror paths relative to it. */
-  cwd: string;
-  outDir: string;
-}
+/** Generated files mirror paths relative to the root. */
+export type OutputOptions = Pick<ResolvedConfig, "root" | "outDir">;
 
-export interface DtsOptions extends OutputOptions {
-  /** Declare the keys as named exports instead of properties of a default export. */
-  namedExports: boolean;
-}
+export type DtsOptions = Pick<ResolvedConfig, "root" | "outDir" | "namedExports">;
 
 function quoteUnlessIdentifier(name: string): string {
   return /^[a-zA-Z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
@@ -149,17 +143,17 @@ export function generateDts(
 }
 
 /**
- * Where the `.d.ts` for a CSS Modules file goes. Files outside `cwd` are refused
- * instead of escaping `outDir`, because `rootDirs` could not map them anyway.
+ * Where the `.d.ts` for a CSS Modules file goes. Files outside the root are
+ * refused instead of escaping `outDir`, because `rootDirs` could not map them anyway.
  */
-export function dtsPathFor(cssFile: string, { cwd, outDir }: OutputOptions): string {
-  const relative = path.relative(cwd, cssFile);
+export function dtsPathFor(cssFile: string, { root, outDir }: OutputOptions): string {
+  const relative = path.relative(root, cssFile);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error(
-      `${cssFile} is outside the project root ${cwd}; generated .d.ts files mirror paths relative to the root`,
+      `${cssFile} is outside the project root ${root}; generated .d.ts files mirror paths relative to the root`,
     );
   }
-  return path.join(cwd, outDir, `${relative}.d.ts`);
+  return path.join(root, outDir, `${relative}.d.ts`);
 }
 
 export async function writeDts(analysis: CssModuleAnalysis, options: DtsOptions): Promise<string> {
@@ -219,12 +213,8 @@ export interface GenerateResult {
 /**
  * Generate `.d.ts` files for every CSS Modules file the config includes.
  */
-export async function generateAll(
-  config: Config,
-  cwd: string = process.cwd(),
-): Promise<GenerateResult> {
-  const { modules, diagnostics } = await loadCssModules(config, cwd);
-  const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
-  const written = await Promise.all(modules.map((analysis) => writeDts(analysis, output)));
+export async function generateAll(config: ResolvedConfig): Promise<GenerateResult> {
+  const { modules, diagnostics } = await loadCssModules(config);
+  const written = await Promise.all(modules.map((analysis) => writeDts(analysis, config)));
   return { written, diagnostics: [...diagnostics, ...modules.flatMap((m) => m.diagnostics)] };
 }
