@@ -8,7 +8,7 @@ A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` 
 - Generated types live in one codegen directory (no `.d.ts` files scattered through `src/`)
 - Reports unused classes with `file:line:col`, aggregated across the whole project
 - Keeps each module pure: its selectors style its own classes, with no `:global`, ids, `!important` or global-only at-rules such as `@font-face`
-- Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens and tokens of the wrong kind
+- Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints
 - Reads CSS with postcss and css-tree, and TypeScript with the oxc parser: `:global`, nesting, `composes`, escaped names, path aliases and re-exports all resolve the way bundlers resolve them
 - Verified against both lightningcss (Turbopack) and postcss-modules (Vite): the generated keys match what either bundler exports
 - Works with Vite, webpack, Rollup, Rspack, esbuild and Next.js (Turbopack)
@@ -336,6 +336,7 @@ Any other custom property is free to declare with any value (`--glow: oklch(0.72
 | `line-height` | `line-height`                                                                                                                                                                                                                                                                                                                                | The line height in `font`                                                                                                                                                                                                                                                                    | `normal`                      | raw         |
 | `z-index`     | `z-index`                                                                                                                                                                                                                                                                                                                                    |                                                                                                                                                                                                                                                                                              | `auto`                        | raw         |
 | `duration`    | `transition-duration`, `transition-delay`, `animation-duration`, `animation-delay`                                                                                                                                                                                                                                                           | The times in `transition`, `animation`                                                                                                                                                                                                                                                       | `auto`                        | raw         |
+| `breakpoint`  | No property: the widths in `@media` conditions, see [Breakpoints](#breakpoints)                                                                                                                                                                                                                                                              |                                                                                                                                                                                                                                                                                              |                               | n/a         |
 
 † The property and its per-side forms, physical and logical: `-top`, `-right`, `-bottom`, `-left`, `-block`, `-block-start`, `-block-end`, `-inline`, `-inline-start`, `-inline-end` (`border-top`, `margin-inline-start`, `border-block-color`…).
 
@@ -356,6 +357,47 @@ A `var()` in a shorthand could stand for any of its components. The tool reads i
 - In a gradient, a `var()` in a color stop is a color. The first argument is left alone when it holds the direction or position (`to right`, `from var(--angle)`, `at 50% 50%`).
 - In `font`, the component before the slash is the size and the one after it the line height (`font: 700 var(--font-size-lg) / var(--line-height-tight) sans-serif`). No other `var()` in `font` is tied to a category.
 - In `transition` and `animation` a `var()` may be a time, an easing or a name, so none is tied to `duration`; raw times are still reported. Use `transition-duration` to have the token checked.
+
+### Breakpoints
+
+A media query cannot use `var()`, so the widths in `@media` conditions are held to the values of the breakpoint tokens instead.
+
+```css
+/* src/globals.css */
+:root {
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+}
+```
+
+```css
+/* src/nav.module.css */
+@media (width >= 48rem) {
+  /* fine */
+}
+
+@media (40rem <= width < 64rem) {
+  /* fine */
+}
+
+@media (max-width: 47.99rem) {
+}
+
+@media (min-width: 768px) {
+}
+```
+
+```
+src/nav.module.css:9:20 error tokens/breakpoint: 47.99rem is not a breakpoint; the breakpoints are 40rem (--breakpoint-sm), 48rem (--breakpoint-md), 64rem (--breakpoint-lg)
+src/nav.module.css:12:20 error tokens/breakpoint: 768px is not a breakpoint; the breakpoints are 40rem (--breakpoint-sm), 48rem (--breakpoint-md), 64rem (--breakpoint-lg)
+```
+
+- `width`, `min-width` and `max-width` are checked, in the range syntax (both ends of `40rem <= width < 64rem`) and in the `min-` and `max-` form. The direction is free: `width < 48rem` passes as well as `width >= 48rem`. Write `width < 48rem` for the range below a breakpoint rather than `max-width: 47.99rem`.
+- A width passes when its number and unit are those of a breakpoint (`48rem`, `48.0rem`), and zero passes. Units are not converted: in a media query `rem` and `em` follow the font size the browser is set to and `px` does not, so `768px` is not `48rem`. `48em` is reported too, to keep one spelling.
+- A breakpoint token must be one length, written out or through another token (`--breakpoint-md: var(--tablet)` with `--tablet: 48rem`). The project's global CSS reports any other value, and such a token is no breakpoint.
+- `@media` in the project's global CSS is checked like a module's.
+- Not checked: `height` and the other media features, `@container` (the size of a container is the component's, not the page's), `@custom-media`, and the conditions of `@import`.
 
 ## Disable comments
 
