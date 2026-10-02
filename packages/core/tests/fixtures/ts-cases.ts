@@ -72,6 +72,35 @@ export const tsCases: TsCase[] = [
     unused: ["a.module.css:other"],
   },
   {
+    name: "template-literal-access-with-a-static-suffix",
+    files: {
+      "a.module.css": `.sm-gap { color: red; } .md-gap { color: red; } .other { color: red; }`,
+      "a.tsx":
+        "import styles from './a.module.css';\nexport const A = ({ size }: { size: 'sm' | 'md' }) => <div className={styles[`${size}-gap`]} />;",
+    },
+    unused: ["a.module.css:other"],
+  },
+  {
+    name: "template-literal-access-with-no-static-part",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "a.tsx":
+        "import styles from './a.module.css';\nexport const A = ({ x }: { x: string }) => <div className={styles[`${x}`]} />;",
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
+    name: "template-literal-access-with-only-a-static-middle",
+    files: {
+      "a.module.css": `.a-b { color: red; } .c { color: red; }`,
+      "a.tsx":
+        "import styles from './a.module.css';\nexport const A = ({ x, y }: { x: string; y: string }) => <div className={styles[`${x}-${y}`]} />;",
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
     name: "cn-helper",
     files: {
       "a.module.css": `.a { color: red; } .b { color: red; } .c { color: red; }`,

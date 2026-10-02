@@ -354,9 +354,14 @@ function collectReferences(
           const { quasis, expressions } = property as TemplateLiteralNode;
           const head = quasis[0]?.value.cooked ?? "";
           const tail = quasis.at(-1)?.value.cooked ?? "";
-          if (expressions.length === 0) target.used.add(head);
-          else target.patterns.push({ head, tail });
-          return;
+          if (expressions.length === 0) {
+            target.used.add(head);
+            return;
+          }
+          if (head !== "" || tail !== "") {
+            target.patterns.push({ head, tail });
+            return;
+          }
         }
         markOpaque(css, {
           file,
