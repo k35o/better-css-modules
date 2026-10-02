@@ -742,8 +742,10 @@ describe("check", () => {
     return dir;
   }
 
+  const checkIn = (dir: string, config: Config = {}) =>
+    checkProject(resolveConfig({ globalCss: ["./src/global.css"], ...config }, dir));
   const run = async (dir: string, config: Config = {}) =>
-    (await checkProject(resolveConfig({ globalCss: ["./src/global.css"], ...config }, dir))).map(
+    (await checkIn(dir, config)).diagnostics.map(
       (d) => `${path.relative(dir, d.file)}:${d.line}:${d.column} ${d.rule}`,
     );
 
@@ -765,6 +767,17 @@ describe("check", () => {
       "src/card.module.css:6:3 invalid-composes",
       "src/global.css:6:3 tokens/undeclared",
     ]);
+  });
+
+  it("counts the modules and names the token categories it restricts", async () => {
+    const dir = await project({
+      ...card,
+      "src/global.css":
+        ":root {\n  --spacing: 0.25rem;\n  --color-fg-base: #000;\n  --gray: #111;\n}\n",
+      "src/other.module.css": ".a {}\n",
+    });
+    expect(await checkIn(dir)).toMatchObject({ modules: 2, tokens: ["color", "spacing"] });
+    expect(await checkIn(dir, { globalCss: [] })).toMatchObject({ modules: 2, tokens: [] });
   });
 
   it("checks the modules against the layer the config names", async () => {

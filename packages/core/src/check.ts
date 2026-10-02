@@ -163,13 +163,22 @@ type VarReading = "colors" | "one-color" | "unknown";
 /** Numbers are factors inside arithmetic on a token, and raw values anywhere else. */
 type Arithmetic = "none" | "raw" | "token";
 
+export interface CheckResult {
+  /** The problems found, sorted. */
+  diagnostics: Diagnostic[];
+  /** How many CSS Modules files were checked. */
+  modules: number;
+  /** The token categories the global CSS declares, which are restricted. */
+  tokens: TokenCategory[];
+}
+
 /**
  * Check the project: every CSS Modules file the config includes, how the
  * sources use them, and the project's own global CSS. Throws ConfigError when
  * include matches no file, the global CSS cannot be read, or it does not
  * declare the layer.
  */
-export async function check(config: ResolvedConfig): Promise<Diagnostic[]> {
+export async function check(config: ResolvedConfig): Promise<CheckResult> {
   const files = await findCssModules(config);
   if (files.length === 0) {
     throw new ConfigError(
@@ -180,12 +189,20 @@ export async function check(config: ResolvedConfig): Promise<Diagnostic[]> {
   const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
   // Resolved imports come back as real paths, so the usage analysis needs the modules at theirs.
   const { modules, diagnostics } = await loadCssModules(files.map((file) => fs.realpathSync(file)));
-  return sortDiagnostics([
+  const found = [
     ...diagnostics,
     ...(await analyzeUsage(modules, config)),
     ...modules.flatMap((analysis) => checkCss(analysis, globalCss, layer)),
     ...checkGlobalCss(globalCss),
-  ]);
+  ];
+  const declared = new Set([...globalCss.tokens.values()].map(({ category }) => category));
+  return {
+    diagnostics: sortDiagnostics(found),
+    modules: files.length,
+    tokens: (Object.keys(tokenCategories) as TokenCategory[]).filter((category) =>
+      declared.has(category),
+    ),
+  };
 }
 
 /**

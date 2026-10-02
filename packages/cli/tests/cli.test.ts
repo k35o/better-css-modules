@@ -216,7 +216,20 @@ describe("check", () => {
     });
     expect(run(dir, "check")).toEqual({
       status: 0,
-      stdout: "[better-css-modules] no problems found\n",
+      stdout: "[better-css-modules] no problems found (1 modules; tokens: color)\n",
+      stderr: "",
+    });
+  });
+
+  it("says when the global CSS restricts no token category", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs": "export default {};\n",
+      "src/card.module.css": ".used {\n  color: #fff;\n}\n",
+    });
+    expect(run(dir, "check")).toEqual({
+      status: 0,
+      stdout: "[better-css-modules] no problems found (1 modules; tokens: none declared)\n",
       stderr: "",
     });
   });

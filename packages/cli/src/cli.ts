@@ -57,10 +57,15 @@ cli
     }
     const cwd = process.cwd();
     const config = await loadConfig({ config: options.config });
-    const diagnostics = await check(config);
+    const { diagnostics, modules, tokens } = await check(config);
 
     if (diagnostics.length === 0) {
-      if (!config.silent) console.log("[better-css-modules] no problems found");
+      if (!config.silent) {
+        const categories = tokens.length > 0 ? tokens.join(", ") : "none declared";
+        console.log(
+          `[better-css-modules] no problems found (${modules} modules; tokens: ${categories})`,
+        );
+      }
       return;
     }
     const formatter = options.format === "github" ? formatGitHubAnnotation : formatDiagnostic;
