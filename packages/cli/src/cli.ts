@@ -2,17 +2,12 @@
 import cac from "cac";
 import path from "node:path";
 import {
-  analyzeUsage,
-  checkCss,
-  checkGlobalCss,
+  check,
   ConfigError,
   formatDiagnostic,
   formatGitHubAnnotation,
   generate,
   loadConfig,
-  loadGlobalCss,
-  resolveLayer,
-  sortDiagnostics,
   startWatcher,
 } from "@better-css-modules/core";
 import pkg from "../package.json" with { type: "json" };
@@ -62,14 +57,7 @@ cli
     }
     const cwd = process.cwd();
     const config = await loadConfig({ config: options.config });
-    const globalCss = await loadGlobalCss(config);
-    const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
-    const usage = await analyzeUsage(config);
-    const diagnostics = sortDiagnostics([
-      ...usage.diagnostics,
-      ...usage.modules.flatMap((analysis) => checkCss(analysis, globalCss, layer)),
-      ...checkGlobalCss(globalCss),
-    ]);
+    const diagnostics = await check(config);
 
     if (diagnostics.length === 0) {
       if (!config.silent) console.log("[better-css-modules] no problems found");

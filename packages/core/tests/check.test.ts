@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import postcss from "postcss";
-import { checkCss } from "../src/check.js";
+import { check as checkProject, checkCss } from "../src/check.js";
+import { type Config, ConfigError, resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
 import { type GlobalCss, globalCssFrom } from "../src/global.js";
 
@@ -718,5 +722,80 @@ describe("checkCss: composes", () => {
       "4:3-4:11 layer/composes",
       "6:6-6:14 layer/composes",
     ]);
+  });
+});
+
+describe("check", () => {
+  const created: string[] = [];
+  afterAll(async () => {
+    await Promise.all(created.map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  });
+
+  /** A project at its real path, since diagnostics come back at real paths. */
+  async function project(files: Record<string, string>): Promise<string> {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "bcm-check-")));
+    created.push(dir);
+    for (const [name, content] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true });
+      await fs.writeFile(path.join(dir, name), content, "utf-8");
+    }
+    return dir;
+  }
+
+  const run = async (dir: string, config: Config = {}) =>
+    (await checkProject(resolveConfig({ globalCss: ["./src/global.css"], ...config }, dir))).map(
+      (d) => `${path.relative(dir, d.file)}:${d.line}:${d.column} ${d.rule}`,
+    );
+
+  const card = {
+    "src/global.css":
+      "@layer components;\n:root {\n  --color-fg-base: #000;\n}\n.dark {\n  --color-fg-loud: red;\n}\n",
+    "src/card.module.css": ".used {\n  color: #fff;\n}\n.ghost {}\n.a .b {\n  composes: used;\n}\n",
+    "src/card.ts": 'import styles from "./card.module.css";\nexport const card = styles.used;\n',
+  };
+
+  it("reports every problem of the modules, their usage and the global CSS, sorted", async () => {
+    const dir = await project({ ...card, "src/broken.module.css": ".a {\n" });
+    expect(await run(dir)).toEqual([
+      "src/broken.module.css:1:1 syntax",
+      "src/card.module.css:2:10 tokens/color",
+      "src/card.module.css:4:1 unused-class",
+      "src/card.module.css:5:1 unused-class",
+      "src/card.module.css:5:4 unused-class",
+      "src/card.module.css:6:3 invalid-composes",
+      "src/global.css:6:3 tokens/undeclared",
+    ]);
+  });
+
+  it("checks the modules against the layer the config names", async () => {
+    const dir = await project({
+      ...card,
+      "src/global.css": "@layer components;\n",
+      "src/card.module.css": "@layer x {\n  .used {}\n}\n",
+    });
+    expect(await run(dir, { layer: "components" })).toEqual([
+      "src/card.module.css:1:1 layer/nested",
+    ]);
+  });
+
+  it("refuses a layer the global CSS does not declare", async () => {
+    const dir = await project(card);
+    await expect(run(dir, { layer: "ui" })).rejects.toBeInstanceOf(ConfigError);
+  });
+
+  it("refuses global CSS it cannot read", async () => {
+    const dir = await project({ ...card, "src/global.css": '@import "./missing.css";\n' });
+    await expect(run(dir)).rejects.toBeInstanceOf(ConfigError);
+  });
+
+  it("refuses an include that matches no file", async () => {
+    const dir = await project(card);
+    const checking = run(dir, { include: ["app/**/*.module.css", "!app/legacy/**"] });
+    await expect(checking).rejects.toThrow(
+      new ConfigError(
+        `include matches no files in the project root ${dir}: app/**/*.module.css, !app/legacy/**`,
+      ),
+    );
+    await expect(checking).rejects.toBeInstanceOf(ConfigError);
   });
 });

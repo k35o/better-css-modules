@@ -6,8 +6,8 @@ import { ResolverFactory } from "oxc-resolver";
 import { isReferenceIdentifier, ScopeTracker, walk } from "oxc-walker";
 import type { ResolvedConfig } from "./config.js";
 import type { ClassOccurrence, CssModuleAnalysis, SourcePosition } from "./css.js";
-import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
-import { defaultIgnore, findCssModules, loadCssModules } from "./project.js";
+import type { Diagnostic } from "./diagnostic.js";
+import { defaultIgnore } from "./project.js";
 
 const SOURCE_GLOBS = ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"];
 // Build outputs, which can hold megabytes of bundled JS. Dot directories such
@@ -92,26 +92,20 @@ interface ObjectPatternNode extends AstNode {
   properties: AstNode[];
 }
 
-export interface UsageResult {
-  diagnostics: Diagnostic[];
-  /** The analysis of every included CSS file that parses, at its real path. */
-  modules: CssModuleAnalysis[];
-}
-
 /**
- * Find CSS Modules classes that no source file uses.
+ * Find CSS Modules classes and modules that no source file uses.
  *
  * Usage is aggregated per CSS file across the whole project and reported at
  * the CSS side; places where usage cannot be determined statically (dynamic
  * access, the module object escaping as a value) are reported at the source
- * side instead of guessing. The CSS analyses come back too, so that checks of
- * their own run without parsing the files again.
+ * side instead of guessing. The modules must be loaded from their real paths,
+ * which is how resolved imports come back.
  */
-export async function analyzeUsage(config: ResolvedConfig): Promise<UsageResult> {
-  // Resolved imports come back as real paths, so every path here is canonical.
+export async function analyzeUsage(
+  modules: CssModuleAnalysis[],
+  config: ResolvedConfig,
+): Promise<Diagnostic[]> {
   const root = fs.realpathSync(config.root);
-  const cssFiles = (await findCssModules(config)).map((file) => fs.realpathSync(file));
-  const { modules, diagnostics } = await loadCssModules(cssFiles);
   const byPath = new Map(modules.map((analysis) => [analysis.file, analysis]));
   const usage = new Map<string, ModuleUsage>(
     modules.map((analysis) => [
@@ -261,7 +255,7 @@ export async function analyzeUsage(config: ResolvedConfig): Promise<UsageResult>
 
   linkCssReferences(modules, byPath, usage, resolvers);
 
-  const found = [...diagnostics];
+  const found: Diagnostic[] = [];
   const sourcesByPath = new Map(files.map((entry) => [entry.file, entry.source]));
   for (const analysis of modules) {
     const moduleUsage = usage.get(analysis.file)!;
@@ -304,7 +298,7 @@ export async function analyzeUsage(config: ResolvedConfig): Promise<UsageResult>
       });
     }
   }
-  return { diagnostics: sortDiagnostics(found), modules };
+  return found;
 }
 
 function collectReferences(

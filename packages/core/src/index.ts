@@ -1,4 +1,4 @@
-export { checkCss, checkGlobalCss } from "./check.js";
+export { check, checkCss, checkGlobalCss } from "./check.js";
 export { ConfigError, configFile, defineConfig, loadConfig } from "./config.js";
 export type { Config, ResolvedConfig } from "./config.js";
 export { analyzeCss } from "./css.js";
@@ -14,7 +14,7 @@ export type {
 } from "./css.js";
 export { loadGlobalCss } from "./global.js";
 export type { GlobalCss, GlobalCssFile, GlobalCssImport, Token } from "./global.js";
-export { formatDiagnostic, formatGitHubAnnotation, sortDiagnostics } from "./diagnostic.js";
+export { formatDiagnostic, formatGitHubAnnotation } from "./diagnostic.js";
 export type { Diagnostic } from "./diagnostic.js";
 export { dtsPathFor, generate, generateDts, regenerateDts, writeDts } from "./dts.js";
 export type {
@@ -29,6 +29,4 @@ export type { Layer, WrapResult } from "./layer.js";
 export { createMatcher } from "./project.js";
 export { categoryOf, tokenCategories } from "./tokens.js";
 export type { TokenCategory, TokenCategoryDefinition, ValuePart } from "./tokens.js";
-export { analyzeUsage } from "./usage.js";
-export type { UsageResult } from "./usage.js";
 export { startWatcher } from "./watcher.js";

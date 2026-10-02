@@ -258,6 +258,22 @@ describe("check", () => {
     });
   });
 
+  it("exits with 2 when include matches no file, where generate succeeds", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs": 'export default { include: ["app/**/*.module.css"] };\n',
+    });
+    expect(run(dir, "check")).toEqual({
+      status: 2,
+      stdout: "",
+      stderr: `[better-css-modules] include matches no files in the project root ${await fs.realpath(dir)}: app/**/*.module.css\n`,
+    });
+    expect(run(dir, "generate")).toMatchObject({
+      status: 0,
+      stdout: "[better-css-modules] generated 0 file(s)\n",
+    });
+  });
+
   it("exits with 2 and prints why when the global CSS cannot be read", async () => {
     const dir = await project({ ...card, "src/global.css": '@import "tailwindcss";\n' });
     expect(run(dir, "check")).toEqual({

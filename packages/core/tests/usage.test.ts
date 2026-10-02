@@ -3,11 +3,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveConfig } from "../src/config.js";
-import type { Diagnostic } from "../src/diagnostic.js";
+import { type Diagnostic, sortDiagnostics } from "../src/diagnostic.js";
+import { findCssModules, loadCssModules } from "../src/project.js";
 import { analyzeUsage } from "../src/usage.js";
 import { tsCases } from "./fixtures/ts-cases.js";
 
-const configIn = (dir: string) => resolveConfig({ include: ["**/*.module.css"] }, dir);
+/** The usage diagnostics of the project in `dir`, with the modules loaded from their real paths. */
+async function usageIn(dir: string): Promise<Diagnostic[]> {
+  const config = resolveConfig({ include: ["**/*.module.css"] }, dir);
+  const files = await Promise.all((await findCssModules(config)).map((file) => fs.realpath(file)));
+  const { modules } = await loadCssModules(files);
+  return sortDiagnostics(await analyzeUsage(modules, config));
+}
 const created: string[] = [];
 
 // The temp dir is a symlink on macOS and is passed as such; diagnostics come
@@ -46,7 +53,7 @@ function summarize(real: string, diagnostics: Diagnostic[]) {
 
 async function analyze(files: Record<string, string>) {
   const { dir, real } = await project(files);
-  return summarize(real, (await analyzeUsage(configIn(dir))).diagnostics);
+  return summarize(real, await usageIn(dir));
 }
 
 describe("analyzeUsage", () => {
@@ -72,7 +79,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nexport const A = () => <div className={styles.used} />;",
     });
-    const [diagnostic] = (await analyzeUsage(configIn(dir))).diagnostics;
+    const [diagnostic] = await usageIn(dir);
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.module.css"),
       line: 2,
@@ -89,7 +96,7 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nconst 見出し = 'a';\nexport const A = () => <div className={styles[見出し]} />;",
     });
-    const [diagnostic] = (await analyzeUsage(configIn(dir))).diagnostics;
+    const [diagnostic] = await usageIn(dir);
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.tsx"),
       line: 3,
@@ -166,27 +173,5 @@ describe("analyzeUsage", () => {
     expect(summary.reasons).toEqual([
       "s.default escapes as a value here, so usage of a.module.css cannot be determined",
     ]);
-  });
-
-  it("surfaces CSS syntax problems alongside usage", async () => {
-    const { dir } = await project({
-      "a.module.css": ".a { color: red;",
-      "a.tsx":
-        "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
-    });
-    expect((await analyzeUsage(configIn(dir))).diagnostics).toMatchObject([
-      { rule: "syntax", line: 1, column: 1 },
-    ]);
-  });
-
-  it("returns the analyses of the stylesheets that parse, at their real paths", async () => {
-    const { dir, real } = await project({
-      "a.module.css": ".a {}",
-      "b.module.css": ".b { color: red;",
-      "a.tsx":
-        "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
-    });
-    const { modules } = await analyzeUsage(configIn(dir));
-    expect(modules.map((analysis) => analysis.file)).toEqual([path.join(real, "a.module.css")]);
   });
 });

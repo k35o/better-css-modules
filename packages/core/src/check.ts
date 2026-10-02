@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { AtRule, Declaration, Node, Root } from "postcss";
 import type * as CssTree from "css-tree";
 import {
@@ -6,11 +7,19 @@ import {
   checkBreakpointToken,
   checkMediaQuery,
 } from "./breakpoint.js";
+import { ConfigError, type ResolvedConfig } from "./config.js";
 import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
-import { declaresToken, type GlobalCss, type GlobalCssFile, type Token } from "./global.js";
-import { checkLayer, type Layer } from "./layer.js";
+import {
+  declaresToken,
+  type GlobalCss,
+  type GlobalCssFile,
+  loadGlobalCss,
+  type Token,
+} from "./global.js";
+import { checkLayer, type Layer, resolveLayer } from "./layer.js";
+import { findCssModules, loadCssModules } from "./project.js";
 import { checkPure, GLOBAL_AT_RULES, PURE_RULES } from "./pure.js";
 import {
   categoryOf,
@@ -19,6 +28,7 @@ import {
   type TokenCategoryDefinition,
   type ValuePart,
 } from "./tokens.js";
+import { analyzeUsage } from "./usage.js";
 
 const DISABLE_NEXT_LINE = "better-css-modules-disable-next-line";
 
@@ -152,6 +162,31 @@ type VarReading = "colors" | "one-color" | "unknown";
 
 /** Numbers are factors inside arithmetic on a token, and raw values anywhere else. */
 type Arithmetic = "none" | "raw" | "token";
+
+/**
+ * Check the project: every CSS Modules file the config includes, how the
+ * sources use them, and the project's own global CSS. Throws ConfigError when
+ * include matches no file, the global CSS cannot be read, or it does not
+ * declare the layer.
+ */
+export async function check(config: ResolvedConfig): Promise<Diagnostic[]> {
+  const files = await findCssModules(config);
+  if (files.length === 0) {
+    throw new ConfigError(
+      `include matches no files in the project root ${config.root}: ${config.include.join(", ")}`,
+    );
+  }
+  const globalCss = await loadGlobalCss(config);
+  const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
+  // Resolved imports come back as real paths, so the usage analysis needs the modules at theirs.
+  const { modules, diagnostics } = await loadCssModules(files.map((file) => fs.realpathSync(file)));
+  return sortDiagnostics([
+    ...diagnostics,
+    ...(await analyzeUsage(modules, config)),
+    ...modules.flatMap((analysis) => checkCss(analysis, globalCss, layer)),
+    ...checkGlobalCss(globalCss),
+  ]);
+}
 
 /**
  * Check a CSS Modules file against the pure rules and the tokens the global CSS
