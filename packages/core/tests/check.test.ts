@@ -700,3 +700,23 @@ describe("checkCss: the layer the plugins put the module in", () => {
     expect(rules.filter((rule) => rule.startsWith("layer/"))).toEqual([]);
   });
 });
+
+describe("checkCss: composes", () => {
+  const css = ".a {}\n.a .b { composes: a; }\n.c:hover {\n  composes: a;\n}\n.d { composes: a; }";
+  const rules = (layer?: { name: string; order: string[] }) =>
+    checkCss(analyzeCss(css, FILE), globalCssFrom([]), layer)
+      .filter((d) => !d.rule.startsWith("pure/"))
+      .map((d) => `${d.line}:${d.column}-${d.endLine}:${d.endColumn} ${d.rule}`);
+
+  it("reports composes in a rule that is not a single local class", () => {
+    expect(rules()).toEqual(["2:9-2:20 invalid-composes", "4:3-4:14 invalid-composes"]);
+  });
+
+  it("reports only layer/composes when the module goes in a layer", () => {
+    expect(rules({ name: "components", order: ["components"] })).toEqual([
+      "2:9-2:17 layer/composes",
+      "4:3-4:11 layer/composes",
+      "6:6-6:14 layer/composes",
+    ]);
+  });
+});

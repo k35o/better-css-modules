@@ -164,15 +164,31 @@ type Arithmetic = "none" | "raw" | "token";
  * arithmetic on its tokens pass. Anywhere in the file a token name the global
  * CSS does not declare is reported, and so is a name it declares without a
  * category prefix, which is internal to it. A module cannot declare either kind
- * of name. With a layer, what wrapping the module in it would break is
- * reported too. Pure: reads nothing but its arguments.
+ * of name. `composes` outside a rule of a single local class is reported,
+ * which bundlers reject. With a layer, what wrapping the module in it would
+ * break is reported too. Pure: reads nothing but its arguments.
  */
 export function checkCss(
   analysis: CssModuleAnalysis,
   globalCss: GlobalCss,
   layer?: Layer,
 ): Diagnostic[] {
-  return checkRoot(analysis.root, contextOf(analysis.file, globalCss, null, layer));
+  const diagnostics = checkRoot(analysis.root, contextOf(analysis.file, globalCss, null, layer));
+  // In a layer, layer/composes already reports every composes.
+  if (layer) return diagnostics;
+  const invalid = analysis.composes.filter(({ className }) => className === null);
+  return sortDiagnostics([
+    ...diagnostics,
+    ...invalid.map(({ range }) => ({
+      file: analysis.file,
+      line: range.start.line,
+      column: range.start.column,
+      endLine: range.end.line,
+      endColumn: range.end.column,
+      rule: "invalid-composes",
+      message: "composes is only allowed in a rule whose selector is a single local class",
+    })),
+  ]);
 }
 
 /**

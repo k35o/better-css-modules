@@ -454,14 +454,15 @@ function linkCssReferences(
       if (to && byPath.has(to) && to !== analysis.file) usage.get(to)!.importers.add(analysis.file);
     }
     for (const composes of analysis.composes) {
-      if (composes.from.kind === "global") continue;
+      const { className } = composes;
+      if (className === null || composes.from.kind === "global") continue;
       const to =
         composes.from.kind === "local"
           ? analysis.file
           : resolvers.resolve(analysis.file, composes.from.specifier);
       if (!to || !byPath.has(to)) continue;
       if (to !== analysis.file) usage.get(to)!.importers.add(analysis.file);
-      edges.push({ from: analysis.file, className: composes.className, to, names: composes.names });
+      edges.push({ from: analysis.file, className, to, names: composes.names });
     }
   }
   let changed = true;

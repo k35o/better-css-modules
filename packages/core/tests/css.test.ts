@@ -75,10 +75,17 @@ describe("analyzeCss: composes", () => {
     ]);
   });
 
-  it("reports composes in a rule that is not a single class", () => {
-    const analysis = analyzeCss(".a .b { composes: c; }", FILE);
-    expect(analysis.composes).toEqual([]);
-    expect(analysis.diagnostics).toMatchObject([{ rule: "invalid-composes", line: 1, column: 9 }]);
+  it("records composes in a rule that is not a single class without a class name", () => {
+    const analysis = analyzeCss(".a .b { composes: c from './c.module.css'; }", FILE);
+    expect(analysis.composes).toMatchObject([
+      {
+        className: null,
+        names: ["c"],
+        from: { kind: "file", specifier: "./c.module.css" },
+        range: { start: { line: 1, column: 9 } },
+      },
+    ]);
+    expect(analysis.diagnostics).toEqual([]);
   });
 
   it("accepts :local(.a) as the composing class and decodes composed names", () => {

@@ -46,8 +46,11 @@ export type ComposesSource =
   | { kind: "file"; specifier: string };
 
 export interface ComposesDeclaration {
-  /** The local class whose rule holds the `composes` declaration. */
-  className: string;
+  /**
+   * The local class whose rule holds the `composes` declaration, or null when
+   * the selector is not a single local class, where bundlers reject `composes`.
+   */
+  className: string | null;
   /** Composed class names. */
   names: string[];
   from: ComposesSource;
@@ -80,7 +83,7 @@ export interface CssModuleAnalysis {
   exportNames: string[];
   composes: ComposesDeclaration[];
   values: ValueDeclaration[];
-  /** Problems found while parsing; the analysis is still usable. */
+  /** Syntax problems in selectors and at-rule preludes; the analysis is still usable. */
   diagnostics: Diagnostic[];
 }
 
@@ -448,18 +451,6 @@ function collectComposes(
   collector: Collector,
 ): void {
   const range = rangeOfNode(declaration);
-  if (className === null) {
-    collector.diagnostics.push({
-      file: collector.file,
-      line: range.start.line,
-      column: range.start.column,
-      endLine: range.end.line,
-      endColumn: range.end.column,
-      rule: "invalid-composes",
-      message: "composes is only allowed in a rule whose selector is a single local class",
-    });
-    return;
-  }
   const value = declaration.value.trim();
   const imported = /^(.+?)\s+from\s+(.+)$/s.exec(value);
   if (!imported) {

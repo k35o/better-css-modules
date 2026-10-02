@@ -213,6 +213,11 @@ describe("generate", () => {
     ]);
   });
 
+  it("leaves composes that bundlers reject to check", async () => {
+    const dir = await project({ "src/a.module.css": ".a {}\n.a .b { composes: a; }" });
+    expect((await generate(resolveConfig({}, dir))).diagnostics).toEqual([]);
+  });
+
   it("returns the diagnostics sorted by file and position", async () => {
     const dir = await project({
       "src/a.module.css": ".a, %%% {}\n.b, %%% {}",
