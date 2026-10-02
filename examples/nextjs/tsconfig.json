@@ -27,7 +27,9 @@
     "next-env.d.ts",
     "better-css-modules.config.ts",
     "next.config.ts",
+    "vite.config.ts",
     "src",
+    "tests",
     "__generated__",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
