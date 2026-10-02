@@ -30,11 +30,13 @@ export interface ClassOccurrence {
 
 /**
  * A locally scoped identifier other than a class. Bundlers rename these too and
- * export the renamed value under the original name.
+ * export the renamed value under the original name. An `animation` is a
+ * reference to a keyframes name from an animation declaration; the others
+ * declare the name.
  */
 export interface ScopedIdentifier {
   name: string;
-  kind: "id" | "keyframes" | "view-transition-class";
+  kind: "id" | "keyframes" | "animation" | "view-transition-class";
   range: SourceRange;
 }
 
@@ -416,7 +418,7 @@ function visitDeclaration(declaration: Declaration, collector: Collector): void 
       // Arguments of var() and other functions are never animation names.
       if (node.type === "Function") return walk.skip;
       if (node.type === "Identifier" && isName(node)) {
-        collector.identifiers.push({ name: ident.decode(node.name), kind: "keyframes", range });
+        collector.identifiers.push({ name: ident.decode(node.name), kind: "animation", range });
       }
     },
   });

@@ -110,6 +110,20 @@ describe("generateDts", () => {
       `7:15 -> ${SOURCE}:1:0`,
     ]);
   });
+
+  it("maps a keyframes name to its @keyframes even when an animation refers to it first", () => {
+    const css = [".a { animation: spin 1s; }", "@keyframes spin {}", ".b { animation: fade 1s; }"];
+    expect(mappingsOf(generate(css.join("\n"), defaultExport).map)).toEqual([
+      `1:0 -> ${SOURCE}:1:0`,
+      `1:14 -> ${SOURCE}:1:0`,
+      `2:11 -> ${SOURCE}:1:0`,
+      `3:11 -> ${SOURCE}:3:0`,
+      // Declared nowhere: the animation that refers to it is all there is.
+      `4:11 -> ${SOURCE}:3:5`,
+      `5:11 -> ${SOURCE}:2:11`,
+      `7:15 -> ${SOURCE}:1:0`,
+    ]);
+  });
 });
 
 describe("generateDts with named exports", () => {

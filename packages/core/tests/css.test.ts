@@ -95,7 +95,7 @@ describe("analyzeCss: scoped identifiers", () => {
     expect(analyzeCss(css, FILE).identifiers).toMatchObject([
       { name: "hero", kind: "id", range: { start: { line: 1, column: 1 } } },
       { name: "fade", kind: "keyframes", range: { start: { line: 3, column: 3 } } },
-      { name: "fade", kind: "keyframes", range: { start: { line: 4, column: 6 } } },
+      { name: "fade", kind: "animation", range: { start: { line: 4, column: 6 } } },
       { name: "card", kind: "view-transition-class", range: { start: { line: 5, column: 23 } } },
     ]);
   });

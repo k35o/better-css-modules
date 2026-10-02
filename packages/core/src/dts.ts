@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { SourceMapGenerator } from "source-map-js";
 import type { Config } from "./config.js";
-import type { CssModuleAnalysis, SourcePosition } from "./css.js";
+import type { CssModuleAnalysis, SourcePosition, SourceRange } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { loadCssModule, loadCssModules, syntaxDiagnosticFrom } from "./project.js";
 
@@ -23,7 +23,7 @@ function quoteUnlessIdentifier(name: string): string {
 
 /**
  * One line of a generated `.d.ts`, with the columns that lead back to the
- * stylesheet: to the first occurrence of a key, or to the top of the file.
+ * stylesheet: to where a key is declared, or to the top of the file.
  */
 interface DtsLine {
   text: string;
@@ -73,13 +73,27 @@ function namedExportLines(keys: string[]): DtsLine[] {
   ];
 }
 
-/** Where each key first appears in the stylesheet. */
+/**
+ * Where each key is first declared in the stylesheet, or, for a keyframes name
+ * no @keyframes declares, where an animation first refers to it.
+ */
 function firstOccurrences({
   classes,
   identifiers,
 }: Pick<CssModuleAnalysis, "classes" | "identifiers">): Map<string, SourcePosition> {
+  const declarations = earliest([
+    ...classes,
+    ...identifiers.filter(({ kind }) => kind !== "animation"),
+  ]);
+  const references = earliest(identifiers.filter(({ kind }) => kind === "animation"));
+  return new Map([...references, ...declarations]);
+}
+
+function earliest(
+  occurrences: { name: string; range: SourceRange }[],
+): Map<string, SourcePosition> {
   const first = new Map<string, SourcePosition>();
-  for (const { name, range } of [...classes, ...identifiers]) {
+  for (const { name, range } of occurrences) {
     const seen = first.get(name);
     const earlier =
       !seen ||
@@ -100,7 +114,7 @@ export interface GeneratedDts {
 /**
  * Generate the `.d.ts` of a module, with its keys as properties of the default
  * export or as named exports, and the declaration map that ties each key to
- * where it first appears in the stylesheet.
+ * where the stylesheet first declares it.
  */
 export function generateDts(
   analysis: Pick<CssModuleAnalysis, "file" | "exportNames" | "classes" | "identifiers">,
