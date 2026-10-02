@@ -1,0 +1,6 @@
+---
+"@better-css-modules/core": minor
+"@better-css-modules/cli": minor
+---
+
+Rebuild `check` on the oxc parser and add up the usage of every CSS module across the whole project. It reports `usage/unused-class`, `usage/unused-module` and `usage/unanalyzable` (for `styles[expr]`, rest destructuring, a dynamic `import()`, the module object passed on, `export *` and re-exports of re-exports), `syntax`, and `invalid-composes` for `composes` outside a rule of a single class, each with `file:line:col`, or as GitHub Actions annotations with `--format github`. It understands default, namespace and named imports, `export { default as x } from` re-exports, tsconfig `paths`, `composes` and template-literal keys, and skips dot directories and the build output at the project root. The CLI exits with 0 when nothing is found, 1 when something is, and 2 when it cannot run: an unknown command or option, a mistake in the config, an `include` that matches no file, or global CSS it cannot read. A run without problems says how many modules it checked and which token categories it restricts. `generate` prints its diagnostics to stderr and exits with 1 when a stylesheet does not parse, and `--version` prints the package's version.
