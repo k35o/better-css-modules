@@ -110,6 +110,33 @@ export const tsCases: TsCase[] = [
     unused: ["a.module.css:c"],
   },
   {
+    name: "optional-chaining",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; } .c { color: red; }`,
+      "a.tsx": `import styles from './a.module.css';\nexport const A = () => <div className={styles?.a + styles?.["b"]} />;`,
+    },
+    unused: ["a.module.css:c"],
+  },
+  {
+    name: "computed-key-of-a-class-map",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "a.tsx": `import styles from './a.module.css';\nimport cx from './cx';\nexport const A = ({ on }: { on: boolean }) => <div className={cx({ [styles.a]: on })} />;`,
+      "cx.ts": `export default (map: Record<string, boolean>) => Object.keys(map).filter((k) => map[k]).join(' ');`,
+    },
+    unused: ["a.module.css:b"],
+  },
+  {
+    name: "class-names-bind",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "a.tsx": `import styles from './a.module.css';\nimport classNames from './class-names';\nconst cx = classNames.bind(styles);\nexport const A = () => <div className={cx('a')} />;`,
+      "class-names.ts": `export default { bind: (map: Record<string, string>) => (k: string) => map[k] };`,
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
     name: "destructuring",
     files: {
       "a.module.css": `.a { color: red; } .b { color: red; } .c { color: red; }`,
@@ -145,6 +172,26 @@ export const tsCases: TsCase[] = [
     unused: ["a.module.css:b"],
   },
   {
+    name: "export-of-a-local-binding",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "index.ts": `import styles from './a.module.css';\nexport { styles };`,
+      "user.tsx": `import { styles } from './index';\nexport const A = () => <div className={styles.a} />;`,
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
+    name: "export-default-of-a-local-binding",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "index.ts": `import styles from './a.module.css';\nexport default styles;`,
+      "user.tsx": `import styles from './index';\nexport const A = () => <div className={styles.a} />;`,
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
     name: "re-export-through-barrel-of-barrels",
     files: {
       "a.module.css": `.a { color: red; } .b { color: red; }`,
@@ -170,6 +217,15 @@ export const tsCases: TsCase[] = [
     files: {
       "a.module.css": `.a { color: red; }`,
       "index.ts": `export * from './a.module.css';`,
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
+    name: "re-export-as-a-namespace",
+    files: {
+      "a.module.css": `.a { color: red; }`,
+      "index.ts": `export * as styles from './a.module.css';`,
     },
     unused: [],
     unanalyzable: true,
@@ -319,10 +375,36 @@ export const tsCases: TsCase[] = [
     unused: ["src/a.module.css:b"],
   },
   {
+    name: "package-imports-alias",
+    files: {
+      "package.json": `{"name":"app","imports":{"#styles/*":"./src/styles/*"}}`,
+      "src/styles/a.module.css": `.a { color: red; } .b { color: red; }`,
+      "src/a.tsx": `import styles from '#styles/a.module.css';\nexport const A = () => <div className={styles.a} />;`,
+    },
+    unused: ["src/styles/a.module.css:b"],
+  },
+  {
+    name: "require-is-not-an-import",
+    files: {
+      "a.module.css": `.a { color: red; }`,
+      "a.cjs": `const styles = require('./a.module.css');\nmodule.exports = styles.a;`,
+    },
+    unused: [],
+    orphans: ["a.module.css"],
+  },
+  {
     name: "global-and-keyframes",
     files: {
       "a.module.css": `:global(.dark) .bg { color: red; } @keyframes fade { to { opacity: 1 } } .anim { animation: fade 1s; }`,
       "a.tsx": `import styles from './a.module.css';\nexport const A = () => <div className={styles.bg + styles.anim} />;`,
+    },
+    unused: [],
+  },
+  {
+    name: "unreferenced-keyframes-are-not-reported",
+    files: {
+      "a.module.css": `.a { color: red; } @keyframes unusedFade { to { opacity: 1 } }`,
+      "a.tsx": `import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;`,
     },
     unused: [],
   },
@@ -335,6 +417,14 @@ export const tsCases: TsCase[] = [
     },
     unused: [],
     unanalyzable: true,
+  },
+  {
+    name: "composes-cycle",
+    files: {
+      "a.module.css": `.a { composes: b; color: red; } .b { composes: a; color: red; } .c { color: red; }`,
+      "a.tsx": `import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;`,
+    },
+    unused: ["a.module.css:c"],
   },
   {
     name: "value-import-counts-as-importer",
