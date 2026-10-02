@@ -878,6 +878,48 @@ describe("checkCss: the layer the plugins put the module in", () => {
   });
 });
 
+describe("checkCss: ranges", () => {
+  /** The text each single-line diagnostic covers, from its column to just before its end column. */
+  const covered = (css: string, layer?: { name: string; order: string[] }) => {
+    const lines = css.split("\n");
+    return checkCss(analyzeCss(css, FILE), designSystem, layer).map((d) => {
+      expect(d.endLine).toBe(d.line);
+      return `${d.rule} ${lines[d.line - 1].slice(d.column - 1, (d.endColumn ?? 0) - 1)}`;
+    });
+  };
+
+  it("ends every range just after its last character", () => {
+    const css = [
+      "/* better-css-modules-disable-next-line pure/id -- nothing below */",
+      "",
+      "#main { color: #fff !important; --color-x: 0; }",
+      ".a .b { composes: c; }",
+      "@font-face { font-family: x; }",
+      "@keyframes :global(spin) {}",
+      ".c { color: var(--color-fg-bsae); }",
+      "div {}",
+      ".d p {}",
+    ].join("\n");
+    expect(covered(css)).toEqual([
+      "invalid-disable /* better-css-modules-disable-next-line pure/id -- nothing below */",
+      "pure/id #main",
+      "tokens/color #fff",
+      "pure/important !important",
+      "tokens/declaration --color-x",
+      "invalid-composes composes: c;",
+      "pure/at-rule @font-face",
+      "pure/global :global(spin)",
+      "tokens/unknown var(--color-fg-bsae)",
+      "pure/selector div",
+      "pure/subject p",
+    ]);
+    expect(covered("@layer x {}\n.a {\n  composes: b;\n}", { name: "x", order: ["x"] })).toEqual([
+      "layer/nested @layer",
+      "layer/composes composes",
+    ]);
+  });
+});
+
 describe("checkCss: composes", () => {
   const css = ".a {}\n.a .b { composes: a; }\n.c:hover {\n  composes: a;\n}\n.d { composes: a; }";
   const rules = (layer?: { name: string; order: string[] }) =>
@@ -886,7 +928,7 @@ describe("checkCss: composes", () => {
       .map((d) => `${d.line}:${d.column}-${d.endLine}:${d.endColumn} ${d.rule}`);
 
   it("reports composes in a rule that is not a single local class", () => {
-    expect(rules()).toEqual(["2:9-2:20 invalid-composes", "4:3-4:14 invalid-composes"]);
+    expect(rules()).toEqual(["2:9-2:21 invalid-composes", "4:3-4:15 invalid-composes"]);
   });
 
   it("reports only layer/composes when the module goes in a layer", () => {

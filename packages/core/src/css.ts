@@ -19,6 +19,7 @@ export interface SourcePosition {
 
 export interface SourceRange {
   start: SourcePosition;
+  /** Just after the last character. */
   end: SourcePosition;
 }
 
@@ -517,7 +518,8 @@ export function valueStart(declaration: Declaration): (SourcePosition & { offset
 function rangeOfNode(node: Node): SourceRange {
   const start = startOf(node);
   const end = node.source?.end;
-  return { start, end: end ? { line: end.line, column: end.column } : start };
+  // postcss ends a node on its last character; a range ends after it.
+  return { start, end: end ? { line: end.line, column: end.column + 1 } : start };
 }
 
 function rangeOf(loc: CssTree.CssLocation): SourceRange {

@@ -8,7 +8,9 @@ export interface Diagnostic {
   line: number;
   /** 1-based column. */
   column: number;
+  /** 1-based line of the end of the range. */
   endLine?: number;
+  /** 1-based column just after the last character of the range, as in SARIF. */
   endColumn?: number;
   rule: RuleId;
   message: string;
