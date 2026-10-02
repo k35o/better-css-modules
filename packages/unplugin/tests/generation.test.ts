@@ -33,16 +33,17 @@ function pluginFor(framework: UnpluginContextMeta["framework"]): UnpluginOptions
 
 // The hooks do not read their bundler context.
 const buildStart = (plugin: UnpluginOptions) => plugin.buildStart!.call({} as never);
-const watchChange = (plugin: UnpluginOptions, id: string) =>
-  plugin.watchChange!.call({} as never, id, { event: "update" });
+const watchChange = (plugin: UnpluginOptions, id: string, event: "update" | "delete" = "update") =>
+  plugin.watchChange!.call({} as never, id, { event });
 
 const dtsOf = (dir: string, cssFile: string) =>
   fs.readFile(path.join(dir, "__generated__", `${cssFile}.d.ts`), "utf-8");
 
 let log: ReturnType<typeof vi.spyOn>;
 const generations = () =>
-  log.mock.calls.filter(([message]) => String(message).startsWith("[better-css-modules] generated"))
-    .length;
+  log.mock.calls.filter(([message]) =>
+    /^\[better-css-modules\] generated \d+/.test(String(message)),
+  ).length;
 
 beforeEach(() => {
   log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -124,4 +125,22 @@ describe("generating the types", () => {
       expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly baz: string;");
     },
   );
+
+  it("brings the types in line with each change watch mode reports", async () => {
+    const dir = await enterProject({ "src/a.module.css": ".foo { color: red; }" });
+    const css = path.join(dir, "src/a.module.css");
+    const dts = path.join("__generated__", "src", "a.module.css.d.ts");
+    const plugin = pluginFor("rollup");
+    await buildStart(plugin);
+
+    await writeFiles(dir, { "src/a.module.css": ".bar { color: red; }" });
+    await watchChange(plugin, css);
+    expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly bar: string;");
+    expect(log).toHaveBeenLastCalledWith(`[better-css-modules] generated: ${dts}`);
+
+    await fs.rm(css);
+    await watchChange(plugin, css, "delete");
+    await expect(dtsOf(dir, "src/a.module.css")).rejects.toThrow();
+    expect(log).toHaveBeenLastCalledWith(`[better-css-modules] removed: ${dts}`);
+  });
 });

@@ -172,29 +172,39 @@ async function writeIfChanged(file: string, content: string): Promise<void> {
   if (current !== content) await fs.writeFile(file, content, "utf-8");
 }
 
-export async function removeDts(cssFile: string, options: OutputOptions): Promise<string> {
-  const dtsPath = dtsPathFor(cssFile, options);
+async function removeDts(dtsPath: string): Promise<void> {
   await Promise.all([fs.rm(dtsPath, { force: true }), fs.rm(`${dtsPath}.map`, { force: true })]);
-  return dtsPath;
 }
 
 export interface RegenerateResult {
-  /** Path of the `.d.ts`, or null when the stylesheet could not be parsed. */
-  dtsPath: string | null;
+  /** Path of the `.d.ts` written, or null when there is none to write. */
+  generated: string | null;
+  /** Path of the `.d.ts` removed because its stylesheet is gone, or null. */
+  removed: string | null;
   diagnostics: Diagnostic[];
 }
 
 /**
- * Regenerate the `.d.ts` of one file after it changed. A stylesheet that does
- * not parse (typically mid-edit) yields a diagnostic and leaves the previous
- * `.d.ts` in place.
+ * Bring the `.d.ts` of one file in line with it after it was added, changed
+ * or deleted. A stylesheet that does not parse (typically mid-edit) yields a
+ * diagnostic and leaves the previous `.d.ts` in place.
  */
 export async function regenerateDts(
   cssFile: string,
   options: DtsOptions,
 ): Promise<RegenerateResult> {
+  const exists = await fs.access(cssFile).then(
+    () => true,
+    () => false,
+  );
+  if (!exists) {
+    const dtsPath = dtsPathFor(cssFile, options);
+    await removeDts(dtsPath);
+    return { generated: null, removed: dtsPath, diagnostics: [] };
+  }
   const { analysis, diagnostics } = await loadCssModule(cssFile);
-  return { dtsPath: analysis && (await writeDts(analysis, options)), diagnostics };
+  const generated = analysis && (await writeDts(analysis, options));
+  return { generated, removed: null, diagnostics };
 }
 
 export interface GenerateResult {

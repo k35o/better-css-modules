@@ -7,7 +7,7 @@ import path from "node:path";
 import { SourceMapConsumer } from "source-map-js";
 import { resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
-import { dtsPathFor, generateAll, generateDts, regenerateDts, removeDts } from "../src/dts.js";
+import { dtsPathFor, generateAll, generateDts, regenerateDts } from "../src/dts.js";
 
 const TSC = path.join(
   path.dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
@@ -212,10 +212,6 @@ describe("generateAll", () => {
     expect(diagnostics).toMatchObject([
       { file: path.join(dir, "src", "broken.module.css"), rule: "syntax", line: 1, column: 1 },
     ]);
-
-    await removeDts(path.join(dir, "src", "a.module.css"), config);
-    await expect(fs.access(written[0])).rejects.toThrow();
-    await expect(fs.access(`${written[0]}.map`)).rejects.toThrow();
   });
 });
 
@@ -225,22 +221,42 @@ describe("regenerateDts", () => {
     const cssFile = path.join(dir, "src", "a.module.css");
     const output = resolveConfig({}, dir);
 
+    const dtsPath = dtsPathFor(cssFile, output);
+
     const first = await regenerateDts(cssFile, output);
-    expect(first).toMatchObject({ dtsPath: dtsPathFor(cssFile, output), diagnostics: [] });
-    const before = await fs.stat(first.dtsPath!);
+    expect(first).toEqual({ generated: dtsPath, removed: null, diagnostics: [] });
+    const before = await fs.stat(dtsPath);
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(await regenerateDts(cssFile, output)).toEqual(first);
-    expect((await fs.stat(first.dtsPath!)).mtimeMs).toBe(before.mtimeMs);
+    expect((await fs.stat(dtsPath)).mtimeMs).toBe(before.mtimeMs);
 
     await fs.writeFile(cssFile, ".a { color: red;");
     expect(await regenerateDts(cssFile, output)).toMatchObject({
-      dtsPath: null,
+      generated: null,
+      removed: null,
       diagnostics: [{ rule: "syntax", file: cssFile }],
     });
-    expect(await fs.readFile(first.dtsPath!, "utf-8")).toBe(
-      generateDts(analyzeCss(".a {}", cssFile), first.dtsPath!, defaultExport).dts,
+    expect(await fs.readFile(dtsPath, "utf-8")).toBe(
+      generateDts(analyzeCss(".a {}", cssFile), dtsPath, defaultExport).dts,
     );
+  });
+
+  it("removes the .d.ts and its map once the stylesheet is gone", async () => {
+    const dir = await project({ "src/a.module.css": ".a {}" });
+    const cssFile = path.join(dir, "src", "a.module.css");
+    const output = resolveConfig({}, dir);
+    const dtsPath = dtsPathFor(cssFile, output);
+    await regenerateDts(cssFile, output);
+
+    await fs.rm(cssFile);
+    expect(await regenerateDts(cssFile, output)).toEqual({
+      generated: null,
+      removed: dtsPath,
+      diagnostics: [],
+    });
+    await expect(fs.access(dtsPath)).rejects.toThrow();
+    await expect(fs.access(`${dtsPath}.map`)).rejects.toThrow();
   });
 });
 

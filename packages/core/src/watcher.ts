@@ -2,7 +2,7 @@ import path from "node:path";
 import { watch } from "chokidar";
 import type { ResolvedConfig } from "./config.js";
 import { formatDiagnostic } from "./diagnostic.js";
-import { regenerateDts, removeDts } from "./dts.js";
+import { regenerateDts } from "./dts.js";
 import { createMatcher } from "./project.js";
 
 /**
@@ -43,33 +43,22 @@ export function startWatcher(config: ResolvedConfig) {
   const watcher = watch(baseDirs, { cwd: root, ignoreInitial: true, ignored });
 
   // chokidar with the cwd option emits paths relative to it
-  const regenerate = async (relativePath: string) => {
+  const sync = async (relativePath: string) => {
     const file = path.resolve(root, relativePath);
     if (!matches(file)) return;
     try {
-      const { dtsPath, diagnostics } = await regenerateDts(file, config);
-      if (dtsPath) log(`generated: ${path.relative(cwd, dtsPath)}`);
+      const { generated, removed, diagnostics } = await regenerateDts(file, config);
+      if (generated) log(`generated: ${path.relative(cwd, generated)}`);
+      if (removed) log(`removed: ${path.relative(cwd, removed)}`);
       for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     } catch (error) {
       console.error(`[better-css-modules] error processing ${path.relative(cwd, file)}:`, error);
     }
   };
 
-  watcher.on("add", regenerate);
-  watcher.on("change", regenerate);
-  watcher.on("unlink", async (relativePath) => {
-    const file = path.resolve(root, relativePath);
-    if (!matches(file)) return;
-    try {
-      const dtsPath = await removeDts(file, config);
-      log(`removed: ${path.relative(cwd, dtsPath)}`);
-    } catch (error) {
-      console.error(
-        `[better-css-modules] error removing types for ${path.relative(cwd, file)}:`,
-        error,
-      );
-    }
-  });
+  watcher.on("add", sync);
+  watcher.on("change", sync);
+  watcher.on("unlink", sync);
 
   return watcher;
 }

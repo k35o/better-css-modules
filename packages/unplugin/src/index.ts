@@ -10,7 +10,6 @@ import {
   loadGlobalCss,
   type ResolvedConfig,
   regenerateDts,
-  removeDts,
   resolveLayer,
   wrapInLayer,
 } from "@better-css-modules/core";
@@ -118,7 +117,7 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       loader: "default",
     },
 
-    async watchChange(id: string, change: { event: string }) {
+    async watchChange(id: string) {
       // The rebuild may import a module created while nothing imported it, which
       // watch mode never reported, so the next build start generates everything.
       generations.clear();
@@ -126,14 +125,9 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       if (globalFiles.has(id)) globalCss = undefined;
       if (!matches(id)) return;
 
-      if (change.event === "delete") {
-        const dtsPath = await removeDts(id, config);
-        log(`removed: ${path.relative(cwd, dtsPath)}`);
-        return;
-      }
-
-      const { dtsPath, diagnostics } = await regenerateDts(id, config);
-      if (dtsPath) log(`regenerated: ${path.relative(cwd, dtsPath)}`);
+      const { generated, removed, diagnostics } = await regenerateDts(id, config);
+      if (generated) log(`generated: ${path.relative(cwd, generated)}`);
+      if (removed) log(`removed: ${path.relative(cwd, removed)}`);
       for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     },
   };
