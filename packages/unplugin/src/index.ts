@@ -4,7 +4,7 @@ import {
   type Config,
   createMatcher,
   formatDiagnostic,
-  generateAll,
+  generate,
   type GlobalCss,
   loadConfig,
   loadGlobalCss,
@@ -67,9 +67,10 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
     if (!config?.silent) console.log(`[better-css-modules] ${message}`);
   };
 
-  const generate = async (resolved: ResolvedConfig) => {
-    const { written, diagnostics } = await generateAll(resolved);
-    log(`generated ${written.length} file(s)`);
+  const generateTypes = async (resolved: ResolvedConfig) => {
+    const { files, removed, diagnostics } = await generate(resolved);
+    log(`generated ${files.length} file(s)`);
+    for (const dtsPath of removed) log(`removed: ${path.relative(cwd, dtsPath)}`);
     for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
   };
 
@@ -100,10 +101,10 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
     async buildStart() {
       globalCss = undefined;
       ({ config, matches } = await (setup = load()));
-      if (meta.framework !== "vite") return generate(config);
+      if (meta.framework !== "vite") return generateTypes(config);
 
       const key = JSON.stringify([cwd, config]);
-      if (!generations.has(key)) generations.set(key, generate(config));
+      if (!generations.has(key)) generations.set(key, generateTypes(config));
       await generations.get(key);
     },
 

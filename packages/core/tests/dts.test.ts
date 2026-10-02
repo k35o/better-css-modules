@@ -7,7 +7,7 @@ import path from "node:path";
 import { SourceMapConsumer } from "source-map-js";
 import { resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
-import { dtsPathFor, generateAll, generateDts, regenerateDts } from "../src/dts.js";
+import { dtsPathFor, generate, generateDts, regenerateDts } from "../src/dts.js";
 
 const TSC = path.join(
   path.dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
@@ -37,7 +37,7 @@ const CSS_FILE = "/project/src/a.module.css";
 const DTS_FILE = "/project/__generated__/src/a.module.css.d.ts";
 const SOURCE = "../../src/a.module.css";
 
-function generate(css: string, options: { namedExports: boolean }) {
+function dtsOf(css: string, options: { namedExports: boolean }) {
   return generateDts(analyzeCss(css, CSS_FILE), DTS_FILE, options);
 }
 
@@ -65,10 +65,8 @@ const stylesheet = [
 describe("generateDts", () => {
   it("declares one readonly string key per class, quoting what is not an identifier", () => {
     expect(
-      generate(
-        '.container {} .primary-btn {} .say\\"hi {} .sm\\:hidden {} .日本語 {}',
-        defaultExport,
-      ).dts,
+      dtsOf('.container {} .primary-btn {} .say\\"hi {} .sm\\:hidden {} .日本語 {}', defaultExport)
+        .dts,
     ).toBe(
       [
         "declare const styles: {",
@@ -86,7 +84,7 @@ describe("generateDts", () => {
   });
 
   it("generates an empty object type when there are no classes", () => {
-    expect(generate(":global(.x) {}", defaultExport).dts).toBe(
+    expect(dtsOf(":global(.x) {}", defaultExport).dts).toBe(
       [
         "declare const styles: {",
         "};",
@@ -98,7 +96,7 @@ describe("generateDts", () => {
   });
 
   it("maps each key to its first occurrence, and the module and styles to the top", () => {
-    const { map } = generate(stylesheet, defaultExport);
+    const { map } = dtsOf(stylesheet, defaultExport);
     expect(JSON.parse(map)).toMatchObject({ version: 3, file: "a.module.css.d.ts" });
     expect(mappingsOf(map)).toEqual([
       `1:0 -> ${SOURCE}:1:0`,
@@ -113,7 +111,7 @@ describe("generateDts", () => {
 
   it("maps a keyframes name to its @keyframes even when an animation refers to it first", () => {
     const css = [".a { animation: spin 1s; }", "@keyframes spin {}", ".b { animation: fade 1s; }"];
-    expect(mappingsOf(generate(css.join("\n"), defaultExport).map)).toEqual([
+    expect(mappingsOf(dtsOf(css.join("\n"), defaultExport).map)).toEqual([
       `1:0 -> ${SOURCE}:1:0`,
       `1:14 -> ${SOURCE}:1:0`,
       `2:11 -> ${SOURCE}:1:0`,
@@ -128,7 +126,7 @@ describe("generateDts", () => {
 
 describe("generateDts with named exports", () => {
   it("exports each class under its own name and marks the module as an ES module", () => {
-    expect(generate('.container {} .primary-btn {} .say\\"hi {}', namedExports).dts).toBe(
+    expect(dtsOf('.container {} .primary-btn {} .say\\"hi {}', namedExports).dts).toBe(
       [
         "declare const _0: string;",
         "export { _0 as container };",
@@ -144,7 +142,7 @@ describe("generateDts with named exports", () => {
   });
 
   it("leaves out classes named default and __esModule", () => {
-    expect(generate(".default {} .a {} .__esModule {}", namedExports).dts).toBe(
+    expect(dtsOf(".default {} .a {} .__esModule {}", namedExports).dts).toBe(
       [
         "declare const _0: string;",
         "export { _0 as a };",
@@ -156,7 +154,7 @@ describe("generateDts with named exports", () => {
   });
 
   it("maps the local and the exported name of each key to its first occurrence", () => {
-    expect(mappingsOf(generate(stylesheet, namedExports).map)).toEqual([
+    expect(mappingsOf(dtsOf(stylesheet, namedExports).map)).toEqual([
       `1:0 -> ${SOURCE}:1:0`,
       `1:14 -> ${SOURCE}:3:0`,
       `2:15 -> ${SOURCE}:3:0`,
@@ -190,7 +188,7 @@ describe("dtsPathFor", () => {
   });
 });
 
-describe("generateAll", () => {
+describe("generate", () => {
   it("writes a .d.ts for every included file and reports parse problems", async () => {
     const dir = await project({
       "src/a.module.css": ".a {} .b:hover {}",
@@ -199,19 +197,144 @@ describe("generateAll", () => {
       "node_modules/dep/src/x.module.css": ".dep {}",
     });
     const config = resolveConfig({ include: ["**/*.module.css"] }, dir);
-    const { written, diagnostics } = await generateAll(config);
+    const { files, removed, diagnostics } = await generate(config);
 
-    expect(written).toEqual([path.join(dir, "__generated__", "src", "a.module.css.d.ts")]);
+    expect(files).toEqual([path.join(dir, "__generated__", "src", "a.module.css.d.ts")]);
+    expect(removed).toEqual([]);
     const generated = generateDts(
       analyzeCss(".a {} .b:hover {}", path.join(dir, "src", "a.module.css")),
-      written[0],
+      files[0],
       defaultExport,
     );
-    expect(await fs.readFile(written[0], "utf-8")).toBe(generated.dts);
-    expect(await fs.readFile(`${written[0]}.map`, "utf-8")).toBe(generated.map);
+    expect(await fs.readFile(files[0], "utf-8")).toBe(generated.dts);
+    expect(await fs.readFile(`${files[0]}.map`, "utf-8")).toBe(generated.map);
     expect(diagnostics).toMatchObject([
       { file: path.join(dir, "src", "broken.module.css"), rule: "syntax", line: 1, column: 1 },
     ]);
+  });
+
+  it("returns the diagnostics sorted by file and position", async () => {
+    const dir = await project({
+      "src/a.module.css": ".a, %%% {}\n.b, %%% {}",
+      "src/b.module.css": ".x { color: red;",
+    });
+    const { diagnostics } = await generate(resolveConfig({}, dir));
+    expect(diagnostics.map(({ file, line }) => `${path.relative(dir, file)}:${line}`)).toEqual([
+      "src/a.module.css:1",
+      "src/a.module.css:2",
+      "src/b.module.css:1",
+    ]);
+  });
+
+  /** The files under the project, relative to it, after `generate` ran with `config`. */
+  async function filesAfter(dir: string, config: Parameters<typeof resolveConfig>[0]) {
+    const result = await generate(resolveConfig(config, dir));
+    const all = await fs.readdir(dir, { recursive: true, withFileTypes: true });
+    const files = all
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.relative(dir, path.join(entry.parentPath, entry.name)))
+      .sort();
+    return { removed: result.removed.map((file) => path.relative(dir, file)), files };
+  }
+
+  it("removes the .d.ts and map of a stylesheet that is gone or no longer included", async () => {
+    const dir = await project({
+      "src/a.module.css": ".a {}",
+      "src/b.module.css": ".b {}",
+      "src/legacy/c.module.css": ".c {}",
+    });
+    await generate(resolveConfig({}, dir));
+    await fs.rm(path.join(dir, "src/b.module.css"));
+
+    expect(await filesAfter(dir, { exclude: ["src/legacy"] })).toEqual({
+      removed: [
+        "__generated__/src/b.module.css.d.ts",
+        "__generated__/src/legacy/c.module.css.d.ts",
+      ],
+      files: [
+        "__generated__/src/a.module.css.d.ts",
+        "__generated__/src/a.module.css.d.ts.map",
+        "src/a.module.css",
+        "src/legacy/c.module.css",
+      ],
+    });
+  });
+
+  it("removes a map left without its .d.ts", async () => {
+    const dir = await project({ "__generated__/src/gone.module.css.d.ts.map": "{}" });
+    expect(await filesAfter(dir, {})).toEqual({
+      removed: ["__generated__/src/gone.module.css.d.ts"],
+      files: [],
+    });
+  });
+
+  it("keeps the files in outDir it could not have written", async () => {
+    const dir = await project({
+      "src/a.module.css": ".a {}",
+      "__generated__/global.d.ts": "declare const x: string;",
+      "__generated__/src/a.css.d.ts": "export {};",
+      "__generated__/lib/b.module.css.d.ts": "export {};",
+    });
+    expect(await filesAfter(dir, {})).toEqual({
+      removed: [],
+      files: [
+        "__generated__/global.d.ts",
+        "__generated__/lib/b.module.css.d.ts",
+        "__generated__/src/a.css.d.ts",
+        "__generated__/src/a.module.css.d.ts",
+        "__generated__/src/a.module.css.d.ts.map",
+        "src/a.module.css",
+      ],
+    });
+  });
+
+  it("keeps the .d.ts of a stylesheet that does not parse", async () => {
+    const dir = await project({ "src/a.module.css": ".a {}" });
+    await generate(resolveConfig({}, dir));
+    await fs.writeFile(path.join(dir, "src/a.module.css"), ".a { color: red;");
+
+    expect(await filesAfter(dir, {})).toEqual({
+      removed: [],
+      files: [
+        "__generated__/src/a.module.css.d.ts",
+        "__generated__/src/a.module.css.d.ts.map",
+        "src/a.module.css",
+      ],
+    });
+  });
+
+  it("removes only the outputs of gone stylesheets when outDir is the root", async () => {
+    const dir = await project({
+      "src/a.module.css": ".a {}",
+      "src/b.module.css": ".b {}",
+      "src/types.d.ts": "export {};",
+      "node_modules/dep/src/c.module.css.d.ts": "export {};",
+    });
+    await generate(resolveConfig({ outDir: "." }, dir));
+    await fs.rm(path.join(dir, "src/b.module.css"));
+
+    expect(await filesAfter(dir, { outDir: "." })).toEqual({
+      removed: ["src/b.module.css.d.ts"],
+      files: [
+        "node_modules/dep/src/c.module.css.d.ts",
+        "src/a.module.css",
+        "src/a.module.css.d.ts",
+        "src/a.module.css.d.ts.map",
+        "src/types.d.ts",
+      ],
+    });
+  });
+
+  it("leaves outDir in place when it removes everything in it", async () => {
+    const dir = await project({ "src/a.module.css": ".a {}" });
+    await generate(resolveConfig({}, dir));
+    await fs.rm(path.join(dir, "src/a.module.css"));
+
+    expect(await filesAfter(dir, {})).toEqual({
+      removed: ["__generated__/src/a.module.css.d.ts"],
+      files: [],
+    });
+    await expect(fs.stat(path.join(dir, "__generated__"))).resolves.toBeTruthy();
   });
 });
 
@@ -283,7 +406,7 @@ describe("named exports under TypeScript", () => {
         "",
       ].join("\n"),
     });
-    await generateAll(resolveConfig({ namedExports: true }, dir));
+    await generate(resolveConfig({ namedExports: true }, dir));
 
     const { stdout } = spawnSync(process.execPath, [TSC, "-p", ".", "--pretty", "false"], {
       cwd: dir,

@@ -9,7 +9,7 @@ import {
   ConfigError,
   formatDiagnostic,
   formatGitHubAnnotation,
-  generateAll,
+  generate,
   loadConfig,
   loadGlobalCss,
   resolveLayer,
@@ -29,11 +29,14 @@ cli
   .action(async (options: { watch?: boolean; config?: string }) => {
     const cwd = process.cwd();
     const config = await loadConfig({ config: options.config });
-    const { written, diagnostics } = await generateAll(config);
+    const { files, removed, diagnostics } = await generate(config);
 
     if (!config.silent) {
-      console.log(`[better-css-modules] generated ${written.length} file(s)`);
-      for (const dtsPath of written) console.log(`  ${path.relative(cwd, dtsPath)}`);
+      console.log(`[better-css-modules] generated ${files.length} file(s)`);
+      for (const dtsPath of files) console.log(`  ${path.relative(cwd, dtsPath)}`);
+      for (const dtsPath of removed) {
+        console.log(`[better-css-modules] removed: ${path.relative(cwd, dtsPath)}`);
+      }
     }
     for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
 

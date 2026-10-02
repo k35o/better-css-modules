@@ -55,6 +55,22 @@ describe("generate", () => {
     });
   });
 
+  it("lists the .d.ts files of the stylesheets that are gone as removed", async () => {
+    const dir = await project({ ...card, "src/old.module.css": ".old {}\n" });
+    run(dir, "generate");
+    await fs.rm(path.join(dir, "src/old.module.css"));
+    expect(run(dir, "generate")).toEqual({
+      status: 0,
+      stdout: [
+        "[better-css-modules] generated 1 file(s)",
+        "  __generated__/src/card.module.css.d.ts",
+        "[better-css-modules] removed: __generated__/src/old.module.css.d.ts",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+
   it("prints a stylesheet that does not parse to stderr and exits with 1", async () => {
     const dir = await project({ ...card, "src/broken.module.css": ".a {\n" });
     expect(run(dir, "generate")).toEqual({

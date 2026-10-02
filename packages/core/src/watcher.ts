@@ -20,7 +20,7 @@ function extractBaseDir(pattern: string): string {
 
 /**
  * Regenerate `.d.ts` files as the included CSS Modules files change. Callers
- * run `generateAll` first; the watcher only reacts to changes after that.
+ * run `generate` first; the watcher only reacts to changes after that.
  */
 export function startWatcher(config: ResolvedConfig) {
   const { root } = config;

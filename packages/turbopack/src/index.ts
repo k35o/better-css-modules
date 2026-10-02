@@ -1,10 +1,11 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type Config,
   configFile,
   formatDiagnostic,
-  generateAll,
+  generate,
   loadConfig,
   startWatcher,
 } from "@better-css-modules/core";
@@ -37,8 +38,13 @@ export function withBetterCssModules(
     loadConfig({ cwd })
       .then(async (loaded) => {
         const config = { ...loaded, ...options, root: loaded.root, file: loaded.file };
-        const { written, diagnostics } = await generateAll(config);
-        if (!config.silent) console.log(`[better-css-modules] generated ${written.length} file(s)`);
+        const { files, removed, diagnostics } = await generate(config);
+        if (!config.silent) {
+          console.log(`[better-css-modules] generated ${files.length} file(s)`);
+          for (const dtsPath of removed) {
+            console.log(`[better-css-modules] removed: ${path.relative(cwd, dtsPath)}`);
+          }
+        }
         for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
 
         if (process.env.NODE_ENV === "development") {

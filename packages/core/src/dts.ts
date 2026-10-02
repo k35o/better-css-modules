@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import fg from "fast-glob";
 import { SourceMapGenerator } from "source-map-js";
 import { isOutside, type ResolvedConfig } from "./config.js";
 import type { CssModuleAnalysis, SourcePosition, SourceRange } from "./css.js";
-import type { Diagnostic } from "./diagnostic.js";
+import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { findCssModules, loadCssModule, loadCssModules } from "./project.js";
 
 /** Generated files mirror paths relative to the root. */
@@ -209,15 +210,41 @@ export async function regenerateDts(
 
 export interface GenerateResult {
   /** Paths of the `.d.ts` files, written or already up to date. */
-  written: string[];
+  files: string[];
+  /** Paths of the `.d.ts` files removed because no included stylesheet produces them any more. */
+  removed: string[];
+  /** The syntax problems of the stylesheets, sorted. */
   diagnostics: Diagnostic[];
 }
 
 /**
- * Generate `.d.ts` files for every CSS Modules file the config includes.
+ * Generate `.d.ts` files for every CSS Modules file the config includes, and
+ * remove the ones left from stylesheets it no longer includes.
  */
-export async function generateAll(config: ResolvedConfig): Promise<GenerateResult> {
-  const { modules, diagnostics } = await loadCssModules(await findCssModules(config));
-  const written = await Promise.all(modules.map((analysis) => writeDts(analysis, config)));
-  return { written, diagnostics };
+export async function generate(config: ResolvedConfig): Promise<GenerateResult> {
+  const found = await findCssModules(config);
+  const { modules, diagnostics } = await loadCssModules(found);
+  const files = await Promise.all(modules.map((analysis) => writeDts(analysis, config)));
+  // A stylesheet that does not parse keeps its previous .d.ts.
+  const produced = new Set(found.map((file) => dtsPathFor(file, config)));
+  const removed = (await outputsIn(config)).filter((dtsPath) => !produced.has(dtsPath));
+  await Promise.all(removed.map(removeDts));
+  return { files, removed, diagnostics: sortDiagnostics(diagnostics) };
+}
+
+/**
+ * The `.d.ts` paths in outDir that this config could have produced, whether
+ * the `.d.ts` or only its map is there. Only names an include pattern gives
+ * are taken, because outDir may hold other files, or be the root itself.
+ */
+async function outputsIn(config: ResolvedConfig): Promise<string[]> {
+  const patterns = config.include
+    .filter((pattern) => !pattern.startsWith("!"))
+    .flatMap((pattern) => [`${pattern}.d.ts`, `${pattern}.d.ts.map`]);
+  const outputs = await fg(patterns, {
+    cwd: path.join(config.root, config.outDir),
+    ignore: ["**/node_modules/**"],
+    absolute: true,
+  });
+  return [...new Set(outputs.map((file) => path.resolve(file.replace(/\.map$/, ""))))].sort();
 }
