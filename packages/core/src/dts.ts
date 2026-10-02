@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { SourceMapGenerator } from "source-map-js";
 import type { Config } from "./config.js";
-import type { CssModuleAnalysis } from "./css.js";
+import type { CssModuleAnalysis, SourcePosition } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { loadCssModule, loadCssModules, syntaxDiagnosticFrom } from "./project.js";
 
@@ -21,35 +22,116 @@ function quoteUnlessIdentifier(name: string): string {
 }
 
 /**
- * Generate the `.d.ts` source for a module that exports the given keys, as
- * properties of its default export or as named exports.
+ * One line of a generated `.d.ts`, with the columns that lead back to the
+ * stylesheet: to the first occurrence of a key, or to the top of the file.
  */
-export function generateDts(
-  keys: string[],
-  { namedExports }: Pick<DtsOptions, "namedExports">,
-): string {
-  if (namedExports) return generateNamedExports(keys);
-  const properties = keys
-    .map((name) => `  readonly ${quoteUnlessIdentifier(name)}: string;`)
-    .join("\n");
-  return `declare const styles: {\n${properties}\n};\nexport default styles;\n`;
+interface DtsLine {
+  text: string;
+  // TypeScript looks a definition up at the start of its name and, between two
+  // mappings, takes the later one, so every name gets an anchor of its own.
+  anchors: { column: number; key?: string }[];
 }
 
-function generateNamedExports(keys: string[]): string {
+function defaultExportLines(keys: string[]): DtsLine[] {
+  const declare = "declare const ";
+  const property = "  readonly ";
+  const exportDefault = "export default ";
+  return [
+    { text: `${declare}styles: {`, anchors: [{ column: declare.length }] },
+    ...keys.map((key) => ({
+      text: `${property}${quoteUnlessIdentifier(key)}: string;`,
+      anchors: [{ column: property.length, key }],
+    })),
+    { text: "};", anchors: [] },
+    { text: `${exportDefault}styles;`, anchors: [{ column: exportDefault.length }] },
+  ];
+}
+
+function namedExportLines(keys: string[]): DtsLine[] {
+  const declare = "declare const ";
+  const esModule = "export declare const ";
   // A class named `default` would become the default export, and `__esModule`
   // is the marker below; webpack and Rspack each treat these names differently.
   const names = keys.filter((name) => name !== "default" && name !== "__esModule");
-  // Through a local, so that a name that is not an identifier exports like the others.
-  const exports = names
-    .map(
-      (name, i) =>
-        `declare const _${i}: string;\nexport { _${i} as ${quoteUnlessIdentifier(name)} };\n`,
-    )
-    .join("");
-  // Without `__esModule`, TypeScript takes a declaration file that has no
-  // default export for CommonJS and accepts `import styles from`, which is
-  // undefined at runtime. webpack and Rspack set it on the module as well.
-  return `${exports}export declare const __esModule: true;\n`;
+  return [
+    // Through a local, so that a name that is not an identifier exports like the others.
+    ...names.flatMap((key, i) => {
+      const local = `_${i}`;
+      const exportAs = `export { ${local} as `;
+      return [
+        { text: `${declare}${local}: string;`, anchors: [{ column: declare.length, key }] },
+        {
+          text: `${exportAs}${quoteUnlessIdentifier(key)} };`,
+          anchors: [{ column: exportAs.length, key }],
+        },
+      ];
+    }),
+    // Without `__esModule`, TypeScript takes a declaration file that has no
+    // default export for CommonJS and accepts `import styles from`, which is
+    // undefined at runtime. webpack and Rspack set it on the module as well.
+    { text: `${esModule}__esModule: true;`, anchors: [{ column: esModule.length }] },
+  ];
+}
+
+/** Where each key first appears in the stylesheet. */
+function firstOccurrences({
+  classes,
+  identifiers,
+}: Pick<CssModuleAnalysis, "classes" | "identifiers">): Map<string, SourcePosition> {
+  const first = new Map<string, SourcePosition>();
+  for (const { name, range } of [...classes, ...identifiers]) {
+    const seen = first.get(name);
+    const earlier =
+      !seen ||
+      range.start.line < seen.line ||
+      (range.start.line === seen.line && range.start.column < seen.column);
+    if (earlier) first.set(name, range.start);
+  }
+  return first;
+}
+
+export interface GeneratedDts {
+  /** The `.d.ts` source, ending with the comment that points to its map. */
+  dts: string;
+  /** The declaration map, which leads go-to-definition from a key to the stylesheet. */
+  map: string;
+}
+
+/**
+ * Generate the `.d.ts` of a module, with its keys as properties of the default
+ * export or as named exports, and the declaration map that ties each key to
+ * where it first appears in the stylesheet.
+ */
+export function generateDts(
+  analysis: Pick<CssModuleAnalysis, "file" | "exportNames" | "classes" | "identifiers">,
+  dtsPath: string,
+  { namedExports }: Pick<DtsOptions, "namedExports">,
+): GeneratedDts {
+  const lines = namedExports
+    ? namedExportLines(analysis.exportNames)
+    : defaultExportLines(analysis.exportNames);
+  const first = firstOccurrences(analysis);
+  const top = { line: 1, column: 1 };
+  const source = path.relative(path.dirname(dtsPath), analysis.file).split(path.sep).join("/");
+  const map = new SourceMapGenerator({ file: path.basename(dtsPath) });
+  const addMapping = (line: number, column: number, at: SourcePosition) =>
+    map.addMapping({
+      generated: { line, column },
+      source,
+      original: { line: at.line, column: at.column - 1 },
+    });
+  // A namespace import leads to the module itself, at the start of the file.
+  addMapping(1, 0, top);
+  lines.forEach(({ anchors }, index) => {
+    for (const { column, key } of anchors) {
+      addMapping(index + 1, column, key === undefined ? top : (first.get(key) ?? top));
+    }
+  });
+  const text = lines.map((line) => `${line.text}\n`).join("");
+  return {
+    dts: `${text}//# sourceMappingURL=${path.basename(dtsPath)}.map\n`,
+    map: map.toString(),
+  };
 }
 
 /**
@@ -68,18 +150,23 @@ export function dtsPathFor(cssFile: string, { cwd, outDir }: OutputOptions): str
 
 export async function writeDts(analysis: CssModuleAnalysis, options: DtsOptions): Promise<string> {
   const dtsPath = dtsPathFor(analysis.file, options);
-  const content = generateDts(analysis.exportNames, options);
-  // An identical rewrite would still wake up editors and watchers.
-  const current = await fs.readFile(dtsPath, "utf-8").catch(() => null);
-  if (current === content) return dtsPath;
+  const { dts, map } = generateDts(analysis, dtsPath, options);
   await fs.mkdir(path.dirname(dtsPath), { recursive: true });
-  await fs.writeFile(dtsPath, content, "utf-8");
+  // The map first, so that TypeScript reading the new .d.ts finds the map that matches it.
+  await writeIfChanged(`${dtsPath}.map`, map);
+  await writeIfChanged(dtsPath, dts);
   return dtsPath;
+}
+
+async function writeIfChanged(file: string, content: string): Promise<void> {
+  // An identical rewrite would still wake up editors and watchers.
+  const current = await fs.readFile(file, "utf-8").catch(() => null);
+  if (current !== content) await fs.writeFile(file, content, "utf-8");
 }
 
 export async function removeDts(cssFile: string, options: OutputOptions): Promise<string> {
   const dtsPath = dtsPathFor(cssFile, options);
-  await fs.rm(dtsPath, { force: true });
+  await Promise.all([fs.rm(dtsPath, { force: true }), fs.rm(`${dtsPath}.map`, { force: true })]);
   return dtsPath;
 }
 
