@@ -40,25 +40,23 @@ interface Setup {
  */
 export const unplugin = createUnplugin<Options | undefined>((options = {}, meta) => {
   const cwd = process.cwd();
-  let config: ResolvedConfig | undefined;
-  let matches: ((file: string) => boolean) | undefined;
   // webpack and Rspack build modules while buildStart still runs, so the
   // transform waits for the same setup instead of reading what it left.
   let setup: Promise<Setup> | undefined;
 
   const load = async (): Promise<Setup> => {
-    const loaded = await loadConfig({ cwd, config: options.config });
-    return { config: loaded, matches: createMatcher(loaded), wrap: createLayerWrapper(loaded) };
+    const config = await loadConfig({ cwd, config: options.config });
+    return { config, matches: createMatcher(config), wrap: createLayerWrapper(config) };
   };
 
-  const log = (message: string) => {
-    if (!config?.silent) console.log(`[better-css-modules] ${message}`);
+  const log = (config: ResolvedConfig, message: string) => {
+    if (!config.silent) console.log(`[better-css-modules] ${message}`);
   };
 
-  const generateTypes = async (resolved: ResolvedConfig) => {
-    const { files, removed, diagnostics } = await generate(resolved);
-    log(`generated ${files.length} file(s)`);
-    for (const dtsPath of removed) log(`removed: ${path.relative(cwd, dtsPath)}`);
+  const generateTypes = async (config: ResolvedConfig) => {
+    const { files, removed, diagnostics } = await generate(config);
+    log(config, `generated ${files.length} file(s)`);
+    for (const dtsPath of removed) log(config, `removed: ${path.relative(cwd, dtsPath)}`);
     for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
   };
 
@@ -84,11 +82,18 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
     enforce: "pre",
 
     async buildStart() {
-      ({ config, matches } = await (setup = load()));
+      const { config } = await (setup = load());
       if (meta.framework !== "vite") return generateTypes(config);
 
-      const key = JSON.stringify([cwd, config]);
-      if (!generations.has(key)) generations.set(key, generateTypes(config));
+      const key = JSON.stringify(config);
+      if (!generations.has(key)) {
+        const generation = generateTypes(config);
+        generations.set(key, generation);
+        // Not kept, so that the next build start tries again.
+        generation.catch(() => {
+          if (generations.get(key) === generation) generations.delete(key);
+        });
+      }
       await generations.get(key);
     },
 
@@ -102,16 +107,21 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       loader: "default",
     },
 
+    // The other bundlers start every rebuild with buildStart, which generates
+    // everything; Vite's dev server starts once.
     async watchChange(id: string) {
+      if (meta.framework !== "vite") return;
       // The rebuild may import a module created while nothing imported it, which
       // watch mode never reported, so the next build start generates everything.
       generations.clear();
-      if (!config || !matches) return;
-      if (!matches(id)) return;
+      // A setup that failed was reported by the build start that made it.
+      const current = await setup?.catch(() => undefined);
+      if (!current?.matches(id)) return;
 
+      const { config } = current;
       const { generated, removed, diagnostics } = await regenerateDts(id, config);
-      if (generated) log(`generated: ${path.relative(cwd, generated)}`);
-      if (removed) log(`removed: ${path.relative(cwd, removed)}`);
+      if (generated) log(config, `generated: ${path.relative(cwd, generated)}`);
+      if (removed) log(config, `removed: ${path.relative(cwd, removed)}`);
       for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     },
   };

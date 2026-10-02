@@ -114,26 +114,24 @@ describe("generating the types", () => {
     expect(await dtsOf(dir, "src/b.module.css")).toContain("readonly bar: string;");
   });
 
-  it.each(["webpack", "rspack", "rollup", "esbuild"] as const)(
-    "generates on every build start under %s",
-    async (framework) => {
-      const dir = await enterProject({ "src/a.module.css": ".foo { color: red; }" });
-      const plugin = pluginFor(framework);
-      await buildStart(plugin);
+  it("tries again at the next build start after a generation failed under Vite", async () => {
+    const dir = await enterProject({
+      "src/a.module.css": ".foo { color: red; }",
+      // Where the outDir should be, so that writing into it fails.
+      __generated__: "",
+    });
+    await expect(buildStart(pluginFor("vite"))).rejects.toThrow("ENOTDIR");
 
-      await writeFiles(dir, { "src/a.module.css": ".foo { color: red; }\n.baz { color: green; }" });
-      await buildStart(plugin);
+    await fs.rm(path.join(dir, "__generated__"));
+    await buildStart(pluginFor("vite"));
+    expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly foo: string;");
+  });
 
-      expect(generations()).toBe(2);
-      expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly baz: string;");
-    },
-  );
-
-  it("brings the types in line with each change watch mode reports", async () => {
+  it("brings the types in line with each change Vite reports", async () => {
     const dir = await enterProject({ "src/a.module.css": ".foo { color: red; }" });
     const css = path.join(dir, "src/a.module.css");
     const dts = path.join("__generated__", "src", "a.module.css.d.ts");
-    const plugin = pluginFor("rollup");
+    const plugin = pluginFor("vite");
     await buildStart(plugin);
 
     await writeFiles(dir, { "src/a.module.css": ".bar { color: red; }" });
@@ -146,6 +144,32 @@ describe("generating the types", () => {
     await expect(dtsOf(dir, "src/a.module.css")).rejects.toThrow();
     expect(log).toHaveBeenLastCalledWith(`[better-css-modules] removed: ${dts}`);
   });
+
+  // Their watch modes run buildStart before every rebuild.
+  it.each(["webpack", "rspack", "rollup", "esbuild"] as const)(
+    "generates everything on every build start under %s, and nothing on a change",
+    async (framework) => {
+      const dir = await enterProject({
+        "src/a.module.css": ".foo { color: red; }",
+        "src/b.module.css": ".bar { color: red; }",
+      });
+      const plugin = pluginFor(framework);
+      await buildStart(plugin);
+
+      await writeFiles(dir, { "src/a.module.css": ".foo { color: red; }\n.baz { color: green; }" });
+      await fs.rm(path.join(dir, "src/b.module.css"));
+      await watchChange(plugin, path.join(dir, "src/a.module.css"));
+      await watchChange(plugin, path.join(dir, "src/b.module.css"), "delete");
+      expect(generations()).toBe(1);
+      expect(await dtsOf(dir, "src/a.module.css")).not.toContain("baz");
+      expect(await dtsOf(dir, "src/b.module.css")).toContain("readonly bar: string;");
+
+      await buildStart(plugin);
+      expect(generations()).toBe(2);
+      expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly baz: string;");
+      await expect(dtsOf(dir, "src/b.module.css")).rejects.toThrow();
+    },
+  );
 
   it("reads the config file it is given, resolving against that file's directory", async () => {
     const dir = await enterProject({
