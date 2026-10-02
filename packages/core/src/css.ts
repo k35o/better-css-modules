@@ -61,7 +61,6 @@ export interface ValueDeclaration {
   name: string;
   /** Specifier of `@value ... from '...'`, or `null` for a value defined in this file. */
   from: string | null;
-  range: SourceRange;
 }
 
 /**
@@ -75,8 +74,6 @@ export interface CssModuleAnalysis {
   root: Root;
   /** Every locally scoped class selector, in source order. */
   classes: ClassOccurrence[];
-  /** Unique local class names, sorted. */
-  classNames: string[];
   /** Locally scoped ids, keyframes and view-transition classes, in source order. */
   identifiers: ScopedIdentifier[];
   /** Keys of the module's default export: class names plus scoped identifiers, sorted. */
@@ -153,16 +150,14 @@ export function analyzeCss(source: string, file: string): CssModuleAnalysis {
     diagnostics: [],
   };
   walkContainer(root, true, collector);
-  const classNames = unique(collector.classes.map((occurrence) => occurrence.name));
   const exportNames = unique([
-    ...classNames,
+    ...collector.classes.map((occurrence) => occurrence.name),
     ...collector.identifiers.map((identifier) => identifier.name),
   ]);
   return {
     file,
     root,
     classes: collector.classes,
-    classNames,
     identifiers: collector.identifiers,
     exportNames,
     composes: collector.composes,
@@ -429,7 +424,6 @@ function visitDeclaration(declaration: Declaration, collector: Collector): void 
 
 function collectValue(atRule: AtRule, collector: Collector): void {
   const params = (atRule.raws.params?.raw ?? atRule.params).trim();
-  const range = rangeOfNode(atRule);
   const imported = /^(.+?)\s+from\s+(?:"([^"]*)"|'([^']*)')$/s.exec(params);
   if (imported) {
     const specifier = imported[2] ?? imported[3] ?? "";
@@ -437,12 +431,12 @@ function collectValue(atRule: AtRule, collector: Collector): void {
       // `@value a as b from '...'` binds `b`.
       const alias = /^(.+?)\s+as\s+(.+)$/.exec(entry.trim());
       const name = alias ? alias[2] : entry.trim();
-      if (name) collector.values.push({ name, from: specifier, range });
+      if (name) collector.values.push({ name, from: specifier });
     }
     return;
   }
   const defined = /^([\w-]+)\s*:?/.exec(params);
-  if (defined) collector.values.push({ name: defined[1], from: null, range });
+  if (defined) collector.values.push({ name: defined[1], from: null });
 }
 
 function collectComposes(

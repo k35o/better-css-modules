@@ -6,16 +6,20 @@ import { adversarialCss } from "./fixtures/adversarial-css.js";
 
 const FILE = "/project/src/x.module.css";
 
+/** The unique local class names, sorted. */
+const classNamesOf = (analysis: ReturnType<typeof analyzeCss>) =>
+  [...new Set(analysis.classes.map((occurrence) => occurrence.name))].sort();
+
 describe("analyzeCss: export keys and local class names", () => {
   it.each(cssCases)("$name", ({ css, expected, classes }) => {
     const analysis = analyzeCss(css, FILE);
     expect(analysis.exportNames).toEqual(expected);
-    expect(analysis.classNames).toEqual(classes ?? expected);
+    expect(classNamesOf(analysis)).toEqual(classes ?? expected);
   });
 
   it.each(adversarialCss)("accepts adversarial input: $name", ({ css, expected }) => {
     const analysis = analyzeCss(css, FILE);
-    expect(analysis.classNames).toEqual(expected);
+    expect(classNamesOf(analysis)).toEqual(expected);
     expect(analysis.diagnostics).toEqual([]);
   });
 });
@@ -112,9 +116,9 @@ describe("analyzeCss: @value", () => {
   it("records defined and imported values without exporting them as classes", () => {
     const css = `@value primary: #0c77f8;\n@value small, large as big from './bp.module.css';\n.v { color: primary; }`;
     const analysis = analyzeCss(css, FILE);
-    expect(analysis.classNames).toEqual(["v"]);
-    expect(analysis.values).toMatchObject([
-      { name: "primary", from: null, range: { start: { line: 1, column: 1 } } },
+    expect(classNamesOf(analysis)).toEqual(["v"]);
+    expect(analysis.values).toEqual([
+      { name: "primary", from: null },
       { name: "small", from: "./bp.module.css" },
       { name: "big", from: "./bp.module.css" },
     ]);
@@ -124,7 +128,7 @@ describe("analyzeCss: @value", () => {
 describe("analyzeCss: syntax problems", () => {
   it("reports an unparsable selector and keeps analyzing the rest", () => {
     const analysis = analyzeCss(".a, %%% { color: red; }\n.b { color: blue; }", FILE);
-    expect(analysis.classNames).toEqual(["b"]);
+    expect(classNamesOf(analysis)).toEqual(["b"]);
     expect(analysis.diagnostics).toMatchObject([{ rule: "syntax", line: 1, column: 5 }]);
   });
 

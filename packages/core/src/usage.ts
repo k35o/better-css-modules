@@ -5,7 +5,7 @@ import { parseSync, type ParseResult } from "oxc-parser";
 import { ResolverFactory } from "oxc-resolver";
 import { isReferenceIdentifier, ScopeTracker, walk } from "oxc-walker";
 import type { ResolvedConfig } from "./config.js";
-import type { CssModuleAnalysis, SourcePosition } from "./css.js";
+import type { ClassOccurrence, CssModuleAnalysis, SourcePosition } from "./css.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { defaultIgnore, findCssModules, loadCssModules } from "./project.js";
 
@@ -287,9 +287,12 @@ export async function analyzeUsage(config: ResolvedConfig): Promise<UsageResult>
       }
       continue;
     }
-    for (const name of analysis.classNames) {
+    const firstOccurrences = new Map<string, ClassOccurrence>();
+    for (const occurrence of analysis.classes) {
+      if (!firstOccurrences.has(occurrence.name)) firstOccurrences.set(occurrence.name, occurrence);
+    }
+    for (const [name, first] of firstOccurrences) {
       if (isUsed(moduleUsage, name)) continue;
-      const first = analysis.classes.find((occurrence) => occurrence.name === name)!;
       found.push({
         file: analysis.file,
         line: first.range.start.line,
