@@ -70,22 +70,27 @@ export interface GlobalCss {
 /**
  * Whether a custom property declaration or `@property` rule may declare a new
  * name: at a `:root` rule or as `@property`, under nothing but `@layer`, in a
- * file imported without conditions. Anywhere else it is a mode, which only
- * overrides names declared there.
+ * file imported without conditions. A rule for `:root, :host`, which design
+ * systems built with Tailwind compile to, counts as one for `:root`. Anywhere
+ * else it is a mode, which only overrides names declared there.
  */
 export function declaresToken(node: Declaration | AtRule, conditional: boolean): boolean {
   if (conditional) return false;
   let parent = node.parent;
   if (node.type === "decl") {
-    if (parent?.type !== "rule" || (parent as Rule).selector.trim().toLowerCase() !== ":root") {
-      return false;
-    }
+    if (parent?.type !== "rule" || !isRoot(parent as Rule)) return false;
     parent = parent.parent;
   }
   for (; parent && parent.type !== "root"; parent = parent.parent) {
     if (parent.type !== "atrule" || (parent as AtRule).name.toLowerCase() !== "layer") return false;
   }
   return true;
+}
+
+/** Whether every selector of the rule is `:root` or `:host`, and one is `:root`. */
+function isRoot(rule: Rule): boolean {
+  const selectors = rule.selectors.map((selector) => selector.trim().toLowerCase());
+  return selectors.includes(":root") && selectors.every((s) => s === ":root" || s === ":host");
 }
 
 /** At-rules whose nested at-rules css-tree does not know: margin boxes and feature blocks. */

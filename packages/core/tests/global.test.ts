@@ -43,6 +43,15 @@ describe("globalCssFrom: what declares a token", () => {
     ]);
   });
 
+  it("takes a rule for :root and :host like one for :root, as Tailwind compiles a theme", () => {
+    const globalCss = read(`
+      :root, :host { --color-a: #000; }
+      @layer theme { :HOST, :Root { --color-b: #000; } }
+      :root, :root, :host { --color-c: #000; }
+    `);
+    expect([...globalCss.tokens.keys()]).toEqual(["--color-a", "--color-b", "--color-c"]);
+  });
+
   it("does not take declarations in modes", () => {
     const globalCss = read(`
       .dark { --color-a: #000; }
@@ -50,6 +59,8 @@ describe("globalCssFrom: what declares a token", () => {
       :root:where(:not(.dark)) { --color-c: #000; }
       html { --color-d: #000; }
       :root, .theme { --color-e: #000; }
+      :host { --color-j: #000; }
+      :where(:root), :host { --color-k: #000; }
       @media (prefers-contrast: more) { :root { --color-f: #000; } }
       @supports (color: oklch(0 0 0)) { :root { --color-g: #000; } }
       :root { .dark & { --color-h: #000; } }
