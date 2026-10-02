@@ -49,7 +49,7 @@ async function declaredNames(): Promise<string[]> {
     .sort();
 }
 
-type Stats = { hasErrors(): boolean; toString(preset: string): string };
+type Stats = { hasErrors(): boolean; toString(preset: "errors-only"): string };
 
 /** Run the compiler, then the bundle it wrote, returning the keys of the namespace import. */
 async function runtimeNames(
@@ -73,7 +73,7 @@ function nodeBuild(outDir: string) {
   return {
     mode: "development" as const,
     devtool: false as const,
-    target: "node",
+    target: "node" as const,
     context: dir,
     entry: "./src/entry.js",
     output: { path: path.join(dir, outDir), library: { type: "commonjs2" } },

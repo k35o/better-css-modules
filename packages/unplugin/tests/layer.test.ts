@@ -150,7 +150,7 @@ function webpackLike(entry: string, outDir: string, extractLoader: string) {
   };
 }
 
-type Stats = { hasErrors(): boolean; toString(preset: string): string };
+type Stats = { hasErrors(): boolean; toString(preset: "errors-only"): string };
 
 async function run(compiler: {
   run(callback: (error: Error | null, stats?: Stats) => void): void;

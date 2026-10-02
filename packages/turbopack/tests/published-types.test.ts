@@ -16,9 +16,9 @@ afterAll(async () => {
 });
 
 // Next.js's own declarations do not pass with skipLibCheck off, so the
-// consumer keeps it on, as Next.js apps do. An import the declarations
-// cannot resolve is then `any` rather than an error, which the
-// @ts-expect-error on a wrong phase turns back into one.
+// consumer keeps it on, as Next.js apps do. An import the declarations cannot
+// resolve is then `any` rather than an error, which the @ts-expect-error on a
+// wrong phase turns back into one.
 it("typechecks a consumer of the built package under nodenext resolution", async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "bcm-turbopack-types-"));
   const installed = path.join(dir, "node_modules/@better-css-modules/turbopack");

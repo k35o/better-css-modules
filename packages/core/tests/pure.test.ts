@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vite-plus/test";
-import postcss, { type AtRule, type Rule } from "postcss";
+import postcss, { type AtRule, type Node, type Rule } from "postcss";
 import { checkCss, checkGlobalCss } from "../src/check.js";
 import { analyzeCss, type SourcePosition } from "../src/css.js";
 import { parse } from "../src/csstree.js";
@@ -418,7 +418,7 @@ describe("pure/selector agrees with the local classes and ids of the generated k
 
 /** Inside a style rule, which stands for the local class, or a keyframes block. */
 function isNested(rule: Rule): boolean {
-  for (let parent = rule.parent; parent; parent = parent.parent) {
+  for (let parent: Node["parent"] = rule.parent; parent; parent = parent.parent) {
     if (parent.type === "rule") return true;
     if (parent.type === "atrule" && /keyframes$/i.test((parent as AtRule).name)) {
       return true;

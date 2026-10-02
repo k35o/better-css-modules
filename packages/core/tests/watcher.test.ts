@@ -36,7 +36,7 @@ describe("startWatcher without persistent", () => {
   it("still regenerates the .d.ts of a stylesheet that changes", async () => {
     const watcher = startWatcher(config(), { persistent: false });
     try {
-      await new Promise((resolve) => watcher.once("ready", resolve));
+      await new Promise<void>((resolve) => watcher.once("ready", resolve));
       const dts = path.join(dir, "__generated__/src/a.module.css.d.ts");
       let edits = 0;
       await vi.waitFor(

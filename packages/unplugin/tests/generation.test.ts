@@ -1,4 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vite-plus/test";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  vi,
+  type MockInstance,
+} from "vite-plus/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -42,7 +51,7 @@ const watchChange = (plugin: UnpluginOptions, id: string, event: "update" | "del
 const dtsOf = (dir: string, cssFile: string) =>
   fs.readFile(path.join(dir, "__generated__", `${cssFile}.d.ts`), "utf-8");
 
-let log: ReturnType<typeof vi.spyOn>;
+let log: MockInstance<typeof console.log>;
 const generations = () =>
   log.mock.calls.filter(([message]) =>
     /^\[better-css-modules\] generated \d+/.test(String(message)),
