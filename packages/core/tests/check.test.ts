@@ -620,6 +620,26 @@ describe("checkCss: declaring a custom property under a token name", () => {
   });
 });
 
+// A token check cannot see through an @value name, so pure/value reports the
+// @value instead.
+describe("checkCss: @value names, which the token checks cannot see through", () => {
+  const rules = (css: string, globalCss: GlobalCss) =>
+    checkCss(analyzeCss(css, FILE), globalCss).map((d) => `${d.line} ${d.rule}`);
+
+  it("reports the @value that stands for a raw color", () => {
+    expect(rules("@value brand: #f00;\n.a { color: brand; }", designSystem)).toEqual([
+      "1 pure/value",
+    ]);
+  });
+
+  it("reports the @value that stands for a media query", () => {
+    const globalCss = declaring("--breakpoint-md");
+    expect(rules("@value sm: (min-width: 123px);\n@media sm { .a {} }", globalCss)).toEqual([
+      "1 pure/value",
+    ]);
+  });
+});
+
 describe("checkCss: disable comments", () => {
   const disable = "/* better-css-modules-disable-next-line";
 
@@ -961,6 +981,21 @@ describe("check", () => {
         "src/card.ts:2:39 usage/unanalyzable",
       ]);
     });
+  });
+
+  it("still counts a module an @value imports from as imported when pure/value is disabled", async () => {
+    const dir = await project({
+      ...card,
+      "src/global.css": "",
+      "src/card.module.css": [
+        "/* better-css-modules-disable-next-line pure/value -- shared with the Vite-only widget */",
+        "@value brand from './colors.module.css';",
+        ".used {}",
+      ].join("\n"),
+      "src/colors.module.css":
+        "/* better-css-modules-disable pure/value -- shared with the Vite-only widget */\n@value brand: red;\n",
+    });
+    expect(await run(dir)).toEqual([]);
   });
 
   it("counts the modules and names the token categories it restricts", async () => {

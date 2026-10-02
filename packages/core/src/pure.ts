@@ -96,6 +96,10 @@ function visitAtRule(atRule: AtRule, context: Context, checker: Checker): void {
     checker.report(atRule, checkGlobalAtRule(atRule, checker.file));
     return;
   }
+  if (name === "value") {
+    checker.report(atRule, checkValue(atRule, checker.file));
+    return;
+  }
   if (name.endsWith("keyframes")) {
     // Keyframe selectors (`from`, `50%`) are not selectors in the CSS Modules sense.
     checker.report(atRule, checkKeyframesName(atRule, checker.file));
@@ -400,6 +404,23 @@ function checkGlobalAtRule(atRule: AtRule, file: string): Diagnostic[] {
       endColumn: start.column + 1 + atRule.name.length,
       rule: "pure/at-rule",
       message: `@${atRule.name} is global and takes effect only while this module is loaded; move it to the global CSS`,
+    },
+  ];
+}
+
+function checkValue(atRule: AtRule, file: string): Diagnostic[] {
+  const start = atRule.source?.start;
+  if (!start) return [];
+  return [
+    {
+      file,
+      line: start.line,
+      column: start.column,
+      endLine: start.line,
+      endColumn: start.column + 1 + atRule.name.length,
+      rule: "pure/value",
+      message:
+        "@value is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks; use a custom property",
     },
   ];
 }

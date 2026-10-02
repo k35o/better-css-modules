@@ -213,8 +213,8 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
  * declares.
  *
  * The pure rules always apply: every selector holds a local class, and so does
- * its subject outside an @scope rooted at one; `:global`, ids, `!important` and
- * global-only at-rules are reported. Each category the global CSS declares a
+ * its subject outside an @scope rooted at one; `:global`, ids, `!important`,
+ * global-only at-rules and `@value` are reported. Each category the global CSS declares a
  * token for is restricted: in its properties only its tokens, its keywords and
  * arithmetic on its tokens pass. Anywhere in the file a token name the global
  * CSS does not declare is reported, and so is a name it declares without a

@@ -14,6 +14,7 @@ const RULES = {
   "pure/id": null,
   "pure/important": null,
   "pure/at-rule": null,
+  "pure/value": null,
   "tokens/unknown": null,
   "tokens/internal": null,
   "tokens/declaration": null,

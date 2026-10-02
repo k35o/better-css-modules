@@ -306,6 +306,25 @@ describe("checkCss: global-only at-rules (pure/at-rule)", () => {
   });
 });
 
+describe("checkCss: @value (pure/value)", () => {
+  const message =
+    "@value is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks; use a custom property";
+
+  it("reports every @value, defined or imported, at its name", () => {
+    const css = "@value brand: #f00;\n.a {\n  @value gap from './sizes.module.css';\n}";
+    expect(diagnose(css)).toMatchObject([
+      { rule: "pure/value", line: 1, column: 1, endColumn: 7, message },
+      { rule: "pure/value", line: 3, column: 3, endColumn: 9, message },
+    ]);
+  });
+
+  it("can be disabled", () => {
+    const css =
+      "/* better-css-modules-disable-next-line pure/value -- shared with the Vite-only widget */\n@value brand: #f00;";
+    expect(check(css)).toEqual([]);
+  });
+});
+
 describe("checkCss: disable comments for pure rules", () => {
   const disable = "/* better-css-modules-disable-next-line";
 
