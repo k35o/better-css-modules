@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { rspack } from "@rspack/core";
+import { rspack as rspackV1 } from "@rspack/core-v1";
 import * as esbuild from "esbuild";
 import MiniCssExtractPlugin from "mini-css-extract-plugin";
 import postcss from "postcss";
@@ -216,6 +217,19 @@ const builds: [name: string, build: Build, scoped: string][] = [
       });
       await run(compiler);
       return fs.readFile(path.join(dir, `dist/rspack-${entry}/main.css`), "utf-8");
+    },
+    "root_scoped",
+  ],
+  [
+    // The lowest major the peer range takes.
+    "Rspack 1",
+    async (entry) => {
+      const compiler = rspackV1({
+        ...webpackLike(entry, `dist/rspack-v1-${entry}`, rspackV1.CssExtractRspackPlugin.loader),
+        plugins: [new rspackV1.CssExtractRspackPlugin(), unplugin.rspack()],
+      });
+      await run(compiler);
+      return fs.readFile(path.join(dir, `dist/rspack-v1-${entry}/main.css`), "utf-8");
     },
     "root_scoped",
   ],
