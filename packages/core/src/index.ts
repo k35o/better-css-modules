@@ -24,7 +24,7 @@ export type {
   OutputOptions,
   RegenerateResult,
 } from "./dts.js";
-export { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "./layer.js";
+export { declaredLayers, resolveLayer, wrapInLayer } from "./layer.js";
 export type { Layer, WrapResult } from "./layer.js";
 export { createMatcher } from "./project.js";
 export { categoryOf, tokenCategories } from "./tokens.js";

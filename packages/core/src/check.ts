@@ -10,6 +10,7 @@ import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } 
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { declaresToken, type GlobalCss, type GlobalCssFile, type Token } from "./global.js";
+import { checkLayer, type Layer } from "./layer.js";
 import { checkPure, GLOBAL_AT_RULES, PURE_RULES } from "./pure.js";
 import {
   categoryOf,
@@ -130,6 +131,8 @@ interface Context {
   breakpoints: Breakpoint[];
   /** The stylesheet when it belongs to the global CSS, which declares tokens and may use any. */
   global: GlobalCssFile | null;
+  /** The layer the bundler plugins put a module in. */
+  layer: Layer | undefined;
 }
 
 /** A value under check for one category. */
@@ -161,10 +164,15 @@ type Arithmetic = "none" | "raw" | "token";
  * arithmetic on its tokens pass. Anywhere in the file a token name the global
  * CSS does not declare is reported, and so is a name it declares without a
  * category prefix, which is internal to it. A module cannot declare either kind
- * of name. Pure: reads nothing but its arguments.
+ * of name. With a layer, what wrapping the module in it would break is
+ * reported too. Pure: reads nothing but its arguments.
  */
-export function checkCss(analysis: CssModuleAnalysis, globalCss: GlobalCss): Diagnostic[] {
-  return checkRoot(analysis.root, contextOf(analysis.file, globalCss, null));
+export function checkCss(
+  analysis: CssModuleAnalysis,
+  globalCss: GlobalCss,
+  layer?: Layer,
+): Diagnostic[] {
+  return checkRoot(analysis.root, contextOf(analysis.file, globalCss, null, layer));
 }
 
 /**
@@ -180,7 +188,12 @@ export function checkGlobalCss(globalCss: GlobalCss): Diagnostic[] {
   );
 }
 
-function contextOf(file: string, globalCss: GlobalCss, global: GlobalCssFile | null): Context {
+function contextOf(
+  file: string,
+  globalCss: GlobalCss,
+  global: GlobalCssFile | null,
+  layer?: Layer,
+): Context {
   const restrictions = new Map<TokenCategory, Restriction>();
   for (const { category } of globalCss.tokens.values()) {
     if (!category || restrictions.has(category)) continue;
@@ -193,7 +206,7 @@ function contextOf(file: string, globalCss: GlobalCss, global: GlobalCssFile | n
     });
   }
   const breakpoints = breakpointsOf(globalCss.tokens);
-  return { file, tokens: globalCss.tokens, restrictions, breakpoints, global };
+  return { file, tokens: globalCss.tokens, restrictions, breakpoints, global, layer };
 }
 
 function checkRoot(root: Root, context: Context): Diagnostic[] {
@@ -205,6 +218,7 @@ function checkRoot(root: Root, context: Context): Diagnostic[] {
   };
   // The global CSS styles the page; only a module is held to the pure rules.
   if (!context.global) checkPure(root, context.file, keep);
+  if (context.layer) checkLayer(root, context.file, context.layer, keep);
   if (context.tokens.size > 0 || context.global) {
     root.walkDecls((declaration) => keep(declaration, checkDeclaration(declaration, context)));
   }

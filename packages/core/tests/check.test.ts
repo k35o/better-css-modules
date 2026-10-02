@@ -675,3 +675,28 @@ describe("checkCss: disable comments", () => {
     expect(check(css)).toHaveLength(1);
   });
 });
+
+describe("checkCss: the layer the plugins put the module in", () => {
+  const layer = { name: "components", order: ["base", "components"] };
+  const check = (css: string) =>
+    checkCss(analyzeCss(css, FILE), globalCssFrom([]), layer)
+      .filter((d) => !d.rule.startsWith("pure/"))
+      .map((d) => `${d.line}:${d.column} ${d.rule}`);
+
+  it("reports @layer, which would nest in the layer the module is put in", () => {
+    expect(check("@layer a, b;\n@media print {\n  @layer c { .a { color: red; } }\n}")).toEqual([
+      "1:1 layer/nested",
+      "3:3 layer/nested",
+    ]);
+  });
+
+  it("reports composes", () => {
+    expect(check(".a { color: red; }\n.b { composes: a; }")).toEqual(["2:6 layer/composes"]);
+  });
+
+  it("reports nothing about layers without one", () => {
+    const css = "@layer a;\n.a { color: red; }\n.b { composes: a; }";
+    const rules = checkCss(analyzeCss(css, FILE), globalCssFrom([])).map((d) => d.rule);
+    expect(rules.filter((rule) => rule.startsWith("layer/"))).toEqual([]);
+  });
+});

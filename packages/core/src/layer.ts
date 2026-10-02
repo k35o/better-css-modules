@@ -1,6 +1,5 @@
-import postcss, { type AtRule, type ChildNode } from "postcss";
+import postcss, { type AtRule, type ChildNode, type Node, type Root } from "postcss";
 import { ConfigError } from "./config.js";
-import type { CssModuleAnalysis } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 import type { GlobalCss, GlobalCssFile } from "./global.js";
 
@@ -138,32 +137,36 @@ function splitImport(rule: AtRule): { url: string; rest: string } | null {
  * Report what breaks when the plugins wrap the module in `layer`: an `@layer`
  * of its own, which would nest, and `composes`.
  */
-export function checkLayer(analysis: CssModuleAnalysis, layer: string): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-  const report = (node: ChildNode, keyword: string, rule: string, message: string) => {
+export function checkLayer(
+  root: Root,
+  file: string,
+  layer: Layer,
+  report: (node: Node, found: Diagnostic[]) => void,
+): void {
+  const at = (node: ChildNode, keyword: string, rule: string, message: string) => {
     const start = node.source?.start ?? { line: 1, column: 1 };
-    diagnostics.push({
-      file: analysis.file,
+    const diagnostic: Diagnostic = {
+      file,
       line: start.line,
       column: start.column,
       endLine: start.line,
       endColumn: start.column + keyword.length,
       rule,
       message,
-    });
+    };
+    report(node, [diagnostic]);
   };
-  analysis.root.walkAtRules(/^layer$/i, (atRule) => {
-    report(
+  root.walkAtRules(/^layer$/i, (atRule) => {
+    at(
       atRule,
       `@${atRule.name}`,
       "layer/nested",
-      `the plugins already put this module in the "${layer}" layer, so this @layer nests inside it; leave the layer to the plugins`,
+      `the plugins already put this module in the "${layer.name}" layer, so this @layer nests inside it; leave the layer to the plugins`,
     );
   });
-  analysis.root.walkDecls(/^composes$/i, (declaration) => {
-    report(declaration, declaration.prop, "layer/composes", COMPOSES_MESSAGE);
+  root.walkDecls(/^composes$/i, (declaration) => {
+    at(declaration, declaration.prop, "layer/composes", COMPOSES_MESSAGE);
   });
-  return diagnostics;
 }
 
 function isAtRule(node: ChildNode, name: string): node is AtRule {

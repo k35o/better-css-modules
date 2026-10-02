@@ -6,9 +6,8 @@ import { transform } from "lightningcss";
 import postcss, { CssSyntaxError } from "postcss";
 import postcssModules from "postcss-modules";
 import { ConfigError, resolveConfig } from "../src/config.js";
-import { analyzeCss } from "../src/css.js";
 import { type GlobalCss, loadGlobalCss } from "../src/global.js";
-import { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "../src/layer.js";
+import { declaredLayers, resolveLayer, wrapInLayer } from "../src/layer.js";
 import { cssCases } from "./fixtures/css-cases.js";
 
 const FILE = "/project/src/a.module.css";
@@ -254,21 +253,5 @@ describe("resolveLayer", () => {
     expect(() => resolveLayer("ui", { files: [], tokens: new Map() })).toThrow(
       'layer "ui" needs global CSS that declares it; list one in globalCss with @layer ui;',
     );
-  });
-});
-
-describe("checkLayer", () => {
-  const check = (css: string) =>
-    checkLayer(analyzeCss(css, FILE), "components").map((d) => `${d.line}:${d.column} ${d.rule}`);
-
-  it("reports @layer, which would nest in the layer the module is put in", () => {
-    expect(check("@layer a, b;\n@media print {\n  @layer c { .a { color: red; } }\n}")).toEqual([
-      "1:1 layer/nested",
-      "3:3 layer/nested",
-    ]);
-  });
-
-  it("reports composes", () => {
-    expect(check(".a { color: red; }\n.b { composes: a; }")).toEqual(["2:6 layer/composes"]);
   });
 });

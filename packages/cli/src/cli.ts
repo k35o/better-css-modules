@@ -5,7 +5,6 @@ import {
   analyzeUsage,
   checkCss,
   checkGlobalCss,
-  checkLayer,
   ConfigError,
   formatDiagnostic,
   formatGitHubAnnotation,
@@ -64,15 +63,11 @@ cli
     const cwd = process.cwd();
     const config = await loadConfig({ config: options.config });
     const globalCss = await loadGlobalCss(config);
-    if (config.layer !== undefined) resolveLayer(config.layer, globalCss);
-    const { layer } = config;
+    const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
     const usage = await analyzeUsage(config);
     const diagnostics = sortDiagnostics([
       ...usage.diagnostics,
-      ...usage.modules.flatMap((analysis) => checkCss(analysis, globalCss)),
-      ...(layer === undefined
-        ? []
-        : usage.modules.flatMap((analysis) => checkLayer(analysis, layer))),
+      ...usage.modules.flatMap((analysis) => checkCss(analysis, globalCss, layer)),
       ...checkGlobalCss(globalCss),
     ]);
 
