@@ -9,9 +9,6 @@
     "url": "git+https://github.com/k35o/better-css-modules.git",
     "directory": "packages/unplugin"
   },
-  "files": [
-    "dist"
-  ],
   "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
@@ -42,6 +39,6 @@
     "webpack": "5.111.1"
   },
   "engines": {
-    "node": ">=24.14.1"
+    "node": ">=24"
   }
 }
