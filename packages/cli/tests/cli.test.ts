@@ -98,8 +98,15 @@ describe("generate", () => {
     });
   });
 
-  /** Run `generate --watch` until an edit of the card's stylesheet reaches `dts`; returns the output. */
-  async function watchUntilRegenerated(dir: string, dts: string): Promise<string> {
+  /**
+   * Run `generate --watch` until an edit of the card's stylesheet reaches
+   * `dts`, then until `after` resolves; returns the output.
+   */
+  async function watchUntilRegenerated(
+    dir: string,
+    dts: string,
+    after: (output: () => string) => Promise<void> = async () => {},
+  ): Promise<string> {
     const css = path.join(dir, "src/card.module.css");
     const watching = spawn(process.execPath, [BIN, "generate", "--watch"], { cwd: dir });
     let output = "";
@@ -117,6 +124,7 @@ describe("generate", () => {
         },
         { timeout: 10_000, interval: 200 },
       );
+      await after(() => output);
     } finally {
       watching.kill();
     }
@@ -127,6 +135,33 @@ describe("generate", () => {
     const dir = await project(silent);
     const dts = path.join(dir, "__generated__/src/card.module.css.d.ts");
     expect(await watchUntilRegenerated(dir, dts)).toBe("");
+  }, 30_000);
+
+  it("prints what it regenerates and removes while it watches", async () => {
+    const dir = await project(card);
+    const dts = path.join(dir, "__generated__/src/card.module.css.d.ts");
+    const removed = "[better-css-modules] removed: __generated__/src/card.module.css.d.ts";
+    const output = await watchUntilRegenerated(dir, dts, async (output) => {
+      await fs.rm(path.join(dir, "src/card.module.css"));
+      await vi.waitFor(
+        async () => {
+          await expect(fs.access(dts)).rejects.toThrow();
+          await expect(fs.access(`${dts}.map`)).rejects.toThrow();
+          expect(output()).toContain(removed);
+        },
+        { timeout: 10_000 },
+      );
+    });
+    const lines = output.split("\n");
+    expect(lines.slice(0, 3)).toEqual([
+      "[better-css-modules] generated 1 file(s)",
+      "  __generated__/src/card.module.css.d.ts",
+      "[better-css-modules] watching for changes...",
+    ]);
+    expect(new Set(lines.slice(3, -2))).toEqual(
+      new Set(["[better-css-modules] generated: __generated__/src/card.module.css.d.ts"]),
+    );
+    expect(lines.slice(-2)).toEqual([removed, ""]);
   }, 30_000);
 
   it("watches with the outDir at the root, next to the stylesheets", async () => {
@@ -218,6 +253,23 @@ describe("check", () => {
       status: 0,
       stdout: "[better-css-modules] no problems found (1 modules; tokens: color)\n",
       stderr: "",
+    });
+  });
+
+  it("leaves out the success line but not the problems when silent", async () => {
+    const config = 'export default { globalCss: ["./src/global.css"], silent: true };\n';
+    const clean = await project({
+      ...card,
+      "better-css-modules.config.mjs": config,
+      "src/card.module.css": ".used {\n  color: var(--color-fg-base);\n}\n",
+    });
+    expect(run(clean, "check")).toEqual({ status: 0, stdout: "", stderr: "" });
+    const dirty = await project({ ...card, "better-css-modules.config.mjs": config });
+    expect(run(dirty, "check")).toMatchObject({
+      status: 1,
+      stdout: expect.stringMatching(
+        /error usage\/unused-class[^]*\[better-css-modules\] 3 problem\(s\)\n$/,
+      ),
     });
   });
 
