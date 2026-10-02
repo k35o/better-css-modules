@@ -446,6 +446,30 @@ describe("loadGlobalCss", () => {
     expect([...globalCss.tokens.keys()]).toEqual(["--color-a", "--color-b"]);
   });
 
+  it.each([
+    ["important", false],
+    ["layer(base) important", false],
+    ["screen", true],
+    ["print", true],
+    ["not print", true],
+    ["(width >= 40rem)", true],
+    ["screen and (width >= 40rem)", true],
+    ["important, print", true],
+  ])("reads an @import followed by %s as conditional: %s", async (condition, conditional) => {
+    const { load } = await fixture(
+      {
+        "global.css": `@import "./base.css" ${condition};`,
+        "base.css": ":root { --color-a: #000; }",
+      },
+      ["./global.css"],
+    );
+    const globalCss = await load();
+    expect(globalCss.files.at(-1)?.imports.map((imported) => imported.conditional)).toEqual([
+      conditional,
+    ]);
+    expect([...globalCss.tokens.keys()]).toEqual(conditional ? [] : ["--color-a"]);
+  });
+
   it('reads Tailwind\'s entry through @import "tailwindcss", skipping its at-rules', async () => {
     const { load } = await fixture(
       {

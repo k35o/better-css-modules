@@ -411,7 +411,7 @@ export function readImport(params: string): ImportPrelude | null {
       const [named] = node.type === "Function" ? node.children.toArray() : [];
       layer = named?.type === "Layer" ? named.name : "";
     } else if (
-      node.type === "MediaQueryList" ||
+      (node.type === "MediaQueryList" && !isUnknownMediaType(node)) ||
       (node.type === "Function" && name === "supports")
     ) {
       conditional = true;
@@ -419,6 +419,38 @@ export function readImport(params: string): ImportPrelude | null {
   }
   return { url: target.value, urlEnd: target.loc.end.offset, layer, conditional };
 }
+
+/**
+ * Whether a media query list is only a media type CSS does not have, such as
+ * Tailwind's `important`: a word that is not a condition, skipped like the
+ * functions css-tree does not know.
+ */
+function isUnknownMediaType(list: CssTree.MediaQueryList): boolean {
+  const [query, ...others] = list.children.toArray();
+  return (
+    others.length === 0 &&
+    query?.type === "MediaQuery" &&
+    query.modifier === null &&
+    query.condition === null &&
+    query.mediaType !== null &&
+    !MEDIA_TYPES.has(query.mediaType.toLowerCase())
+  );
+}
+
+// Media Queries 4 keeps the deprecated types as types that match nothing.
+const MEDIA_TYPES = new Set([
+  "all",
+  "print",
+  "screen",
+  "tty",
+  "tv",
+  "projection",
+  "handheld",
+  "braille",
+  "embossed",
+  "aural",
+  "speech",
+]);
 
 /**
  * The prelude with each top-level function css-tree's grammar of `@import`
