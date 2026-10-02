@@ -4,12 +4,14 @@ import path from "node:path";
 import {
   analyzeUsage,
   checkCss,
+  checkGlobalCss,
   type Diagnostic,
   formatDiagnostic,
   formatGitHubAnnotation,
   generateAll,
+  type GlobalCss,
   loadConfig,
-  loadCssModules,
+  loadGlobalCss,
   sortDiagnostics,
   startWatcher,
 } from "@better-css-modules/core";
@@ -45,7 +47,10 @@ cli
   });
 
 cli
-  .command("check", "Report unused classes and values that bypass the design tokens")
+  .command(
+    "check",
+    "Report unused classes, impure modules and values that bypass the design tokens",
+  )
   .option("--format <format>", "Output format: text or github", { default: "text" })
   .action(async (options: { format: string }) => {
     if (options.format !== "text" && options.format !== "github") {
@@ -55,12 +60,21 @@ cli
     }
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
-    // analyzeUsage already reports the files that do not parse; only the ones
-    // that do are checked against the tokens.
-    const { modules } = await loadCssModules(config, cwd);
+    let globalCss: GlobalCss;
+    try {
+      globalCss = await loadGlobalCss(config, cwd);
+    } catch (error) {
+      // Global CSS that cannot be read is a mistake in the config, not a
+      // finding: no stack, and the exit code of a bad option.
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 2;
+      return;
+    }
+    const usage = await analyzeUsage(config, cwd);
     const diagnostics = sortDiagnostics([
-      ...(await analyzeUsage(config, cwd)),
-      ...modules.flatMap((analysis) => checkCss(analysis, config)),
+      ...usage.diagnostics,
+      ...usage.modules.flatMap((analysis) => checkCss(analysis, globalCss)),
+      ...checkGlobalCss(globalCss),
     ]);
 
     if (diagnostics.length === 0) {

@@ -1,6 +1,6 @@
 # @better-css-modules/core
 
-Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
+Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, pure CSS Modules and design token checks, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
 
 ## Install
 
@@ -38,7 +38,7 @@ const config = await loadConfig(process.cwd());
 const { written, diagnostics } = await generateAll(config, process.cwd());
 
 // Find unused classes across the project
-const problems = await analyzeUsage(config, process.cwd());
+const { diagnostics: problems } = await analyzeUsage(config, process.cwd());
 for (const problem of problems) {
   console.log(formatDiagnostic(problem, process.cwd()));
   // src/a.module.css:3:1 error unused-class: .title is never used
@@ -73,7 +73,7 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 ### Usage analysis
 
-`analyzeUsage(config, cwd)` parses every source file under `cwd` (except `node_modules`, `.git`, `dist`, `.next` and `outDir`) with oxc, resolves imports with oxc-resolver honouring the nearest `tsconfig.json`, aggregates usage per CSS file and returns `Diagnostic[]` sorted by file and position:
+`analyzeUsage(config, cwd)` parses every source file under `cwd` (except `node_modules`, `.git`, `dist`, `.next` and `outDir`) with oxc, resolves imports with oxc-resolver honouring the nearest `tsconfig.json`, aggregates usage per CSS file and returns `{ diagnostics, modules }`. `diagnostics` are sorted by file and position:
 
 - `unused-class` at the first occurrence of the class in the CSS
 - `unused-module` at line 1 of a CSS file nothing imports
@@ -81,24 +81,42 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 `composes` counts: a composed class is used whenever the composing class is, including across files named by `from`.
 
-### Token checks
+`modules` holds the analysis of every included CSS file that parses, at its real path, so `checkCss` can run on them without parsing the files again.
 
-`checkCss(analysis, config)` holds the declarations of one analyzed file to the categories `config.tokens` restricts and returns `Diagnostic[]` sorted by position. It is a pure function: it reads nothing but its arguments, so it runs the same from the CLI, a plugin or a test.
+### Pure and token checks
+
+`loadGlobalCss(config, cwd)` reads the stylesheets `config.globalCss` lists, follows their `@import` and returns a `GlobalCss`: the stylesheets in cascade order and the tokens they declare. It throws when a stylesheet cannot be resolved or parsed, is not standard CSS, imports itself, or is also an included CSS module. Each `Token` holds:
+
+| Field      | Content                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------- |
+| `name`     | The custom property, such as `--color-fg-base`                                                          |
+| `category` | The category its prefix names, or `null` for an internal name                                           |
+| `value`    | Its value as css-tree nodes, with every `var()` of another token replaced by that token's value         |
+| `file`     | The stylesheet of the declaration the value comes from                                                  |
+| `node`     | That declaration as a postcss node: the last one at `:root`, or the `@property` rule when there is none |
+
+`checkCss(analysis, globalCss)` holds one analyzed module to the pure rules and the tokens, and `checkGlobalCss(globalCss)` checks the project's own stylesheets of the global CSS, which the pure rules leave alone. Both return `Diagnostic[]` sorted by position and are pure functions: they read nothing but their arguments, so they run the same from the CLI, a plugin or a test.
 
 ```ts
-import { analyzeCss, checkCss, defineConfig } from "@better-css-modules/core";
+import { analyzeCss, checkCss, loadConfig, loadGlobalCss } from "@better-css-modules/core";
 
-const config = defineConfig({ tokens: { color: ["--fg-*"], shadow: true } });
-const analysis = analyzeCss(".a { color: #fff; }", "/project/src/a.module.css");
-checkCss(analysis, config);
+// globalCss: ["./src/tokens.css"], which declares --color-fg-base at :root
+const config = await loadConfig(cwd);
+const globalCss = await loadGlobalCss(config, cwd);
+const analysis = analyzeCss(".a { color: var(--color-fg-bsae); }", "/project/src/a.module.css");
+checkCss(analysis, globalCss);
 // => [{ line: 1, column: 13, rule: "tokens/color",
-//       message: "#fff is a raw value for color; use a --fg-* token", ... }]
+//       message: "--color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?", ... }]
 ```
 
-- `tokens/<category>` at a raw value, at a `var()` of a custom property the category does not allow, or at a custom property declared under a name the category's list covers
-- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason or with an unknown rule
+- `pure/selector`, `pure/subject`, `pure/global`, `pure/id`, `pure/important` and `pure/at-rule` in a module, always: a selector or subject without a local class, `:global`, an id, `!important`, a global-only at-rule such as `@font-face`
+- `tokens/<category>` at a raw value, at a `var()` of a custom property that is not a token of the category, at a token name the global CSS does not declare, or at a custom property a module declares under a token name
+- `tokens/breakpoint` at a width in an `@media` condition that is not the value of a breakpoint token, and at a breakpoint token of the project's global CSS whose value is not one length
+- `tokens/internal` at a module's use or declaration of a name the global CSS declares without a category prefix
+- `tokens/undeclared` at a mode of the global CSS that declares a name `:root` does not
+- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason, with an unknown rule, or naming `pure/selector`
 
-`tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. What passes, what is reported and the table itself are described in the [project README](../../README.md#token-enforcement). `checkCss` throws for a category the table does not define.
+`tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. `categoryOf(name)` gives the category a custom property name belongs to. The rules are described in the project README: [pure CSS Modules](../../README.md#pure-css-modules) and [token enforcement](../../README.md#token-enforcement), with the table itself.
 
 ### Diagnostics
 
@@ -133,18 +151,18 @@ export default defineConfig({
   outDir: "__generated__",
   watch: false,
   silent: false,
-  tokens: {},
+  globalCss: [],
 });
 ```
 
-| Option    | Type       | Default                   | Description                                                       |
-| --------- | ---------- | ------------------------- | ----------------------------------------------------------------- |
-| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                        |
-| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                                          |
-| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                      |
-| `watch`   | `boolean`  | `false`                   | Enable watch mode (CLI only)                                      |
-| `silent`  | `boolean`  | `false`                   | Suppress console output                                           |
-| `tokens`  | `object`   | `{}`                      | Categories held to design tokens: `true` or a list of token names |
+| Option      | Type       | Default                   | Description                                                         |
+| ----------- | ---------- | ------------------------- | ------------------------------------------------------------------- |
+| `include`   | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                          |
+| `exclude`   | `string[]` | `[]`                      | Glob patterns to exclude                                            |
+| `outDir`    | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                        |
+| `watch`     | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
+| `silent`    | `boolean`  | `false`                   | Suppress console output                                             |
+| `globalCss` | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
 
 ## License
 

@@ -138,6 +138,9 @@ importers:
       '@types/css-tree':
         specifier: 3.2.0
         version: 3.2.0
+      '@types/node':
+        specifier: 24.12.0
+        version: 24.12.0
       '@types/picomatch':
         specifier: ^4.0.2
         version: 4.0.2
@@ -205,6 +208,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@types/node':
+        specifier: 24.12.0
+        version: 24.12.0
       next:
         specifier: 16.3.1
         version: 16.3.1(@types/node@24.12.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -217,6 +223,13 @@ importers:
       unplugin:
         specifier: 3.0.0
         version: 3.0.0
+    devDependencies:
+      '@types/node':
+        specifier: 24.12.0
+        version: 24.12.0
+      vite:
+        specifier: 'catalog:'
+        version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.12.0)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.51.2)(typescript@7.0.2)'
 
   packages/vite:
     dependencies:

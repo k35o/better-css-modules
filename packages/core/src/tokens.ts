@@ -52,8 +52,9 @@ function sides(name: string, part: ValuePart, suffix = ""): Record<string, Value
 }
 
 /**
- * The categories a config can restrict. This table is the single definition of
- * what each category covers; the README lists it for users.
+ * The categories of design tokens. A custom property belongs to a category by
+ * its name: `--<category>` itself or `--<category>-*`. This table is the single
+ * definition of what each category covers; the README lists it for users.
  */
 export const tokenCategories = {
   color: {
@@ -91,7 +92,7 @@ export const tokenCategories = {
     },
     keywords: ["currentcolor", "transparent"],
   },
-  size: {
+  spacing: {
     properties: {
       ...sides("margin", "value"),
       ...sides("padding", "value"),
@@ -161,15 +162,20 @@ export const tokenCategories = {
     },
     keywords: ["auto"],
   },
+  // A media query cannot use var(); its widths are held to the values of these
+  // tokens instead (breakpoint.ts).
+  breakpoint: {
+    properties: {},
+    keywords: [],
+  },
 } satisfies Record<string, TokenCategoryDefinition>;
 
 export type TokenCategory = keyof typeof tokenCategories;
 
-/**
- * `true` forbids raw values and accepts any `var()`; a list accepts only the
- * custom properties it names, as exact names or globs such as `--fg-*`.
- */
-export type TokenSetting = true | string[];
-
-/** The categories to restrict. A category left out is not checked. */
-export type TokensConfig = Partial<Record<TokenCategory, TokenSetting>>;
+/** The category a custom property name belongs to, or null for a name without a category prefix. */
+export function categoryOf(name: string): TokenCategory | null {
+  for (const category of Object.keys(tokenCategories) as TokenCategory[]) {
+    if (name === `--${category}` || name.startsWith(`--${category}-`)) return category;
+  }
+  return null;
+}

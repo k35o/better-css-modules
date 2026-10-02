@@ -501,6 +501,22 @@ export function paramsStart(atRule: AtRule): SourcePosition {
   return { line: start.line + breaks, column: afterName.length - lastBreak };
 }
 
+/**
+ * Where a declaration's value begins: after the property, the colon and
+ * anything between them. The offset indexes into the source.
+ */
+export function valueStart(declaration: Declaration): (SourcePosition & { offset: number }) | null {
+  const start = declaration.source?.start;
+  if (!start) return null;
+  // postcss moves the `*` or `_` of a property hack out of `prop` and into
+  // `raws.before`, while the declaration still starts on it.
+  const hack = /[*_]$/.test(declaration.raws.before ?? "") ? 1 : 0;
+  const offset =
+    start.offset + hack + declaration.prop.length + (declaration.raws.between ?? "").length;
+  const position = declaration.source?.input.fromOffset(offset);
+  return position ? { line: position.line, column: position.col, offset } : null;
+}
+
 function rangeOfNode(node: Node): SourceRange {
   const start = startOf(node);
   const end = node.source?.end;

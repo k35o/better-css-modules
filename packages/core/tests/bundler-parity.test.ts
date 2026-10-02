@@ -5,7 +5,9 @@ import path from "node:path";
 import { transform } from "lightningcss";
 import postcss from "postcss";
 import postcssModules from "postcss-modules";
+import { checkCss } from "../src/check.js";
 import { analyzeCss } from "../src/css.js";
+import { globalCssFrom } from "../src/global.js";
 import { cssCases } from "./fixtures/css-cases.js";
 
 // The generated type must list exactly the keys a bundler exports. lightningcss
@@ -58,5 +60,63 @@ describe("generated keys match bundler exports", () => {
     expect(analyzeCss(css, "/x.module.css").exportNames).toEqual(expected);
     expect(lightningcssKeys(css)).toEqual(divergent?.lightningcss ?? expected);
     expect(await postcssModulesKeys(css)).toEqual(divergent?.postcssModules ?? expected);
+  });
+});
+
+function lightningcssRejectsAsImpure(css: string): boolean {
+  try {
+    transform({ filename: "x.module.css", code: Buffer.from(css), cssModules: { pure: true } });
+    return false;
+  } catch (error) {
+    return (error as { data?: { type?: string } }).data?.type === "ImpureCSSModuleSelector";
+  }
+}
+
+// pure/selector is lightningcss's pure mode: what it reports, lightningcss
+// refuses to build with `pure: true`. postcss-modules-local-by-default 4.2
+// (css-loader) agrees, except that it also rejects `:local(.a)`, and
+// `@scope to (…)` and `@scope (&)` nested in a rule. Turbopack does not use
+// pure mode; its own check is looser and builds `:root`, `html`, `a:hover`
+// and `:global(.x)`.
+describe("pure/selector matches lightningcss's pure mode", () => {
+  it.each([
+    "a {}",
+    ".a {}",
+    "#a {}",
+    "a .a {}",
+    ".a a {}",
+    ".a, a {}",
+    "* {}",
+    "[data-x] {}",
+    ":root {}",
+    "& {}",
+    "::before {}",
+    ".a::before {}",
+    ":is(.a) {}",
+    ":not(.a) {}",
+    "a:has(.a) {}",
+    "li:nth-child(2n of .a) {}",
+    "::view-transition-old(.a) {}",
+    ":global(.x) {}",
+    ":global(.x) .a {}",
+    ".a :global(.x) {}",
+    ":export { a: b; }",
+    ".a { a {} }",
+    "a { .b & {} }",
+    "@media (width > 1px) { a {} }",
+    ".a { @media (width > 1px) { a {} } }",
+    "@layer x { a {} }",
+    "@scope (.a) { p {} }",
+    "@scope (.a) to (.b) { p {} }",
+    "@scope (.a) { :scope {} }",
+    "@scope (.a) { .b p {} }",
+    ".a { @scope { p {} } }",
+    ".a { @scope to (.b) { p {} } }",
+    ".a { @scope (.b) { p {} } }",
+    "a { @scope (.b) { p {} } }",
+  ])("%s", (css) => {
+    const diagnostics = checkCss(analyzeCss(css, "/x.module.css"), globalCssFrom([]));
+    const impure = diagnostics.some((diagnostic) => diagnostic.rule === "pure/selector");
+    expect(impure).toBe(lightningcssRejectsAsImpure(css));
   });
 });

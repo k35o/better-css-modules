@@ -1,29 +1,47 @@
 import { describe, it, expect } from "vitest";
+import postcss from "postcss";
 import { checkCss } from "../src/check.js";
-import { defineConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
-import type { TokensConfig } from "../src/tokens.js";
+import { type GlobalCss, globalCssFrom } from "../src/global.js";
 
 const FILE = "/project/src/a.module.css";
+const GLOBAL = "/project/src/global.css";
 
-// The configuration the README shows.
-const designSystem: TokensConfig = {
-  color: ["--fg-*", "--bg-*", "--border-*"],
-  size: ["--spacing"],
-  radius: ["--radius-*"],
-  shadow: true,
-  "font-size": ["--text-*"],
-};
+function globalCssOf(css: string): GlobalCss {
+  const root = postcss.parse(css, { from: GLOBAL });
+  return globalCssFrom([{ file: GLOBAL, root, checked: true, conditional: false }]);
+}
 
-const COLOR_HINT = "use a --fg-* / --bg-* / --border-* token";
+/** A global CSS that declares the given tokens, which restricts their categories. */
+function declaring(...names: string[]): GlobalCss {
+  return globalCssOf(`:root { ${names.map((name) => `${name}: 0;`).join(" ")} }`);
+}
 
-function diagnose(css: string, tokens: TokensConfig = designSystem) {
-  return checkCss(analyzeCss(css, FILE), defineConfig({ tokens }));
+// Tokens in color, spacing, radius, shadow and font-size, and one internal name.
+const designSystem = globalCssOf(`
+:root {
+  --gray-900: #111;
+  --color-fg-base: var(--gray-900);
+  --color-fg-mute: #333;
+  --color-bg-base: #fff;
+  --color-border-base: #ccc;
+  --spacing: 0.25rem;
+  --radius-md: 0.5rem;
+  --shadow-md: 0 1px 2px #0003;
+  --font-size-lg: 1.125rem;
+}`);
+
+const COLOR_HINT = "use a --color-* token";
+
+/** The diagnostics of token rules and disable comments; pure.test.ts covers the pure rules. */
+function diagnose(css: string, globalCss: GlobalCss = designSystem) {
+  const diagnostics = checkCss(analyzeCss(css, FILE), globalCss);
+  return diagnostics.filter((d) => !d.rule.startsWith("pure/"));
 }
 
 /** `rule: message` of every diagnostic, in source order. */
-function check(css: string, tokens?: TokensConfig): string[] {
-  return diagnose(css, tokens).map((d) => `${d.rule}: ${d.message}`);
+function check(css: string, globalCss?: GlobalCss): string[] {
+  return diagnose(css, globalCss).map((d) => `${d.rule}: ${d.message}`);
 }
 
 describe("checkCss: raw values", () => {
@@ -52,17 +70,17 @@ describe("checkCss: raw values", () => {
     [
       "a length",
       "padding: 13px",
-      "tokens/size: 13px is a raw value for size; use a --spacing token",
+      "tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token",
     ],
     [
       "a font size",
       "font-size: 17px",
-      "tokens/font-size: 17px is a raw value for font-size; use a --text-* token",
+      "tokens/font-size: 17px is a raw value for font-size; use a --font-size-* token",
     ],
     [
       "a keyword that stands for a value",
       "font-size: large",
-      "tokens/font-size: large is a raw value for font-size; use a --text-* token",
+      "tokens/font-size: large is a raw value for font-size; use a --font-size-* token",
     ],
   ])("reports %s", (_name, declaration, expected) => {
     expect(check(`.a { ${declaration}; }`)).toEqual([expected]);
@@ -71,8 +89,8 @@ describe("checkCss: raw values", () => {
   it("reports every raw value of a declaration at its own position", () => {
     const diagnostics = diagnose(".a {\n  padding: 13px\n    7px;\n}");
     expect(diagnostics).toMatchObject([
-      { file: FILE, line: 2, column: 12, endLine: 2, endColumn: 16, rule: "tokens/size" },
-      { file: FILE, line: 3, column: 5, endLine: 3, endColumn: 8, rule: "tokens/size" },
+      { file: FILE, line: 2, column: 12, endLine: 2, endColumn: 16, rule: "tokens/spacing" },
+      { file: FILE, line: 3, column: 5, endLine: 3, endColumn: 8, rule: "tokens/spacing" },
     ]);
   });
 
@@ -106,13 +124,13 @@ describe("checkCss: raw values", () => {
 
   it("looks up vendor-prefixed properties under their unprefixed name", () => {
     expect(check(".a { -webkit-box-shadow: 0 0 1px red; }")).toEqual([
-      "tokens/shadow: 0 0 1px red is a raw value for shadow; use a token through var()",
+      "tokens/shadow: 0 0 1px red is a raw value for shadow; use a --shadow-* token",
     ]);
   });
 
   it("leaves descriptors of @font-face and @page alone", () => {
     const css = "@font-face { font-weight: 400 700; }\n@page { margin: 1in; }";
-    expect(check(css, { "font-weight": true, size: true })).toEqual([]);
+    expect(check(css, declaring("--font-weight-bold", "--spacing"))).toEqual([]);
   });
 });
 
@@ -136,26 +154,25 @@ describe("checkCss: raw values in shorthands", () => {
 
   it("reports a raw shadow once, as a shadow", () => {
     expect(check(".a { box-shadow: 0 0 4px rgb(0 0 0 / 0.2); }")).toEqual([
-      "tokens/shadow: 0 0 4px rgb(0 0 0 / 0.2) is a raw value for shadow; use a token through var()",
+      "tokens/shadow: 0 0 4px rgb(0 0 0 / 0.2) is a raw value for shadow; use a --shadow-* token",
     ]);
   });
 
   it("reports each raw shadow of a list", () => {
     expect(
       check(
-        ".a { box-shadow: var(--shadow-md), 0 0 0 2px var(--border-base),\n inset 0 1px red; }",
+        ".a { box-shadow: var(--shadow-md), 0 0 0 2px var(--color-border-base),\n inset 0 1px red; }",
       ),
     ).toEqual([
-      "tokens/shadow: 0 0 0 2px var(--border-base) is a raw value for shadow; use a token through var()",
-      "tokens/shadow: inset 0 1px red is a raw value for shadow; use a token through var()",
+      "tokens/shadow: 0 0 0 2px var(--color-border-base) is a raw value for shadow; use a --shadow-* token",
+      "tokens/shadow: inset 0 1px red is a raw value for shadow; use a --shadow-* token",
     ]);
   });
 
   it("reports the color of a shadow when only color is restricted", () => {
-    const tokens: TokensConfig = { color: ["--fg-*"] };
-    expect(check(".a { box-shadow: 0 0 4px rgb(0 0 0 / 0.2); }", tokens)).toEqual([
-      "tokens/color: rgb(0 0 0 / 0.2) is a raw value for color; use a --fg-* token",
-    ]);
+    expect(
+      check(".a { box-shadow: 0 0 4px rgb(0 0 0 / 0.2); }", declaring("--color-fg-base")),
+    ).toEqual([`tokens/color: rgb(0 0 0 / 0.2) is a raw value for color; ${COLOR_HINT}`]);
   });
 
   it("reports colors of svg paints, outlines and text decorations", () => {
@@ -165,34 +182,34 @@ describe("checkCss: raw values in shorthands", () => {
   });
 
   it("reports the size, weight and line height of the font shorthand", () => {
-    const tokens: TokensConfig = { "font-size": true, "font-weight": true, "line-height": true };
-    expect(check(".a { font: italic 700 17px/1.2 sans-serif; }", tokens)).toEqual([
-      "tokens/font-weight: 700 is a raw value for font-weight; use a token through var()",
-      "tokens/font-size: 17px is a raw value for font-size; use a token through var()",
-      "tokens/line-height: 1.2 is a raw value for line-height; use a token through var()",
+    const globalCss = declaring("--font-size-md", "--font-weight-bold", "--line-height-tight");
+    expect(check(".a { font: italic 700 17px/1.2 sans-serif; }", globalCss)).toEqual([
+      "tokens/font-weight: 700 is a raw value for font-weight; use a --font-weight-* token",
+      "tokens/font-size: 17px is a raw value for font-size; use a --font-size-* token",
+      "tokens/line-height: 1.2 is a raw value for line-height; use a --line-height-* token",
     ]);
-    expect(check(".a { font: bold large serif; }", tokens)).toEqual([
-      "tokens/font-weight: bold is a raw value for font-weight; use a token through var()",
-      "tokens/font-size: large is a raw value for font-size; use a token through var()",
+    expect(check(".a { font: bold large serif; }", globalCss)).toEqual([
+      "tokens/font-weight: bold is a raw value for font-weight; use a --font-weight-* token",
+      "tokens/font-size: large is a raw value for font-size; use a --font-size-* token",
     ]);
   });
 
   it("reports the times of transition and animation shorthands", () => {
-    const tokens: TokensConfig = { duration: ["--duration-*"] };
-    expect(check(".a { transition: color 200ms ease-out, opacity 0s; }", tokens)).toEqual([
+    const globalCss = declaring("--duration-fast");
+    expect(check(".a { transition: color 200ms ease-out, opacity 0s; }", globalCss)).toEqual([
       "tokens/duration: 200ms is a raw value for duration; use a --duration-* token",
     ]);
-    expect(check(".a { animation: spin 1s linear infinite; }", tokens)).toHaveLength(1);
+    expect(check(".a { animation: spin 1s linear infinite; }", globalCss)).toHaveLength(1);
   });
 });
 
-describe("checkCss: tokens outside the list", () => {
+describe("checkCss: custom properties outside the category", () => {
   it("reports a token of another category", () => {
     expect(check(".a { color: var(--radius-md); }")).toEqual([
       `tokens/color: --radius-md is not a color token; ${COLOR_HINT}`,
     ]);
-    expect(check(".a { gap: var(--fg-base); }")).toEqual([
-      "tokens/size: --fg-base is not a size token; use a --spacing token",
+    expect(check(".a { gap: var(--color-fg-base); }")).toEqual([
+      "tokens/spacing: --color-fg-base is not a spacing token; use a --spacing-* token",
     ]);
   });
 
@@ -203,51 +220,41 @@ describe("checkCss: tokens outside the list", () => {
     ]);
   });
 
-  it("reports a name that matches no pattern", () => {
+  it("reports a name without the category prefix", () => {
     expect(check(".a { color: var(--nope); }")).toHaveLength(1);
-    expect(check(".a { padding: calc(var(--spacing-2) * 2); }")).toEqual([
-      "tokens/size: --spacing-2 is not a size token; use a --spacing token",
+    expect(check(".a { padding: calc(var(--space-2) * 2); }")).toEqual([
+      "tokens/spacing: --space-2 is not a spacing token; use a --spacing-* token",
     ]);
-  });
-
-  // Tokens are known by name only: a misspelling is caught by a list of exact
-  // names, and slips through a glob it still matches.
-  it("judges a token by its name alone", () => {
-    const css = ".a { color: var(--fg-bsae); }";
-    expect(check(css, { color: ["--fg-base", "--fg-mute"] })).toEqual([
-      "tokens/color: --fg-bsae is not a color token; use a --fg-base / --fg-mute token",
-    ]);
-    expect(check(css, { color: ["--fg-*"] })).toEqual([]);
   });
 
   it("matches var() whatever its case and token names case-sensitively", () => {
     expect(check(".a { color: VAR(--radius-md); }")).toHaveLength(1);
-    expect(check(".a { color: var(--FG-base); }")).toHaveLength(1);
+    expect(check(".a { color: var(--COLOR-fg-base); }")).toHaveLength(1);
   });
 
   it("reports a raw value in the fallback of var()", () => {
-    expect(check(".a { color: var(--fg-base, red); }")).toEqual([
+    expect(check(".a { color: var(--color-fg-base, red); }")).toEqual([
       `tokens/color: red is a raw value for color; ${COLOR_HINT}`,
     ]);
     expect(diagnose(".a { padding: var(--spacing, 13px); }")).toMatchObject([
-      { rule: "tokens/size", line: 1, column: 30, endColumn: 34 },
+      { rule: "tokens/spacing", line: 1, column: 30, endColumn: 34 },
     ]);
     expect(check(".a { padding: env(safe-area-inset-left, 20px); }")).toEqual([
-      "tokens/size: 20px is a raw value for size; use a --spacing token",
+      "tokens/spacing: 20px is a raw value for spacing; use a --spacing-* token",
     ]);
   });
 
   it("reports a raw value in the fallback of a var() it cannot tie to the category", () => {
-    const tokens: TokensConfig = { duration: ["--duration-*"], color: ["--border-*"] };
-    expect(check(".a { transition: opacity var(--duration-fast, 200ms); }", tokens)).toEqual([
+    const globalCss = declaring("--duration-fast", "--color-border-base");
+    expect(check(".a { transition: opacity var(--duration-fast, 200ms); }", globalCss)).toEqual([
       "tokens/duration: 200ms is a raw value for duration; use a --duration-* token",
     ]);
-    expect(check(".a { border: var(--line, red) solid var(--border-base); }", tokens)).toEqual([
-      "tokens/color: red is a raw value for color; use a --border-* token",
-    ]);
+    expect(
+      check(".a { border: var(--line, red) solid var(--color-border-base); }", globalCss),
+    ).toEqual([`tokens/color: red is a raw value for color; ${COLOR_HINT}`]);
   });
 
-  it("reports both the token and the fallback when neither is allowed", () => {
+  it("reports both the custom property and the fallback when neither is a token", () => {
     expect(check(".a { color: var(--nope, var(--glow, #fff)); }")).toEqual([
       `tokens/color: --nope is not a color token; ${COLOR_HINT}`,
       `tokens/color: --glow is not a color token; ${COLOR_HINT}`,
@@ -255,30 +262,86 @@ describe("checkCss: tokens outside the list", () => {
     ]);
   });
 
-  it("accepts any var() for a category set to true", () => {
-    expect(check(".a { box-shadow: var(--anything), var(--glow); }")).toEqual([]);
-    expect(check(".a { color: var(--anything); }", { color: true })).toEqual([]);
+  it("holds a category to its tokens in every property it owns", () => {
+    const expected = ["tokens/shadow: --glow is not a shadow token; use a --shadow-* token"];
+    expect(check(".a { box-shadow: var(--glow); }")).toEqual(expected);
+    expect(check(".a { text-shadow: var(--shadow-md), var(--glow); }")).toEqual(expected);
+  });
+});
+
+describe("checkCss: token names the global CSS does not declare", () => {
+  it("reports a misspelt token with the declared name closest to it", () => {
+    expect(check(".a { color: var(--color-fg-bsae); }")).toEqual([
+      "tokens/color: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
+    ]);
+    expect(diagnose(".a { color: var(--color-fg-bsae); }")).toMatchObject([
+      { line: 1, column: 13, endLine: 1, endColumn: 33 },
+    ]);
   });
 
-  it("holds a category with a list to that list in every property it owns", () => {
-    const tokens: TokensConfig = { shadow: ["--shadow-*"] };
-    const expected = ["tokens/shadow: --glow is not a shadow token; use a --shadow-* token"];
-    expect(check(".a { box-shadow: var(--glow); }", tokens)).toEqual(expected);
-    expect(check(".a { text-shadow: var(--shadow-sm), var(--glow); }", tokens)).toEqual(expected);
+  it("reports one in any property, in the value of a custom property and in a fallback", () => {
+    const css =
+      ".a { width: calc(var(--spacing-44) * 2); --local: var(--radius-mdd); height: var(--x, var(--color-nope)); }";
+    expect(check(css)).toEqual([
+      "tokens/spacing: --spacing-44 is not defined in the global CSS",
+      "tokens/radius: --radius-mdd is not defined in the global CSS; did you mean --radius-md?",
+      "tokens/color: --color-nope is not defined in the global CSS",
+    ]);
+  });
+
+  it("leaves token names of a category the global CSS declares nothing for alone", () => {
+    const css = ".a { z-index: var(--z-index-modl); width: var(--duration-x); }";
+    expect(check(css, declaring("--color-fg-base"))).toEqual([]);
+  });
+
+  it("takes a name registered with @property alone for a token", () => {
+    const globalCss = globalCssOf(
+      '@property --color-accent { syntax: "<color>"; inherits: true; initial-value: red; }',
+    );
+    expect(check(".a { color: var(--color-accent); }", globalCss)).toEqual([]);
+  });
+});
+
+describe("checkCss: internal names", () => {
+  const message =
+    "tokens/internal: --gray-900 is internal to the global CSS; use a token with a category prefix";
+
+  it("reports a name the global CSS declares without a category prefix, in any property", () => {
+    expect(check(".a { width: var(--gray-900); }")).toEqual([message]);
+    expect(diagnose(".a { width: var(--gray-900); }")).toMatchObject([
+      { line: 1, column: 13, endColumn: 28 },
+    ]);
+  });
+
+  it("reports it once in a property of a restricted category", () => {
+    expect(check(".a { color: var(--gray-900); }")).toEqual([message]);
+  });
+
+  it("reports declaring it", () => {
+    const declared =
+      "tokens/internal: --gray-900 is internal to the global CSS and cannot be declared here; rename the custom property";
+    expect(check(".a { --gray-900: red; }")).toEqual([declared]);
+  });
+
+  it("leaves a module's own custom properties free outside the restricted categories", () => {
+    expect(check(".a { --glow: red; width: var(--glow); }")).toEqual([]);
   });
 });
 
 describe("checkCss: what passes", () => {
   it.each([
-    ["an allowed token", "color: var(--fg-base)"],
-    ["an allowed token with !important", "color: var(--fg-base) !important"],
+    ["a token", "color: var(--color-fg-base)"],
+    ["a token with !important", "color: var(--color-fg-base) !important"],
     ["arithmetic on a token", "padding: calc(var(--spacing) * 4)"],
     ["negated token arithmetic", "margin-inline: calc(var(--spacing) * -2) auto"],
-    ["light-dark() of tokens", "color: light-dark(var(--fg-base), var(--fg-mute))"],
-    ["color-mix() of tokens", "color: color-mix(in oklch, var(--fg-base) 50%, transparent)"],
-    ["a relative color from a token", "color: oklch(from var(--fg-base) l c h / 0.5)"],
-    ["a gradient of tokens", "background: linear-gradient(to right, var(--bg-base), transparent)"],
-    ["a token in a border", "border: 1px solid var(--border-base)"],
+    ["light-dark() of tokens", "color: light-dark(var(--color-fg-base), var(--color-fg-mute))"],
+    ["color-mix() of tokens", "color: color-mix(in oklch, var(--color-fg-base) 50%, transparent)"],
+    ["a relative color from a token", "color: oklch(from var(--color-fg-base) l c h / 0.5)"],
+    [
+      "a gradient of tokens",
+      "background: linear-gradient(to right, var(--color-bg-base), transparent)",
+    ],
+    ["a token in a border", "border: 1px solid var(--color-border-base)"],
     ["a shadow token", "box-shadow: var(--shadow-md)"],
     ["an image", "background: url(a.png) center / cover no-repeat"],
     ["an environment variable", "padding: env(safe-area-inset-left)"],
@@ -308,17 +371,17 @@ describe("checkCss: what passes", () => {
     expect(check(`.a { ${declaration}; }`)).toEqual([]);
   });
 
-  it("accepts percentages for size and radius, which no token can express", () => {
+  it("accepts percentages for spacing and radius, which no token can express", () => {
     expect(
       check(".a { top: 50%; border-radius: 50%; padding: calc(100% - var(--spacing)); }"),
     ).toEqual([]);
     expect(check(".a { font-size: 120%; }")).toHaveLength(1);
   });
 
-  it("does not restrict categories the config leaves out", () => {
+  it("does not restrict categories the global CSS declares no token for", () => {
     const css =
       ".a { z-index: 10; font-weight: 700; line-height: 1.5; transition: opacity 200ms; font: 700 1rem/1.5 serif; }";
-    expect(check(css, { color: ["--fg-*"] })).toEqual([]);
+    expect(check(css, declaring("--color-fg-base"))).toEqual([]);
   });
 
   it("does not restrict properties outside every category", () => {
@@ -327,9 +390,8 @@ describe("checkCss: what passes", () => {
     ).toEqual([]);
   });
 
-  it("reports nothing without a tokens config", () => {
-    const analysis = analyzeCss(".a { color: #fff; }", FILE);
-    expect(checkCss(analysis, defineConfig({}))).toEqual([]);
+  it("reports nothing without global CSS", () => {
+    expect(check(".a { color: #fff; width: var(--color-x); }", globalCssFrom([]))).toEqual([]);
   });
 
   it("leaves the value of a custom property free", () => {
@@ -347,14 +409,14 @@ describe("checkCss: what passes", () => {
 
 describe("checkCss: colors built from other colors", () => {
   it("reports a raw color mixed with a token", () => {
-    expect(check(".a { color: color-mix(in oklch, var(--fg-base) 50%, white); }")).toEqual([
+    expect(check(".a { color: color-mix(in oklch, var(--color-fg-base) 50%, white); }")).toEqual([
       `tokens/color: white is a raw value for color; ${COLOR_HINT}`,
     ]);
-    expect(check(".a { color: light-dark(#000, var(--fg-base)); }")).toHaveLength(1);
+    expect(check(".a { color: light-dark(#000, var(--color-fg-base)); }")).toHaveLength(1);
   });
 
-  it("reports a token outside the list inside color-mix() and light-dark()", () => {
-    expect(check(".a { color: light-dark(var(--glow), var(--fg-base)); }")).toEqual([
+  it("reports a custom property that is not a token inside color-mix() and light-dark()", () => {
+    expect(check(".a { color: light-dark(var(--glow), var(--color-fg-base)); }")).toEqual([
       `tokens/color: --glow is not a color token; ${COLOR_HINT}`,
     ]);
   });
@@ -367,8 +429,8 @@ describe("checkCss: colors built from other colors", () => {
   });
 
   it("reports a color function with raw channels as a whole, even with var() inside", () => {
-    expect(check(".a { color: rgb(0 0 0 / var(--fg-alpha)); }")).toEqual([
-      `tokens/color: rgb(0 0 0 / var(--fg-alpha)) is a raw value for color; ${COLOR_HINT}`,
+    expect(check(".a { color: rgb(0 0 0 / var(--alpha)); }")).toEqual([
+      `tokens/color: rgb(0 0 0 / var(--alpha)) is a raw value for color; ${COLOR_HINT}`,
     ]);
   });
 });
@@ -384,15 +446,17 @@ describe("checkCss: var() in shorthands that hold a color", () => {
     expect(check(".a { outline: 2px solid var(--radius-md); }")).toHaveLength(1);
     // Each background layer is judged on its own, so the image of the first
     // one is taken for a color; `background-image` says what it is.
-    expect(check(".a { background: var(--hero) center / cover, var(--bg-base); }")).toEqual([
+    expect(check(".a { background: var(--hero) center / cover, var(--color-bg-base); }")).toEqual([
       `tokens/color: --hero is not a color token; ${COLOR_HINT}`,
     ]);
   });
 
   it("does not take a var() for the color when the layer already has one", () => {
-    expect(check(".a { border: var(--line-thin) solid var(--border-base); }")).toEqual([]);
+    expect(check(".a { border: var(--line-thin) solid var(--color-border-base); }")).toEqual([]);
     expect(check(".a { border: var(--line-thin) solid currentColor; }")).toEqual([]);
-    expect(check(".a { background: var(--hero) center / cover var(--bg-base); }")).toEqual([]);
+    expect(check(".a { background: var(--hero) center / cover var(--color-bg-base); }")).toEqual(
+      [],
+    );
   });
 
   it("takes a var() of a gradient color stop for a color", () => {
@@ -403,81 +467,84 @@ describe("checkCss: var() in shorthands that hold a color", () => {
 
   it("does not take a var() of a gradient's direction for a color", () => {
     const css =
-      ".a { background: conic-gradient(from var(--angle) at 50% 50%, var(--fg-base), var(--bg-base)); }";
+      ".a { background: conic-gradient(from var(--angle) at 50% 50%, var(--color-fg-base), var(--color-bg-base)); }";
     expect(check(css)).toEqual([]);
   });
 
   it("does not take a var() that is a whole image or a whole shadow for a color", () => {
-    const tokens: TokensConfig = { color: ["--fg-*"] };
-    expect(check(".a { background-image: var(--hero); }", tokens)).toEqual([]);
-    expect(check(".a { box-shadow: var(--shadow-md), 0 0 0 2px var(--fg-base); }", tokens)).toEqual(
-      [],
-    );
-    expect(check(".a { box-shadow: 0 0 0 2px var(--glow); }", tokens)).toHaveLength(1);
+    const globalCss = declaring("--color-fg-base");
+    expect(check(".a { background-image: var(--hero); }", globalCss)).toEqual([]);
+    expect(
+      check(".a { box-shadow: var(--shadow-md), 0 0 0 2px var(--color-fg-base); }", globalCss),
+    ).toEqual([]);
+    expect(check(".a { box-shadow: 0 0 0 2px var(--glow); }", globalCss)).toHaveLength(1);
   });
 });
 
 describe("checkCss: var() in font, transition and animation", () => {
   it("checks the size before and the line height after the slash of font", () => {
-    const tokens: TokensConfig = { "font-size": ["--text-*"], "line-height": ["--leading-*"] };
-    const ok = ".a { font: var(--weight) var(--text-lg)/var(--leading-tight) var(--font-sans); }";
-    expect(check(ok, tokens)).toEqual([]);
-    expect(check(".a { font: 700 var(--glow)/var(--text-lg) serif; }", tokens)).toEqual([
-      "tokens/font-size: --glow is not a font-size token; use a --text-* token",
-      "tokens/line-height: --text-lg is not a line-height token; use a --leading-* token",
+    const globalCss = declaring("--font-size-lg", "--line-height-tight");
+    const ok =
+      ".a { font: var(--weight) var(--font-size-lg)/var(--line-height-tight) var(--font-sans); }";
+    expect(check(ok, globalCss)).toEqual([]);
+    expect(check(".a { font: 700 var(--glow)/var(--font-size-lg) serif; }", globalCss)).toEqual([
+      "tokens/font-size: --glow is not a font-size token; use a --font-size-* token",
+      "tokens/line-height: --font-size-lg is not a line-height token; use a --line-height-* token",
     ]);
   });
 
   it("does not guess which component a var() of transition or animation is", () => {
-    const tokens: TokensConfig = { duration: ["--duration-*"] };
+    const globalCss = declaring("--duration-fast");
     expect(
-      check(".a { transition: opacity var(--duration-fast) var(--ease-out); }", tokens),
+      check(".a { transition: opacity var(--duration-fast) var(--ease-out); }", globalCss),
     ).toEqual([]);
-    expect(check(".a { transition-duration: var(--ease-out); }", tokens)).toHaveLength(1);
+    expect(check(".a { transition-duration: var(--ease-out); }", globalCss)).toHaveLength(1);
   });
 });
 
 describe("checkCss: numbers", () => {
   it("accepts zero in any unit and rejects other numbers", () => {
-    const tokens: TokensConfig = { "z-index": true, "line-height": true, duration: true };
-    expect(check(".a { z-index: 0; line-height: 0; transition-duration: 0s; }", tokens)).toEqual(
+    const globalCss = declaring("--z-index-modal", "--line-height-tight", "--duration-fast");
+    expect(check(".a { z-index: 0; line-height: 0; transition-duration: 0s; }", globalCss)).toEqual(
       [],
     );
-    expect(check(".a { z-index: -1; line-height: 1.5; transition-delay: 75ms; }", tokens)).toEqual([
-      "tokens/z-index: -1 is a raw value for z-index; use a token through var()",
-      "tokens/line-height: 1.5 is a raw value for line-height; use a token through var()",
-      "tokens/duration: 75ms is a raw value for duration; use a token through var()",
+    expect(
+      check(".a { z-index: -1; line-height: 1.5; transition-delay: 75ms; }", globalCss),
+    ).toEqual([
+      "tokens/z-index: -1 is a raw value for z-index; use a --z-index-* token",
+      "tokens/line-height: 1.5 is a raw value for line-height; use a --line-height-* token",
+      "tokens/duration: 75ms is a raw value for duration; use a --duration-* token",
     ]);
   });
 
   it("accepts the keywords that are not a point on the scale", () => {
-    const tokens: TokensConfig = { "z-index": true, "line-height": true, "font-weight": true };
+    const globalCss = declaring("--z-index-modal", "--line-height-tight", "--font-weight-bold");
     expect(
-      check(".a { z-index: auto; line-height: normal; font-weight: normal; }", tokens),
+      check(".a { z-index: auto; line-height: normal; font-weight: normal; }", globalCss),
     ).toEqual([]);
-    expect(check(".a { font-weight: bold; }", tokens)).toHaveLength(1);
+    expect(check(".a { font-weight: bold; }", globalCss)).toHaveLength(1);
   });
 
   it("accepts plain numbers as factors of a token and rejects lengths next to it", () => {
-    const tokens: TokensConfig = { size: ["--spacing"], "z-index": ["--z-*"] };
-    expect(check(".a { z-index: calc(var(--z-modal) + 1); }", tokens)).toEqual([]);
-    expect(check(".a { padding: calc(var(--spacing) * 4 + 3px); }", tokens)).toEqual([
-      "tokens/size: 3px is a raw value for size; use a --spacing token",
+    const globalCss = declaring("--spacing", "--z-index-modal");
+    expect(check(".a { z-index: calc(var(--z-index-modal) + 1); }", globalCss)).toEqual([]);
+    expect(check(".a { padding: calc(var(--spacing) * 4 + 3px); }", globalCss)).toEqual([
+      "tokens/spacing: 3px is a raw value for spacing; use a --spacing-* token",
     ]);
   });
 
   it("rejects arithmetic that involves no token", () => {
-    const tokens: TokensConfig = { size: ["--spacing"], "line-height": true };
-    expect(check(".a { line-height: calc(1.5); }", tokens)).toHaveLength(1);
+    const globalCss = declaring("--spacing", "--line-height-tight");
+    expect(check(".a { line-height: calc(1.5); }", globalCss)).toHaveLength(1);
     expect(
-      check(".a { padding: clamp(1rem, 2vw, 2rem) env(safe-area-inset-left); }", tokens),
+      check(".a { padding: clamp(1rem, 2vw, 2rem) env(safe-area-inset-left); }", globalCss),
     ).toHaveLength(3);
   });
 
   it("reports raw offsets and keeps the keywords around them", () => {
     expect(check(".a { inset: auto -10cqw -25cqh auto; }")).toEqual([
-      "tokens/size: -10cqw is a raw value for size; use a --spacing token",
-      "tokens/size: -25cqh is a raw value for size; use a --spacing token",
+      "tokens/spacing: -10cqw is a raw value for spacing; use a --spacing-* token",
+      "tokens/spacing: -25cqh is a raw value for spacing; use a --spacing-* token",
     ]);
   });
 
@@ -486,65 +553,52 @@ describe("checkCss: numbers", () => {
   });
 });
 
-// A module that declares `--fg-mine: red` and then uses it would pass the list
-// with a raw value, so the names a list covers are not the module's to declare.
+// A module that declared `--color-mine: red` could feed any raw value through
+// the color category, so token names are not the module's to declare.
 describe("checkCss: declaring a custom property under a token name", () => {
   const message = (name: string) =>
     `tokens/color: ${name} is a color token name and cannot be declared here; rename the custom property`;
 
   it("reports the declaration at its name", () => {
-    const css = ".a {\n  --fg-mine: red;\n  color: var(--fg-mine);\n}";
-    expect(diagnose(css)).toMatchObject([
+    expect(diagnose(".a {\n  --color-mine: red;\n}")).toMatchObject([
       {
         file: FILE,
         rule: "tokens/color",
         line: 2,
         column: 3,
         endLine: 2,
-        endColumn: 12,
+        endColumn: 15,
         message:
-          "--fg-mine is a color token name and cannot be declared here; rename the custom property",
+          "--color-mine is a color token name and cannot be declared here; rename the custom property",
       },
     ]);
   });
 
-  it("reports it whatever the value, also for an exact name", () => {
-    expect(check(".a { --bg-base: var(--fg-base); }")).toEqual([message("--bg-base")]);
+  it("reports it whatever the value, also for a declared token", () => {
+    expect(check(".a { --color-bg-base: var(--color-fg-base); }")).toEqual([
+      message("--color-bg-base"),
+    ]);
     expect(check(":global(.dark) .a { --spacing: 0; }")).toEqual([
-      "tokens/size: --spacing is a size token name and cannot be declared here; rename the custom property",
+      "tokens/spacing: --spacing is a spacing token name and cannot be declared here; rename the custom property",
     ]);
   });
 
-  it("reports a registration with @property", () => {
-    const css = '@property --fg-mine { syntax: "<color>"; inherits: false; initial-value: red; }';
-    expect(diagnose(css)).toMatchObject([
-      { rule: "tokens/color", line: 1, column: 11, endColumn: 20 },
-    ]);
-    expect(check(css)).toEqual([message("--fg-mine")]);
-  });
-
-  it("reports the name once for each category whose list covers it", () => {
-    const tokens: TokensConfig = { color: ["--border-*"], radius: ["--border-radius-*"] };
-    expect(check(".a { --border-radius-md: 8px; }", tokens)).toEqual([
-      message("--border-radius-md"),
-      "tokens/radius: --border-radius-md is a radius token name and cannot be declared here; rename the custom property",
+  // A module cannot register any custom property: @property is global.
+  it("leaves a registration with @property to pure/at-rule", () => {
+    const css =
+      '@property --color-mine { syntax: "<color>"; inherits: false; initial-value: red; }';
+    expect(checkCss(analyzeCss(css, FILE), designSystem)).toMatchObject([
+      { rule: "pure/at-rule", line: 1, column: 1 },
     ]);
   });
 
-  it("leaves names outside every list free", () => {
-    expect(check(".a { --glow: red; --FG-mine: red; --spacing-2: 8px; }")).toEqual([]);
-    expect(
-      check('@property --glow { syntax: "<color>"; inherits: false; initial-value: red; }'),
-    ).toEqual([]);
-  });
-
-  it("reserves no name for a category set to true", () => {
-    expect(check(".a { --shadow-card: 0 0 4px red; }")).toEqual([]);
+  it("leaves names outside the restricted categories free", () => {
+    expect(check(".a { --glow: red; --COLOR-mine: red; --z-index-top: 1; }")).toEqual([]);
   });
 
   it("can be silenced like any token rule", () => {
     const css =
-      ".inverted {\n  /* better-css-modules-disable-next-line tokens/color -- this panel swaps the theme */\n  --fg-base: var(--bg-base);\n}";
+      ".inverted {\n  /* better-css-modules-disable-next-line tokens/color -- this panel swaps the theme */\n  --color-fg-base: var(--color-bg-base);\n}";
     expect(check(css)).toEqual([]);
   });
 });
@@ -563,14 +617,19 @@ describe("checkCss: disable comments", () => {
   });
 
   it("silences only the rules it names", () => {
-    const tokens: TokensConfig = { "font-size": true, "font-weight": true };
+    const globalCss = declaring("--font-size-md", "--font-weight-bold");
     const font = "font: 700 17px serif;";
     const one = `.a {\n  ${disable} tokens/font-size -- see the design review */\n  ${font}\n}`;
-    expect(check(one, tokens)).toEqual([
-      "tokens/font-weight: 700 is a raw value for font-weight; use a token through var()",
+    expect(check(one, globalCss)).toEqual([
+      "tokens/font-weight: 700 is a raw value for font-weight; use a --font-weight-* token",
     ]);
     const both = `.a {\n  ${disable} tokens/font-size, tokens/font-weight -- optical alignment */\n  ${font}\n}`;
-    expect(check(both, tokens)).toEqual([]);
+    expect(check(both, globalCss)).toEqual([]);
+  });
+
+  it("silences tokens/internal and tokens/undeclared", () => {
+    const css = `.a {\n  ${disable} tokens/internal, tokens/undeclared -- the legacy header */\n  width: var(--gray-900);\n}`;
+    expect(check(css)).toEqual([]);
   });
 
   it("reports a comment without a reason and does not honour it", () => {
@@ -598,29 +657,14 @@ describe("checkCss: disable comments", () => {
     ]);
   });
 
-  it("reports a bad comment even when no category is restricted", () => {
-    expect(check(`.a {\n  ${disable} tokens/color */\n  color: #fff;\n}`, {})).toHaveLength(1);
+  it("reports a bad comment even without global CSS", () => {
+    expect(
+      check(`.a {\n  ${disable} tokens/color */\n  color: #fff;\n}`, globalCssFrom([])),
+    ).toHaveLength(1);
   });
 
   it("has no file-wide form", () => {
     const css = "/* better-css-modules-disable tokens/color -- legacy file */\n.a { color: #fff; }";
     expect(check(css)).toHaveLength(1);
   });
-});
-
-describe("checkCss: config", () => {
-  it("rejects a category the tool does not define", () => {
-    const tokens = { colour: ["--fg-*"] } as TokensConfig;
-    expect(() => check(".a {}", tokens)).toThrow('unknown token category "colour"');
-  });
-
-  it.each([[[]], [[""]], [false], ["--fg-*"]])(
-    "rejects %j as the setting of a category",
-    (setting) => {
-      const tokens = { color: setting } as unknown as TokensConfig;
-      expect(() => check(".a {}", tokens)).toThrow(
-        "tokens.color must be true or a list of custom property names",
-      );
-    },
-  );
 });
