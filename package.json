@@ -11,7 +11,8 @@
     "build": "vp run --filter './packages/*' build",
     "test": "vp run -r test",
     "check": "vp run build && vp check",
-    "typecheck": "vp run build && vp run -r typecheck"
+    "typecheck": "vp run build && vp run -r typecheck",
+    "smoke": "vp run build && node scripts/smoke.mjs"
   },
   "devDependencies": {
     "typescript": "7.0.2",
