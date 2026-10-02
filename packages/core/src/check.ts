@@ -16,6 +16,7 @@ import {
   declaresToken,
   type GlobalCss,
   type GlobalCssFile,
+  isForeign,
   loadGlobalCss,
   type Token,
 } from "./global.js";
@@ -297,6 +298,8 @@ function contextOf(
 function checkRoot(root: Root, context: Context, disabled: Keep): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const keep = (node: Node, found: Diagnostic[]) => {
+    // The global CSS skips another tool's at-rules, such as Tailwind's @theme.
+    if (context.global && isForeign(node)) return;
     diagnostics.push(...disabled(node, found));
   };
   // The global CSS styles the page; only a module is held to the pure rules.

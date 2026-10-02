@@ -7,6 +7,7 @@ import { checkGlobalCss } from "../src/check.js";
 import { ConfigError, resolveConfig } from "../src/config.js";
 import { generate } from "../src/csstree.js";
 import { type GlobalCss, globalCssFrom, loadGlobalCss } from "../src/global.js";
+import { resolveLayer } from "../src/layer.js";
 
 const GLOBAL = "/project/src/global.css";
 
@@ -53,6 +54,16 @@ describe("globalCssFrom: what declares a token", () => {
       @supports (color: oklch(0 0 0)) { :root { --color-g: #000; } }
       :root { .dark & { --color-h: #000; } }
       @media print { @property --color-i { syntax: "*"; inherits: true; } }
+    `);
+    expect(globalCss.tokens.size).toBe(0);
+  });
+
+  it("takes nothing from at-rules css-tree does not know", () => {
+    const globalCss = read(`
+      @theme { --color-a: #000; }
+      @layer theme { @theme default { --color-b: #000; } }
+      @utility card { --color-c: #000; }
+      @theme { @property --color-d { syntax: "*"; inherits: true; } }
     `);
     expect(globalCss.tokens.size).toBe(0);
   });
@@ -217,6 +228,23 @@ describe("checkGlobalCss", () => {
     ]);
   });
 
+  it("skips at-rules css-tree does not know, and what is in them", () => {
+    const globalCss = read(`${tokens}
+@theme { --color-brand: #f00; }
+@utility card { color: #000; }
+@custom-variant dark (&:where(.dark, .dark *));
+@source "../lib";
+@plugin "./plugin.js";
+@config "./tailwind.config.js";
+@reference "./theme.css";
+@tailwind utilities;
+.card { @variant dark { color: #000; } }
+body { color: #000; }`);
+    expect(checkGlobalCss(globalCss)).toMatchObject([
+      { line: 11, message: "#000 is a raw value for color; use a --color-* token" },
+    ]);
+  });
+
   it("leaves a package's stylesheets alone", () => {
     const globalCss = read(`${tokens}\n.dark { --color-new: red; }\nbody { color: #000; }`, {
       checked: false,
@@ -371,12 +399,6 @@ describe("loadGlobalCss", () => {
       "a.css → b.css → a.css import each other",
     ],
     [
-      "an at-rule that is not standard CSS",
-      { "a.css": ":root { --color-a: #000; }\n@theme {\n  --color-b: #000;\n}" },
-      ["./a.css"],
-      "a.css:2:1: @theme is not standard CSS; global CSS must be standard CSS",
-    ],
-    [
       "a stylesheet it cannot parse",
       { "a.css": ":root { --color-a: #000;" },
       ["./a.css"],
@@ -399,21 +421,46 @@ describe("loadGlobalCss", () => {
     );
   });
 
-  it('follows @import "tailwindcss" and refuses what it finds there', async () => {
+  it("reads an @import whose prelude carries functions it does not know", async () => {
     const { load } = await fixture(
       {
+        "global.css":
+          '@import "./base.css" layer(base) source(none);\n@import "./theme.css" theme(static) prefix(tw);',
+        "base.css": ":root { --color-a: #000; }",
+        "theme.css": ":root { --color-b: #000; }",
+      },
+      ["./global.css"],
+    );
+    const globalCss = await load();
+    expect(
+      globalCss.files.at(-1)?.imports.map(({ layer, conditional }) => [layer, conditional]),
+    ).toEqual([
+      ["base", false],
+      [null, false],
+    ]);
+    expect(globalCss.layers).toEqual(["base"]);
+    expect([...globalCss.tokens.keys()]).toEqual(["--color-a", "--color-b"]);
+  });
+
+  it('reads Tailwind\'s entry through @import "tailwindcss", skipping its at-rules', async () => {
+    const { load } = await fixture(
+      {
+        // The shape of tailwindcss 4's index.css.
         "node_modules/tailwindcss/package.json": JSON.stringify({
           name: "tailwindcss",
           exports: { ".": { style: "./index.css", import: "./dist/lib.mjs" } },
         }),
         "node_modules/tailwindcss/index.css":
-          "@layer theme {\n  @theme default { --color-red-500: red; }\n}",
-        "globals.css": '@import "tailwindcss";',
+          "@layer theme, base, components, utilities;\n@layer theme {\n  @theme default { --color-red-500: red; }\n}\n@layer base { html { color: red; } }\n@layer utilities {\n  @tailwind utilities;\n}",
+        "src/globals.css":
+          '@import "tailwindcss" source("../src");\n@theme { --color-x: red; }\n@utility card { padding: 13px; }\n@custom-variant dark (&:where(.dark, .dark *));\n:root { --spacing: 0.25rem; }',
       },
-      ["./globals.css"],
+      ["./src/globals.css"],
     );
-    await expect(load()).rejects.toThrow(
-      "node_modules/tailwindcss/index.css:2:3: @theme is not standard CSS",
-    );
+    const globalCss = await load();
+    expect(globalCss.layers).toEqual(["theme", "base", "components", "utilities"]);
+    expect([...globalCss.tokens.keys()]).toEqual(["--spacing"]);
+    expect(resolveLayer("components", globalCss).order).toEqual(globalCss.layers);
+    expect(checkGlobalCss(globalCss)).toEqual([]);
   });
 });

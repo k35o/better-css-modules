@@ -85,6 +85,17 @@ describe("wrapInLayer", () => {
     ]);
   });
 
+  it("reads past functions css-tree does not know, such as Tailwind's source()", () => {
+    expect(
+      wrap("@import 'a.css' source(none);\n@import 'b.css' layer(base) theme(static);"),
+    ).toEqual([
+      "@layer base, components, utilities",
+      "@import 'a.css' layer(components) source(none)",
+      "@import 'b.css' layer(base) theme(static)",
+      "@layer components {  }",
+    ]);
+  });
+
   it("leaves an @import that names its layer", () => {
     expect(wrap("@import './reset.css' layer(base);\n@import './x.css' layer;")).toEqual([
       "@layer base, components, utilities",

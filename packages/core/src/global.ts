@@ -5,6 +5,7 @@ import postcss, {
   type AtRule,
   CssSyntaxError,
   type Declaration,
+  type Node,
   type Root,
   type Rule,
 } from "postcss";
@@ -85,6 +86,26 @@ export function declaresToken(node: Declaration | AtRule, conditional: boolean):
     if (parent.type !== "atrule" || (parent as AtRule).name.toLowerCase() !== "layer") return false;
   }
   return true;
+}
+
+/** At-rules whose nested at-rules css-tree does not know: margin boxes and feature blocks. */
+const OPAQUE_AT_RULES = new Set(["page", "font-feature-values"]);
+
+/**
+ * Whether a node is or sits in an at-rule css-tree does not know, such as
+ * Tailwind's `@theme` or `@utility`. That is another tool's syntax, which
+ * the global CSS skips: it neither declares tokens nor is checked.
+ */
+export function isForeign(node: Node): boolean {
+  for (let current: Node | undefined = node; current; current = current.parent) {
+    if (current.type !== "atrule" || lexer.getAtrule((current as AtRule).name)) continue;
+    const parent = current.parent;
+    if (parent?.type === "atrule" && OPAQUE_AT_RULES.has((parent as AtRule).name.toLowerCase())) {
+      continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 /** Collect the tokens of stylesheets already read, in cascade order. Pure. */
@@ -244,8 +265,8 @@ function parseValue(text: string): CssTree.CssNode[] {
 
 /**
  * Read the global CSS a config lists, following `@import`, and collect its
- * tokens. Throws when a stylesheet cannot be resolved or parsed, is not
- * standard CSS, imports itself, or is also one of the CSS Modules files.
+ * tokens. Throws when a stylesheet cannot be resolved or parsed, imports
+ * itself, or is also one of the CSS Modules files.
  */
 export async function loadGlobalCss(config: ResolvedConfig): Promise<GlobalCss> {
   const loader = new Loader(config);
@@ -256,9 +277,6 @@ export async function loadGlobalCss(config: ResolvedConfig): Promise<GlobalCss> 
   }
   return globalCssFrom(loader.files);
 }
-
-/** At-rules whose nested at-rules css-tree does not know: margin boxes and feature blocks. */
-const OPAQUE_AT_RULES = new Set(["page", "font-feature-values"]);
 
 class Loader {
   readonly files: GlobalCssFile[] = [];
@@ -310,24 +328,6 @@ class Loader {
       if (!(error instanceof CssSyntaxError)) throw error;
       fail(`${this.display(file)}:${error.line}:${error.column}: ${error.reason}`);
     }
-    // postcss wraps an error thrown inside a walk and attaches the node to it,
-    // so the walk only finds the at-rule.
-    let unknown: AtRule | undefined;
-    root.walkAtRules((atRule) => {
-      const parent = atRule.parent;
-      if (lexer.getAtrule(atRule.name)) return;
-      if (parent?.type === "atrule" && OPAQUE_AT_RULES.has((parent as AtRule).name.toLowerCase())) {
-        return;
-      }
-      unknown = atRule;
-      return false;
-    });
-    if (unknown) {
-      fail(
-        `${this.at(file, unknown)}: @${unknown.name} is not standard CSS; global CSS must be standard CSS`,
-      );
-    }
-
     const entry: GlobalCssFile = {
       file,
       root,
@@ -399,7 +399,11 @@ export interface ImportPrelude {
 export function readImport(params: string): ImportPrelude | null {
   let prelude: CssTree.CssNode;
   try {
-    prelude = parse(params, { context: "atrulePrelude", atrule: "import", positions: true });
+    prelude = parse(withoutForeignFunctions(params), {
+      context: "atrulePrelude",
+      atrule: "import",
+      positions: true,
+    });
   } catch {
     return null;
   }
@@ -422,6 +426,33 @@ export function readImport(params: string): ImportPrelude | null {
   }
   return { url: target.value, urlEnd: target.loc.end.offset, layer, conditional };
 }
+
+/**
+ * The prelude with each top-level function css-tree's grammar of `@import`
+ * does not know, such as Tailwind's `source()`, blanked out: css-tree refuses
+ * the whole prelude over one. Blanking keeps the offsets of the rest.
+ */
+function withoutForeignFunctions(params: string): string {
+  let value: CssTree.CssNode;
+  try {
+    value = parse(params, { context: "value", positions: true });
+  } catch {
+    return params;
+  }
+  let text = params;
+  if (value.type !== "Value") return text;
+  value.children.forEach((node) => {
+    if (node.type !== "Function" || IMPORT_FUNCTIONS.has(node.name.toLowerCase()) || !node.loc) {
+      return;
+    }
+    const { start, end } = node.loc;
+    text =
+      text.slice(0, start.offset) + " ".repeat(end.offset - start.offset) + text.slice(end.offset);
+  });
+  return text;
+}
+
+const IMPORT_FUNCTIONS = new Set(["layer", "supports"]);
 
 function fail(message: string): never {
   throw new ConfigError(message);
