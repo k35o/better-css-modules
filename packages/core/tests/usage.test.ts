@@ -45,7 +45,10 @@ function summarize(real: string, diagnostics: Diagnostic[]) {
     unanalyzable: diagnostics
       .filter((d) => d.rule === "usage/unanalyzable")
       .map((d) => `${rel(d.file)}:${d.line}:${d.column}`),
-    reasons: diagnostics.filter((d) => d.rule === "usage/unanalyzable").map((d) => d.message),
+    // Messages name files relative to the cwd, outside the project.
+    reasons: diagnostics
+      .filter((d) => d.rule === "usage/unanalyzable")
+      .map((d) => d.message.replaceAll(`${path.relative(process.cwd(), real)}/`, "")),
     other: diagnostics.filter(
       (d) => !["usage/unused-class", "usage/unused-module", "usage/unanalyzable"].includes(d.rule),
     ),
@@ -103,8 +106,7 @@ describe("analyzeUsage", () => {
       line: 3,
       column: 40,
       rule: "usage/unanalyzable",
-      message:
-        "a class is accessed dynamically here, so usage of a.module.css cannot be determined",
+      message: `a class is accessed dynamically here, so usage of ${path.relative(process.cwd(), path.join(real, "a.module.css"))} cannot be determined`,
     });
   });
 

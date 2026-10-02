@@ -134,7 +134,8 @@ export async function analyzeUsage(
     });
     return { file, source, result };
   });
-  const rel = (file: string) => relative(root, file);
+  // Relative to the cwd like the locations of diagnostics, since --config can root the project elsewhere.
+  const rel = (file: string) => relative(process.cwd(), file);
   const markOpaque = (css: string, opaque: Opaque) => {
     const target = usage.get(css)!;
     if (!target.opaque.some((o) => o.file === opaque.file && o.offset === opaque.offset)) {

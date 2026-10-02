@@ -323,6 +323,25 @@ describe("--config", () => {
       stderr: "",
     });
   });
+
+  it("names files in messages relative to the cwd, like the locations", async () => {
+    const dir = await project({
+      "app/better-css-modules.config.mjs": "export default {};\n",
+      "app/src/a.module.css": ".a {}\n",
+      "app/src/b.module.css": ".b {}\n",
+      "app/src/x.ts": 'import s from "./a.module.css";\nexport const x = s;\n',
+    });
+    expect(run(dir, "check", "--config", "app/better-css-modules.config.mjs")).toEqual({
+      status: 1,
+      stdout: [
+        "app/src/b.module.css:1:1 error usage/unused-module: app/src/b.module.css is never imported",
+        "app/src/x.ts:2:18 error usage/unanalyzable: s escapes as a value here, so usage of app/src/a.module.css cannot be determined",
+        "[better-css-modules] 2 problem(s)",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
 });
 
 describe("a command that cannot run", () => {
