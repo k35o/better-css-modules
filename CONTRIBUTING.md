@@ -20,7 +20,7 @@ pnpm check
 # Build, then type-check every package and example, tests included
 pnpm typecheck
 
-# Build, pack the published packages and use them from a project outside the workspace
+# Build, pack the published packages and use them from projects outside the workspace
 pnpm smoke
 
 # Add a change intent before submitting a PR

@@ -1,4 +1,4 @@
-// Pack the published packages, install them from the tarballs into a project
+// Pack the published packages, install them from the tarballs into projects
 // outside the workspace, and use them there as a consumer would: run the CLI,
 // import every entry and type-check code that uses them. Run after a build.
 import { execFileSync } from "node:child_process";
@@ -13,7 +13,6 @@ const REQUIRED = { turbopack: ["dist/loader.mjs"] };
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "better-css-modules-smoke-"));
 const tarballs = path.join(temp, "tarballs");
-const project = path.join(temp, "project");
 const problems = [];
 
 /** Run a command, echoing its output unless `quiet`, and return its stdout. */
@@ -33,7 +32,7 @@ function run(command, args, cwd, { quiet = false } = {}) {
   }
 }
 
-function write(file, content) {
+function write(project, file, content) {
   fs.mkdirSync(path.dirname(path.join(project, file)), { recursive: true });
   fs.writeFileSync(path.join(project, file), content);
 }
@@ -77,135 +76,192 @@ for (const name of PACKAGES) {
 }
 if (problems.length > 0) fail();
 
-// 2. Install them into a project outside the workspace. The overrides point
-// every @better-css-modules package at its tarball, so a dependency on one
-// that is not published fails here as it would from the registry.
-const tarball = (name) => `file:${path.relative(project, packed[name].filename)}`;
-const peers = Object.assign(
-  {},
-  ...Object.values(packed).map(({ manifest }) => manifest.peerDependencies),
-);
+// 2. Install them into projects outside the workspace, one for the CLI and
+// one for each integration with only its own bundler, so that a package
+// leaning on another bundler fails as it would for a consumer of one. The
+// overrides point every @better-css-modules package at its tarball, so a
+// dependency on one that is not published fails the install as it would from
+// the registry, and without hoisting, an import of a package that a manifest
+// does not declare fails too.
+const tarball = (project, name) => `file:${path.relative(project, packed[name].filename)}`;
 const root = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf-8"));
 const core = JSON.parse(fs.readFileSync(path.join(repo, "packages/core/package.json"), "utf-8"));
-write(
-  "package.json",
-  JSON.stringify({
-    private: true,
-    type: "module",
-    packageManager: root.packageManager,
-    dependencies: {
-      ...Object.fromEntries(Object.keys(packed).map((name) => [name, tarball(name)])),
-      ...peers,
-      "@types/node": core.devDependencies["@types/node"],
-      typescript: root.devDependencies.typescript,
-    },
-  }),
-);
-write(
-  "pnpm-workspace.yaml",
-  [
-    "overrides:",
-    ...Object.keys(packed).map((name) => `  "${name}": "${tarball(name)}"`),
-    "allowBuilds:",
-    "  esbuild: false",
-    "  sharp: false",
-    "",
-  ].join("\n"),
-);
-run("pnpm", ["install"], project);
 
-// 3. Run the CLI on a module that uses a token and is used.
-write(
-  "better-css-modules.config.mjs",
-  'import { defineConfig } from "@better-css-modules/core";\n\nexport default defineConfig({ globalCss: ["./src/global.css"], layer: "components" });\n',
-);
-write("src/global.css", "@layer base, components;\n:root {\n  --color-fg-base: #000;\n}\n");
-write("src/card.module.css", ".card {\n  color: var(--color-fg-base);\n}\n");
-write(
-  "src/card.ts",
-  'import styles from "./card.module.css";\n\nexport const card = styles.card;\n',
-);
-const bin = path.join(project, "node_modules/.bin/better-css-modules");
-const version = run(bin, ["--version"], project).trim();
+/** Install `@better-css-modules/core` and `name` with the peers they declare into a new project. */
+function install(name) {
+  const project = path.join(temp, name);
+  const packages = ["@better-css-modules/core", `@better-css-modules/${name}`];
+  write(
+    project,
+    "package.json",
+    JSON.stringify({
+      private: true,
+      type: "module",
+      packageManager: root.packageManager,
+      dependencies: {
+        ...Object.fromEntries(packages.map((p) => [p, tarball(project, p)])),
+        ...Object.assign({}, ...packages.map((p) => packed[p].manifest.peerDependencies)),
+        "@types/node": core.devDependencies["@types/node"],
+        typescript: root.devDependencies.typescript,
+      },
+    }),
+  );
+  write(
+    project,
+    "pnpm-workspace.yaml",
+    [
+      "overrides:",
+      ...Object.keys(packed).map((p) => `  "${p}": "${tarball(project, p)}"`),
+      "hoist: false",
+      "allowBuilds:",
+      "  esbuild: false",
+      "  sharp: false",
+      "",
+    ].join("\n"),
+  );
+  run("pnpm", ["install"], project);
+  return project;
+}
+
+/** A config with a layer, and a module that uses a token and is used. */
+function writeProject(project) {
+  write(
+    project,
+    "better-css-modules.config.mjs",
+    'import { defineConfig } from "@better-css-modules/core";\n\nexport default defineConfig({ globalCss: ["./src/global.css"], layer: "components" });\n',
+  );
+  write(
+    project,
+    "src/global.css",
+    "@layer base, components;\n:root {\n  --color-fg-base: #000;\n}\n",
+  );
+  write(project, "src/card.module.css", ".card {\n  color: var(--color-fg-base);\n}\n");
+  write(
+    project,
+    "src/card.ts",
+    'import styles from "./card.module.css";\n\nexport const card = styles.card;\n',
+  );
+}
+
+/** Type-check `source` as a consumer would, under strict and nodenext. */
+function typeCheck(project, source, { skipLibCheck = false } = {}) {
+  write(project, "consumer.ts", source);
+  write(
+    project,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        module: "nodenext",
+        moduleResolution: "nodenext",
+        target: "es2023",
+        noEmit: true,
+        types: ["node"],
+        skipLibCheck,
+      },
+      files: ["consumer.ts"],
+    }),
+  );
+  try {
+    run(path.join(project, "node_modules/.bin/tsc"), ["-p", "tsconfig.json"], project);
+  } catch {
+    problems.push(`tsc in the ${path.basename(project)} project failed`);
+  }
+}
+
+/** Run `source` as a module of the project. */
+function node(project, source) {
+  write(project, "imports.mjs", source);
+  run("node", ["imports.mjs"], project);
+}
+
+// 3. Run the CLI, import every entry of core and type-check code that uses it.
+const cli = install("cli");
+writeProject(cli);
+const bin = path.join(cli, "node_modules/.bin/better-css-modules");
+const version = run(bin, ["--version"], cli).trim();
 if (
   !version.startsWith(`better-css-modules/${packed["@better-css-modules/cli"].manifest.version} `)
 ) {
   problems.push(`better-css-modules --version printed "${version}"`);
 }
-run(bin, ["generate"], project);
-if (!fs.existsSync(path.join(project, "__generated__/src/card.module.css.d.ts"))) {
+run(bin, ["generate"], cli);
+if (!fs.existsSync(path.join(cli, "__generated__/src/card.module.css.d.ts"))) {
   problems.push("better-css-modules generate wrote no .d.ts");
 }
-run(bin, ["check"], project);
-
-// 4. Import every entry and call what it exports, including the loader the
-// Turbopack integration hands Next.js.
-write(
-  "imports.mjs",
+run(bin, ["check"], cli);
+node(
+  cli,
   `import assert from "node:assert/strict";
-import { pathToFileURL } from "node:url";
 import * as core from "@better-css-modules/core";
 import * as internal from "@better-css-modules/core/internal";
-import { withBetterCssModules } from "@better-css-modules/turbopack";
 
 assert.equal(typeof core.check, "function");
 assert.equal(typeof internal.generateAndPrint, "function");
-for (const name of ["vite", "webpack", "rollup", "rspack", "esbuild"]) {
-  const { default: plugin } = await import(\`@better-css-modules/\${name}\`);
-  assert.ok(plugin(), name);
-}
-const next = await withBetterCssModules()("phase-production-build");
-const [{ loader }] = next.turbopack.rules["*.module.css"].loaders;
-assert.equal(typeof (await import(pathToFileURL(loader).href)).default, "function");
 `,
 );
-run("node", ["imports.mjs"], project);
-
-// 5. Type-check consumers. Next's own declarations do not pass skipLibCheck:
-// false, under which an import the declarations cannot resolve silently
-// becomes any; the Turbopack consumer expects errors that any would not give.
-const compilerOptions = {
-  strict: true,
-  module: "nodenext",
-  moduleResolution: "nodenext",
-  target: "es2023",
-  noEmit: true,
-  types: ["node"],
-};
-write(
-  "consumer/bundlers.ts",
+typeCheck(
+  cli,
   `import { check, generate, loadConfig, type Diagnostic } from "@better-css-modules/core";
 import { createLayerWrapper, generateAndPrint } from "@better-css-modules/core/internal";
-import esbuild from "@better-css-modules/esbuild";
-import rollup from "@better-css-modules/rollup";
-import rspack from "@better-css-modules/rspack";
-import vite from "@better-css-modules/vite";
-import webpack from "@better-css-modules/webpack";
-import type { RspackPluginInstance } from "@rspack/core";
-import type { Plugin as EsbuildPlugin } from "esbuild";
-import type { Plugin as RollupPlugin } from "rollup";
-import type { PluginOption } from "vite";
-import type { WebpackPluginInstance } from "webpack";
 
 const config = await loadConfig({ config: "better-css-modules.config.mjs" });
 const { files }: { files: string[] } = await generate(config);
 const diagnostics: Diagnostic[] = (await check(config)).diagnostics;
 await generateAndPrint(config);
 createLayerWrapper(config);
-
-const options = { config: "better-css-modules.config.mjs" };
-export const plugins: [EsbuildPlugin, RollupPlugin | RollupPlugin[], RspackPluginInstance, PluginOption, WebpackPluginInstance] = [
-  esbuild(options),
-  rollup(options),
-  rspack(options),
-  vite(options),
-  webpack(options),
-];
 export { files, diagnostics };
 `,
 );
-write(
-  "consumer/next.config.ts",
+
+// 4. Import each plugin, call it, and check its type against its bundler's own.
+const PLUGIN_TYPES = {
+  vite: 'import type { PluginOption as Expected } from "vite";',
+  webpack: 'import type { WebpackPluginInstance as Expected } from "webpack";',
+  rollup: 'import type { Plugin } from "rollup";\ntype Expected = Plugin | Plugin[];',
+  rspack: 'import type { RspackPluginInstance as Expected } from "@rspack/core";',
+  esbuild: 'import type { Plugin as Expected } from "esbuild";',
+};
+for (const [name, expected] of Object.entries(PLUGIN_TYPES)) {
+  const project = install(name);
+  node(
+    project,
+    `import assert from "node:assert/strict";
+import plugin from "@better-css-modules/${name}";
+
+assert.ok(plugin());
+`,
+  );
+  typeCheck(
+    project,
+    `import plugin from "@better-css-modules/${name}";
+${expected}
+
+export const expected: Expected = plugin({ config: "better-css-modules.config.mjs" });
+`,
+  );
+}
+
+// 5. Load the Turbopack integration as Next.js would, import the loader it
+// hands Next.js, and type-check a next.config.ts. Next's own declarations do
+// not pass skipLibCheck: false, under which an import the declarations cannot
+// resolve silently becomes any; this consumer expects errors that any would
+// not give.
+const turbopack = install("turbopack");
+writeProject(turbopack);
+node(
+  turbopack,
+  `import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
+import { withBetterCssModules } from "@better-css-modules/turbopack";
+
+const next = await withBetterCssModules()("phase-production-build");
+const [{ loader }] = next.turbopack.rules["*.module.css"].loaders;
+assert.equal(typeof (await import(pathToFileURL(loader).href)).default, "function");
+`,
+);
+typeCheck(
+  turbopack,
   `import { withBetterCssModules } from "@better-css-modules/turbopack";
 
 const load = withBetterCssModules({ reactStrictMode: true }, { config: "better-css-modules.config.mjs" });
@@ -217,29 +273,8 @@ await load("phase-unknown");
 (await load("phase-production-build")).notAnOption;
 export default load;
 `,
+  { skipLibCheck: true },
 );
-write(
-  "tsconfig.bundlers.json",
-  JSON.stringify({
-    compilerOptions: { ...compilerOptions, skipLibCheck: false },
-    files: ["consumer/bundlers.ts"],
-  }),
-);
-write(
-  "tsconfig.next.json",
-  JSON.stringify({
-    compilerOptions: { ...compilerOptions, skipLibCheck: true },
-    files: ["consumer/next.config.ts"],
-  }),
-);
-const tsc = path.join(project, "node_modules/.bin/tsc");
-for (const tsconfig of ["tsconfig.bundlers.json", "tsconfig.next.json"]) {
-  try {
-    run(tsc, ["-p", tsconfig], project);
-  } catch {
-    problems.push(`tsc -p ${tsconfig} failed`);
-  }
-}
 if (problems.length > 0) fail();
 
 fs.rmSync(temp, { recursive: true, force: true });
