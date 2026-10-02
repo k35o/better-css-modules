@@ -1,45 +1,82 @@
 # better-css-modules
 
-A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` files for `.module.css`, reports classes nothing uses, keeps each module pure, holds plain CSS to your design tokens and puts every module in a cascade layer, from one analysis of your CSS and TypeScript.
+Types and design rules for CSS Modules. better-css-modules writes a `.d.ts` for every `.module.css`, and its `check` command holds the stylesheets to a few rules: every class is used, every module styles only its own classes, and every value comes from your design tokens. One config file drives the CLI and the bundler plugins.
 
-## Features
-
-- Extracts the keys a bundler exports from each `.module.css` and writes a `.d.ts` per file
-- Generated types live in one codegen directory (no `.d.ts` files scattered through `src/`)
-- Go-to-definition on `styles.container` opens the stylesheet at `.container`, through a declaration map next to each `.d.ts`
-- Reports unused classes with `file:line:col`, aggregated across the whole project
-- Keeps each module pure: its selectors style its own classes, with no `:global`, ids, `!important` or global-only at-rules such as `@font-face`
-- Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints
-- Wraps CSS Modules in a cascade layer: name one, and the bundler plugins put every module in it, so styles in later layers win without `!important`
-- Reads CSS with postcss and css-tree, and TypeScript with the oxc parser: `:global`, nesting, `composes`, escaped names, path aliases and re-exports all resolve the way bundlers resolve them
-- Verified against both lightningcss (Turbopack) and postcss-modules (Vite): the generated keys match what either bundler exports
-- Works with Vite, webpack, Rollup, Rspack, esbuild and Next.js (Turbopack)
-
-## Packages
-
-| Package                                               | Description                                                                      |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------- |
-| [@better-css-modules/core](./packages/core)           | Analysis, type generation, unused-class detection, token checks, watcher, config |
-| [@better-css-modules/cli](./packages/cli)             | `generate` and `check` commands                                                  |
-| [@better-css-modules/vite](./packages/vite)           | Vite plugin                                                                      |
-| [@better-css-modules/webpack](./packages/webpack)     | webpack plugin                                                                   |
-| [@better-css-modules/rollup](./packages/rollup)       | Rollup plugin                                                                    |
-| [@better-css-modules/rspack](./packages/rspack)       | Rspack plugin                                                                    |
-| [@better-css-modules/esbuild](./packages/esbuild)     | esbuild plugin                                                                   |
-| [@better-css-modules/turbopack](./packages/turbopack) | Next.js / Turbopack integration                                                  |
-
-All packages are ESM and require Node.js 24 or later. CommonJS configs can still `require()` them.
+- A `.d.ts` per `.module.css`, kept in one directory, with a declaration map so that go-to-definition opens the stylesheet
+- Unused classes and modules, found across the whole project, reported with `file:line:col` or as GitHub Actions annotations
+- Pure modules: no `:global`, ids, `!important` or document-wide at-rules
+- Design tokens read from your global CSS: raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints are reported
+- Cascade layers: name one, and the bundler plugins put every module in it
+- Vite, webpack, Rspack, Rollup, esbuild and Next.js (Turbopack)
 
 ## Quick Start
 
-### Vite
+### Next.js (Turbopack)
 
 ```bash
-pnpm add -D @better-css-modules/vite
+pnpm add -D @better-css-modules/cli @better-css-modules/core @better-css-modules/turbopack
+```
+
+The config file imports `defineConfig` from `@better-css-modules/core`, so install it next to the CLI and the integration.
+
+In `next.config.ts`, wrap the config in `withBetterCssModules`:
+
+```ts
+import type { NextConfig } from "next";
+import { withBetterCssModules } from "@better-css-modules/turbopack";
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+};
+
+export default withBetterCssModules(nextConfig);
+```
+
+`withBetterCssModules` returns an async config function, so it goes around every other wrapper: a wrapper that takes only a config object cannot take a function. Wrap what the others return:
+
+```ts
+import createMDX from "@next/mdx";
+
+const withMDX = createMDX();
+
+export default withBetterCssModules(withMDX(nextConfig));
+```
+
+It generates the types when Next.js loads its config for `next dev`, `next build` and `next typegen`, and keeps them in sync while `next dev` runs. A config it cannot load stops Next.js.
+
+Put the config in `better-css-modules.config.ts`, next to `package.json`:
+
+```ts
+import { defineConfig } from "@better-css-modules/core";
+
+export default defineConfig({
+  globalCss: ["./src/app/globals.css"],
+});
+```
+
+Every key is optional; see [Configuration](#configuration). The CSS Modules files are looked for in `src/**/*.module.css`; with the app directory at the root, set `include: ["app/**/*.module.css"]`.
+
+Then let TypeScript find the generated types. With `rootDirs`, `import styles from "./page.module.css"` in `src/app/page.tsx` resolves to `__generated__/src/app/page.module.css.d.ts`. In `tsconfig.json`, add `rootDirs` and add `__generated__` to the entries already in `include`:
+
+```json
+{
+  "compilerOptions": {
+    "rootDirs": [".", "./__generated__"]
+  },
+  "include": ["src", "__generated__"]
+}
+```
+
+### Vite, webpack, Rspack, Rollup and esbuild
+
+```bash
+pnpm add -D @better-css-modules/cli @better-css-modules/core @better-css-modules/vite
+# or @better-css-modules/webpack, /rspack, /rollup, /esbuild
 ```
 
 ```ts
 // vite.config.ts
+import { defineConfig } from "vite";
 import betterCssModules from "@better-css-modules/vite";
 
 export default defineConfig({
@@ -47,62 +84,69 @@ export default defineConfig({
 });
 ```
 
-### webpack / Rspack / Rollup / esbuild
+The plugins generate the types when a build starts and, when the config names a [layer](#cascade-layers), put every module in it. Their one option is the config file to use, relative to the working directory: `betterCssModules({ config: "config/better-css-modules.config.ts" })`. Without it they read the `better-css-modules.config.*` in the working directory. Everything else goes in the config file, which the CLI reads too.
 
-```bash
-pnpm add -D @better-css-modules/webpack  # or /rspack, /rollup, /esbuild
-```
-
-```ts
-import betterCssModules from "@better-css-modules/webpack";
-
-export default {
-  plugins: [betterCssModules()],
-};
-```
-
-webpack's css-loader (v7) and Rspack's built-in CSS export each class by name and have no default export. With either, set `namedExports: true` in the [config](#configuration) and import the module as a namespace or by name:
+webpack's css-loader 7, with its default options, and Rspack's built-in CSS export each class by name and have no default export. With either, set `namedExports: true` in the config and import the module as a namespace or by name:
 
 ```ts
 import * as styles from "./button.module.css";
 ```
 
-### Next.js (Turbopack)
+The packages are ESM only and need Node.js 24 or later. A CommonJS config can `require()` them; a plugin is then the `default` of what `require()` returns:
+
+```js
+const betterCssModules = require("@better-css-modules/webpack").default;
+```
+
+Set up `tsconfig.json` as for Next.js above.
+
+### Run the checks
 
 ```bash
-pnpm add -D @better-css-modules/turbopack
+better-css-modules generate                # write the .d.ts files
+better-css-modules generate --watch        # and keep them in sync with the stylesheets
+better-css-modules check                   # report problems
+better-css-modules check --format github   # as GitHub Actions annotations
 ```
 
-```ts
-// next.config.ts
-import { withBetterCssModules } from "@better-css-modules/turbopack";
+`check` looks at every file the config includes and every source file of the project, not only the ones a bundler happens to load:
 
-export default withBetterCssModules();
+```
+src/Card.tsx:6:22 error usage/unanalyzable: a class is accessed dynamically here, so usage of src/badge.module.css cannot be determined
+src/card.module.css:2:10 error tokens/color: #fff is a raw value for color; use a --color-* token
+src/card.module.css:4:1 error usage/unused-class: .ghost is never used
+src/card.module.css:5:10 error tokens/unknown: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?
+src/orphan.module.css:1:1 error usage/unused-module: src/orphan.module.css is never imported
+[better-css-modules] 5 problem(s)
 ```
 
-### CLI
+Both commands take `--config <path>` to use another config file, relative to the working directory. They exit with:
 
-```bash
-pnpm add -D @better-css-modules/cli
+| Code | `generate`                                                          | `check`                                                                                                                                            |
+| ---- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | The types are written, also when `include` matches no file          | No problems                                                                                                                                        |
+| 1    | A stylesheet does not parse; its `.d.ts` is left as it was          | Problems were found                                                                                                                                |
+| 2    | It could not run: an unknown command or option, or a config mistake | It could not run: the same, an unknown `--format`, or `include` matches no file, the global CSS cannot be read, or it does not declare the `layer` |
 
-# Generate type definitions
-better-css-modules generate
+`generate` prints its diagnostics to stderr, `check` its results to stdout. When the arguments or the config stop a command, it prints one line saying why to stderr, as an annotation with `--format github`.
 
-# Keep regenerating as files change
-better-css-modules generate --watch
+## Workflow
 
-# Report unused classes, impure modules and values that bypass the design tokens (exit code 1 when any are found)
-better-css-modules check
+- **Ignore the generated types.** Add `__generated__/` (your `outDir`) to `.gitignore`. A fresh clone then type-checks once the types are generated.
+- **Generate before type-checking.** `"typecheck": "better-css-modules generate && tsc --noEmit"`. With Next.js, `next typegen` loads the config and generates them too: `"typecheck": "next typegen && tsc --noEmit"`.
+- **Check in CI.** Run `better-css-modules check --format github`, which annotates the pull request. `check` reads the stylesheets and the sources themselves; it needs no generated types.
+- **Check once before a commit.** The CLI takes no file arguments, because a change to one file can leave a class in another unused. Run one check of the whole project when a stylesheet or a source changes. With lint-staged, or `staged` in Vite+, a function drops the list of files:
 
-# Same, as GitHub Actions annotations
-better-css-modules check --format github
-```
+  ```ts
+  "*.{css,ts,tsx,js,jsx}": () => "better-css-modules check",
+  ```
 
-The bundler plugins generate types and, when the config names a [`layer`](#cascade-layers), wrap each CSS Modules file in it. Run `check` from the CLI (locally, in a pre-commit hook or in CI): it looks at every file the config includes, not just the ones a bundler happens to load.
+- **Run where the config lives.** The CLI, the plugins and `withBetterCssModules` read the `better-css-modules.config.*` in the working directory unless told another file. The directory of the config file is the project root: `include`, `exclude`, `outDir` and the paths in `globalCss` start there, and so does the search for source files.
+- **One config per app in a monorepo.** Give each app its own config and run `check` in each. A config holds one set of tokens and one layer, so a single config listing the global CSS of every app would let one app use another's tokens. The bundlers run in the app's directory and look for the config there, and the generated types mirror paths from the config's directory, which is what each app's `rootDirs` expects.
 
 ## Configuration
 
-Place a `better-css-modules.config.ts` in your project root. The config is shared across CLI, plugins, and the Turbopack integration.
+The config is the default export of `better-css-modules.config.ts` (or `.mts`, `.cts`, `.js`, `.mjs`, `.cjs`). Without a config file, the defaults apply.
 
 ```ts
 import { defineConfig } from "@better-css-modules/core";
@@ -111,38 +155,123 @@ export default defineConfig({
   include: ["src/**/*.module.css"],
   exclude: [],
   outDir: "__generated__",
-  watch: false,
   silent: false,
   namedExports: false,
   globalCss: [],
+  layer: undefined,
 });
 ```
 
-| Option         | Type       | Default                   | Description                                                                                                      |
-| -------------- | ---------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                                                                       |
-| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                                                                         |
-| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                                                                     |
-| `watch`        | `boolean`  | `false`                   | Enable watch mode (CLI only)                                                                                     |
-| `silent`       | `boolean`  | `false`                   | Suppress console output                                                                                          |
-| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export; see [Output Example](#output-example)          |
-| `globalCss`    | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order; see [Token enforcement](#token-enforcement) |
-| `layer`        | `string`   | unset                     | Cascade layer the plugins wrap every module in; see [Cascade layers](#cascade-layers)                            |
+| Option         | Type       | Default                   | Description                                                                                                                                                                                           |
+| -------------- | ---------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `include`      | `string[]` | `["src/**/*.module.css"]` | Globs of the CSS Modules files                                                                                                                                                                        |
+| `exclude`      | `string[]` | `[]`                      | Globs of files and directories to leave out                                                                                                                                                           |
+| `outDir`       | `string`   | `"__generated__"`         | Directory of the generated `.d.ts` files, inside the project root; `"."` puts each next to its stylesheet                                                                                             |
+| `silent`       | `boolean`  | `false`                   | Leave out the progress lines: `generated N file(s)`, `generated:` and `removed:`, `watching for changes...` and `no problems found`. Diagnostics, the count of problems and errors are always printed |
+| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export; see [Generated types](#generated-types)                                                                                             |
+| `globalCss`    | `string[]` | `[]`                      | Global stylesheets that declare the design tokens and the layers, in cascade order: `./` or `../` paths relative to the config, or package specifiers; see [Global CSS](#global-css)                  |
+| `layer`        | `string`   | unset                     | Cascade layer the plugins put every module in; see [Cascade layers](#cascade-layers)                                                                                                                  |
 
-## Output Example
+`include` and `exclude`:
 
-### Input
+- A pattern is relative to the project root, the directory of the config file. A pattern that is empty, absolute or holds `..` is a mistake in the config.
+- An `exclude` pattern also leaves out everything beneath it: `src/legacy` excludes `src/legacy/**`.
+- A pattern in `include` that starts with `!` is an exclusion.
+- `node_modules` and the `outDir` are always left out. Only the `outDir` at the project root is: a directory of the same name further down is not.
+
+A config that cannot be loaded, has no default export, holds an unknown key, or gives a key a value of the wrong type stops every command with exit code 2, and so does an `outDir` outside the project root. A key set to `undefined` counts as unset.
+
+## Rules
+
+Every problem is an error. The rules of a check are named after it (`usage/`, `pure/`, `tokens/`, `layer/`); a stylesheet that is itself broken gets a plain name.
+
+| Rule                                                     | Reported at                          | Disable                                                                |
+| -------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| [`usage/unused-class`](#unused-class-detection)          | The first selector with the class    | Next line or file-wide                                                 |
+| [`usage/unused-module`](#unused-class-detection)         | Line 1 of the stylesheet             | File-wide                                                              |
+| [`usage/unanalyzable`](#unused-class-detection)          | The source file, where usage is lost | File-wide, in the stylesheet                                           |
+| [`pure/selector`](#pure-css-modules)                     | The selector                         | Next line or file-wide                                                 |
+| [`pure/subject`](#pure-css-modules)                      | The subject of the selector          | Next line or file-wide                                                 |
+| [`pure/global`](#pure-css-modules)                       | The `:global`                        | Next line or file-wide                                                 |
+| [`pure/id`](#pure-css-modules)                           | The id                               | Next line or file-wide                                                 |
+| [`pure/important`](#pure-css-modules)                    | `!important`                         | Next line or file-wide                                                 |
+| [`pure/at-rule`](#pure-css-modules)                      | The at-rule                          | Next line or file-wide                                                 |
+| [`pure/value`](#pure-css-modules)                        | The `@value`                         | Next line or file-wide                                                 |
+| [`tokens/<category>`](#what-passes-and-what-is-reported) | The value                            | Next line or file-wide                                                 |
+| [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`                          | Next line or file-wide                                                 |
+| [`tokens/internal`](#tokens-and-modes)                   | The `var()`                          | Next line or file-wide                                                 |
+| [`tokens/declaration`](#tokens-and-modes)                | The custom property                  | Next line or file-wide                                                 |
+| [`tokens/breakpoint`](#breakpoints)                      | The width in `@media`, or the token  | Next line or file-wide                                                 |
+| [`layer/nested`](#cascade-layers)                        | The module's own `@layer`            | Next line or file-wide                                                 |
+| [`layer/composes`](#cascade-layers)                      | The `composes`                       | Never: the plugins stop the build at `composes` in a layer             |
+| `syntax`                                                 | Where postcss or css-tree stopped    | Never: the bundlers cannot read the stylesheet either                  |
+| `invalid-composes`                                       | The `composes`                       | Never: the bundlers reject `composes` outside a rule of a single class |
+| `invalid-disable`                                        | The comment                          | Never: fix or remove the disable comment                               |
+
+`invalid-composes` reports `composes` in a rule whose selector is not a single local class. With a `layer`, `layer/composes` reports every `composes` instead.
+
+### Disable comments
+
+```css
+/* better-css-modules-disable pure/global -- the date picker renders its own markup */
+.calendar :global(.rdp-day) {
+  border-radius: var(--radius-md);
+}
+
+.calendar :global(.rdp-today) {
+  color: var(--color-brand);
+}
+```
+
+```css
+.logo {
+  /* better-css-modules-disable-next-line tokens/color -- the brand mark is always white */
+  color: #fff;
+}
+```
+
+- `better-css-modules-disable-next-line` silences the rules it names for the rule, at-rule or declaration that starts on the next line. Above a rule, it does not reach the declarations inside.
+- `better-css-modules-disable` silences them in the whole file. It goes before the first rule, at-rule or declaration; only comments may come before it.
+- Name the rules separated by commas or spaces, then give the reason after `--`. Both are required.
+- `usage/unused-module` and `usage/unanalyzable` take only the file-wide form, written in the stylesheet. A module whose `usage/unanalyzable` is disabled counts every class as used.
+- The comments work the same in the project's own global CSS.
+
+A comment that cannot be followed silences nothing and is reported as `invalid-disable`. So is a comment that silences nothing: one left behind after a fix, one with a blank line before its target, one naming a rule that does not report there. They are checked once everything else is. In `src/bad.module.css`:
+
+```css
+.bad {
+  /* better-css-modules-disable-next-line tokens/color */
+  color: #fff;
+  /* better-css-modules-disable-next-line pure/selecter -- typo */
+  padding: 0;
+  /* better-css-modules-disable-next-line layer/composes -- no */
+  margin: 0;
+  /* better-css-modules-disable-next-line tokens/color -- nothing to silence */
+  margin: 0;
+  /* better-css-modules-disable-next-line usage/unused-module -- wrong form */
+  margin: 0;
+}
+/* better-css-modules-disable pure/id -- too late */
+/* better-css-modules-ignore pure/id -- unknown */
+```
 
 ```
-src/
-  components/
-    button.module.css   (.container, .primary-btn)
+src/bad.module.css:2:3 error invalid-disable: a disable comment needs a reason: add " -- <why>" after the rule names
+src/bad.module.css:3:10 error tokens/color: #fff is a raw value for color; use a --color-* token
+src/bad.module.css:4:3 error invalid-disable: unknown rule "pure/selecter"
+src/bad.module.css:6:3 error invalid-disable: layer/composes cannot be disabled: the plugins stop the build at composes in a layer
+src/bad.module.css:8:3 error invalid-disable: tokens/color is disabled, but nothing on the next line reports it
+src/bad.module.css:10:3 error invalid-disable: usage/unused-module can only be disabled file-wide: write better-css-modules-disable at the top of the file
+src/bad.module.css:13:1 error invalid-disable: a file-wide disable comment must come before the first rule, at-rule or declaration
+src/bad.module.css:14:1 error invalid-disable: unknown directive "better-css-modules-ignore"; write better-css-modules-disable-next-line or better-css-modules-disable
+[better-css-modules] 8 problem(s)
 ```
 
-### Output
+## Generated types
+
+For `src/components/button.module.css` with the classes `.container` and `.primary-btn`, `generate` writes `__generated__/src/components/button.module.css.d.ts`:
 
 ```ts
-// __generated__/components/button.module.css.d.ts
 declare const styles: {
   readonly container: string;
   readonly "primary-btn": string;
@@ -154,7 +283,6 @@ export default styles;
 With `namedExports: true`, the classes are named exports, as webpack's css-loader and Rspack's built-in CSS export them:
 
 ```ts
-// __generated__/components/button.module.css.d.ts
 declare const _0: string;
 export { _0 as container };
 declare const _1: string;
@@ -165,13 +293,13 @@ export declare const __esModule: true;
 
 `__esModule` makes TypeScript reject `import styles from`, which is `undefined` at runtime under those bundlers; import the module as a namespace (`import * as styles`) or by name (`import { container }`). A class named `default` or `__esModule` is left out of the type: css-loader exports `default` as `_default` while Rspack makes it the default export, so rename it.
 
-The `.d.ts` mirrors the path of the CSS file relative to the project root. Files outside the root are refused rather than written somewhere outside `outDir`.
+The `.d.ts` mirrors the path of the stylesheet relative to the project root. A stylesheet outside the root is refused rather than written somewhere outside `outDir`. `generate` also removes the `.d.ts` files it wrote for stylesheets that are gone or no longer included; a `.d.ts` it did not write stays.
 
 Next to each `.d.ts` is its declaration map (`button.module.css.d.ts.map`). It ties each key to the selector where the key first appears, so go-to-definition on `styles.container`, or on `container` imported by name, opens the stylesheet at `.container` instead of the generated file.
 
-## What the type contains
+### What the type contains
 
-The keys are exactly what lightningcss (Turbopack) and postcss-modules (Vite) both export for the file:
+The keys are what lightningcss (Turbopack) and postcss-modules (Vite) export for the file:
 
 - Local class selectors, including those inside `:is()`, `:not()`, `:has()`, nested rules and `@scope` preludes. Escaped names are decoded (`.sm\:hidden` becomes `"sm:hidden"`).
 - Local id selectors.
@@ -183,31 +311,32 @@ Not part of the type:
 - Anything inside `:global(...)`, after a bare `:global`, or in a `:global { ... }` block.
 - `composes` adds nothing: only the composing class is a key.
 - `@value` names. lightningcss ignores `@value`; use custom properties instead.
-- Container names, grid areas and `view-transition-name` values. Turbopack does not export them, and postcss-modules exports none of them.
+- Container names and grid areas, which neither bundler exports, and `view-transition-name` values, which only lightningcss does.
 
-Where the two bundlers disagree (`:global { ... }` blocks, `@value`, `view-transition-name`), the type follows CSS Modules semantics and the divergence is pinned down in `packages/core/tests/bundler-parity.test.ts`.
+Where the two bundlers disagree (`:global { ... }` blocks, `@value`, a quoted `animation-name`, `view-transition-name`), the type follows CSS Modules semantics, and `packages/core/tests/bundler-parity.test.ts` pins the difference down.
 
 ## Unused class detection
 
-`better-css-modules check` walks every `.ts`, `.tsx`, `.js`, `.jsx` (and `.mts`, `.cts`, `.mjs`, `.cjs`) file under the project root, skipping `node_modules`, `.git`, `dist`, `.next` and `outDir`, and reports:
+`check` reads every `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs` and `.cjs` file under the project root, and adds up how the sources use each CSS module:
 
-| Rule                 | Reported at        | Meaning                                                                        |
-| -------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| `unused-class`       | the class, in CSS  | No source file uses the class, whichever name it imports the module under      |
-| `unused-module`      | line 1 of the CSS  | No source file imports the module                                              |
-| `unanalyzable-usage` | the source file    | `styles[expr]`, `...rest`, a dynamic `import()`, or the module object escaping |
-| `invalid-composes`   | the declaration    | `composes` in a rule whose selector is not a single class                      |
-| `syntax`             | the offending text | postcss or css-tree could not parse the file or a selector                     |
+- `usage/unused-class`: no source uses the class, whatever name it imports the module under.
+- `usage/unused-module`: no source imports the module.
+- `usage/unanalyzable`: a source uses the module in a way that hides which classes it uses: `styles[expr]`, `...rest`, a dynamic `import()`, the module object passed on as a value, an `export *` of it, a namespace import of a module that re-exports it, or a re-export of a re-export. A source that does not parse is reported too. Then `usage/unused-class` is not reported for that module, but the other rules are.
 
-Usage is aggregated across all importers, so a class used in any file counts. Default, namespace and named imports, destructuring, `export { default as styles } from` re-exports, tsconfig `paths` (nearest `tsconfig.json` wins) and `composes` (a composed class is used whenever the composing class is, in this file or the file named by `from`) are all understood. ``styles[`size-${x}`]`` narrows the candidates to names with that prefix and suffix instead of giving up.
+Default, namespace and named imports, destructuring, `export { default as styles } from` re-exports, tsconfig `paths` (the nearest `tsconfig.json` wins) and `composes` (a composed class is used whenever the composing class is, in this file or the file named by `from`) are all understood. ``styles[`size-${x}`]`` narrows the candidates to the names with that prefix and suffix instead of giving up.
 
-When usage cannot be determined for a module, the tool reports `unanalyzable-usage` and reports nothing else for that module.
+What it does not see, so that a module used only from there is reported as unused:
 
-Only ES module syntax in those file types is analyzed: `require()`, and imports from `.vue`, `.svelte`, `.astro` or `.mdx` files, are not seen, so a module used only from there is reported as unused.
+- `require()`, and imports from `.vue`, `.svelte`, `.astro` or `.mdx` files.
+- Files in `node_modules`, in the `outDir`, and in directories whose name starts with a dot, such as `.storybook`. Build output (`dist`, `build`, `out`, `coverage`, `storybook-static`) is skipped too, but only at the project root: a `src/build` directory is read.
+- Re-exports through more than one module: a barrel that re-exports a barrel is `usage/unanalyzable`.
+- `.d.ts`, `.d.mts` and `.d.cts` files, including the generated types.
+
+Only classes are checked. Ids, keyframes and view-transition classes are in the type but never reported as unused.
 
 ## Pure CSS Modules
 
-A `.module.css` holds the styles of one component: they reach only its own classes, and the code that uses the component can override them. `better-css-modules check` holds every CSS module `include` names to that. The stylesheets `globalCss` lists style the page, so they are not held to these rules. The rules always apply; there is no option to turn them off.
+A `.module.css` holds the styles of one component: they reach only its own classes, and the code that uses the component can override them. `check` holds every CSS module `include` names to that. The stylesheets `globalCss` lists style the page, so they are not held to these rules. The rules always apply; a [disable comment](#disable-comments) can silence one where a module has a reason.
 
 ```css
 .list > * {
@@ -222,20 +351,22 @@ A `.module.css` holds the styles of one component: they reach only its own class
 ```
 
 ```
-src/list.module.css:1:9 error pure/subject: * is not a local class; style the element through a class of its own, or space children with gap on the parent
-src/list.module.css:4:1 error pure/global: :global(.dark) reaches outside this module; switch modes by overriding tokens instead
+src/list.module.css:1:9 error pure/subject: * is not a local class; give the element a class of its own, or style markup the component does not write inside @scope
+src/list.module.css:4:1 error pure/global: :global(.dark) reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope
 src/list.module.css:5:31 error pure/important: !important defeats overrides from outside the component and the order of @layer
 src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effect only while this module is loaded; move it to the global CSS
+[better-css-modules] 4 problem(s)
 ```
 
-| Rule             | Reported at   | What it reports                                                                                                                                                                                                                                                         |
-| ---------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`, `:global(.x)`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)                   |
-| `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                                    |
-| `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`. Modes switch by overriding tokens, not by reaching outside the module                                                                                                                                            |
-| `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                                            |
-| `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                                     |
-| `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@namespace`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS |
+| Rule             | Reported at   | What it reports                                                                                                                                                                                                                                           |
+| ---------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`, `:global(.x)`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)     |
+| `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                      |
+| `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`. Modes switch by overriding tokens, not by reaching outside the module                                                                                                                              |
+| `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                              |
+| `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                       |
+| `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS |
+| `pure/value`     | the `@value`  | `@value`, which is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks. Use a custom property                                                                                                                             |
 
 - A nested rule is pure through the rule it is nested in, and `&` is a local subject: `.card { &:hover {} }` and `.card { .dark & {} }` pass; `.card { p {} }` is `pure/subject`.
 - A subject is local when it holds a local class (`button.primary:hover`), or is `:is()`, `:where()` or `:nth-child(… of …)` whose every selector has a local subject.
@@ -264,19 +395,19 @@ The root is the rule the `@scope` is nested in, or the local class of its prelud
 
 ## Token enforcement
 
-Design tokens live in plain CSS. List the global stylesheets that declare them, your design system's first and then your own, and `better-css-modules check` holds every CSS module to them.
+Design tokens live in plain CSS. List the global stylesheets that declare them, your design system's first and then your own, and `check` holds every CSS module to them.
 
 ```ts
 import { defineConfig } from "@better-css-modules/core";
 
 export default defineConfig({
-  include: ["src/**/*.module.css"],
   globalCss: ["@k8ordo/ui/design-system.css", "./src/globals.css"],
 });
 ```
 
+`@k8ordo/ui/design-system.css`:
+
 ```css
-/* @k8ordo/ui/design-system.css */
 :root {
   --gray-900: oklch(0.25 0.002 235);
   --gray-50: oklch(0.975 0.001 235);
@@ -290,8 +421,9 @@ export default defineConfig({
 }
 ```
 
+`src/card.module.css`:
+
 ```css
-/* src/card.module.css */
 .card {
   color: var(--color-fg-bsae);
   padding: 13px;
@@ -301,31 +433,39 @@ export default defineConfig({
 ```
 
 ```
-src/card.module.css:2:10 error tokens/color: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?
-src/card.module.css:3:12 error tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token
+src/card.module.css:2:10 error tokens/unknown: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?
+src/card.module.css:3:12 error tokens/spacing: 13px is a raw value for spacing; use var(--spacing), alone or multiplied in calc()
 src/card.module.css:4:10 error tokens/internal: --gray-900 is internal to the global CSS; use a token with a category prefix
+[better-css-modules] 3 problem(s)
+```
+
+When all is well, `check` says which categories it restricted:
+
+```
+[better-css-modules] no problems found (1 modules; tokens: color, spacing, radius)
 ```
 
 ### Global CSS
 
-`globalCss` lists stylesheets in cascade order. An entry starting with `./` or `../` is a path relative to the config; anything else is a package specifier, resolved through the package's `exports` with the `style` condition. `@import` is followed and each stylesheet is read once. Its URL is relative to the stylesheet; a bare one that names no file there is a package (`@import "tailwindcss"`).
+`globalCss` lists stylesheets in cascade order. An entry starting with `./` or `../` is a path relative to the config; anything else is a package specifier, resolved through the package's `exports` with the `style` condition. `@import` is followed where it stands, and each stylesheet is read once. Its URL is relative to the stylesheet; a bare one that names no file there is a package (`@import "tailwindcss"`).
 
-Global CSS must be standard CSS. `check` stops with exit code 2, before reporting anything, at:
+Global CSS may hold another tool's syntax. An at-rule css-tree does not know, such as Tailwind's `@theme`, `@utility`, `@source`, `@tailwind`, `@plugin` or `@custom-variant`, is skipped with everything inside it: it declares no tokens and is not checked. In an `@import`, a function CSS does not have (`source(…)`) is skipped, and a media type CSS does not have (`important`) is no condition.
 
-- an at-rule css-tree does not know, such as Tailwind's `@theme`, `@tailwind` or `@utility` (`@import "tailwindcss"` is followed and stops there)
+`check` stops with exit code 2, before reporting anything, at:
+
 - an entry or `@import` that cannot be resolved, an `@import` of a URL, and stylesheets that import each other
 - a stylesheet that does not parse
 - a stylesheet that `include` also matches: a file is either a CSS module or global CSS
 
-Packages resolve from the directory of the config. In a monorepo where each app has its own global CSS, give each app its own config and run `check` in each.
+Packages resolve from the directory of the config, so each app of a monorepo gets its own config (see [Workflow](#workflow)).
 
 ### Tokens and modes
 
-A token is a custom property the global CSS declares in a `:root` rule, also inside `@layer` or in a stylesheet imported with `layer()`, or registers with `@property`. Its prefix is its category: `--color` and `--color-*` are color tokens, `--spacing` and `--spacing-*` spacing tokens, and so on for every category in the table below. A category is restricted once the global CSS declares a token of it; the others are not checked.
+A token is a custom property the global CSS declares in a `:root` rule (also `:root, :host`), also inside `@layer` or in a stylesheet imported with `layer()`, or registers with `@property`. Its prefix is its category: `--color` and `--color-*` are color tokens, `--spacing` and `--spacing-*` spacing tokens, and so on for every category in the table below. A category is restricted once the global CSS declares a token of it; the others are not checked.
 
-A name without a category prefix (`--gray-900`) is internal. The global CSS builds tokens from it; a module can neither use nor declare it.
+A name without a category prefix (`--gray-900`) is internal. The global CSS builds tokens from it; a module that uses it is reported as `tokens/internal`, and one that declares it as `tokens/declaration`.
 
-Every other place that sets a custom property is a mode, which may only override a name declared at `:root`: `.dark`, `[data-theme]`, `:root:where(:not(.dark))`, a `:root` inside `@media`, `@supports` or `@container`, a nested rule, a stylesheet imported with a media or supports condition. A mode that declares a new name is reported as `tokens/undeclared`.
+Every other place that sets a custom property is a mode, which may only override a name declared at `:root`: `.dark`, `[data-theme]`, `:root:where(:not(.dark))`, a `:root` inside `@media`, `@supports` or `@container`, a nested rule, a stylesheet imported with a media or supports condition. A mode that declares a new name is reported as `tokens/declaration`.
 
 The global CSS inside the project and outside `node_modules` is checked too: its declarations are held to the tokens like a module's, except that it declares tokens, sets them in modes and uses internal names freely. A package's stylesheets are only read.
 
@@ -344,12 +484,14 @@ These are reported as `tokens/<category>`:
 - Raw values: hex colors, named and system colors, color functions written with channel values (`rgb()`, `oklch()`, `color()`…, also when a `var()` sits among the channels), lengths in any unit (`px`, `rem`, `em`, `cqi`, `vw`…), numbers, times, and keywords that stand for a value (`bold`, `large`).
 - A `var()` of a custom property that is not a token of the category: a token of another category, or a custom property declared in the file.
 - A raw value in the fallback of a `var()` (`var(--color-fg-base, red)`).
-- A token name the global CSS does not declare, in any property and in the value of a custom property: most likely a typo. The message names the closest declared token of the category when one is within two edits.
-- A custom property a module declares under a token name of a restricted category (`--color-mine: red`), whatever its value. Otherwise a module could declare its own `--color-*` and feed any raw value through the category. (A module registers no custom property with `@property` at all: that is `pure/at-rule`.)
 
-`tokens/internal` reports a module that uses or declares an internal name, and `tokens/undeclared` a mode that declares a new name.
+`tokens/unknown` reports a token name the global CSS does not declare, in any property and in the value of a custom property: most likely a typo. The message names the closest declared token of the category when one is within two edits.
+
+`tokens/declaration` reports a custom property a module declares under a token name of a restricted category (`--color-mine: red`), whatever its value. Otherwise a module could declare its own `--color-*` and feed any raw value through the category. (A module registers no custom property with `@property` at all: that is `pure/at-rule`.)
 
 Any other custom property is free to declare with any value (`--glow: oklch(0.72 0.17 185)`); using it in a restricted property is what gets reported.
+
+Whether a value is valid for its property is not checked.
 
 ### Categories
 
@@ -368,13 +510,11 @@ Any other custom property is free to declare with any value (`--glow: oklch(0.72
 
 † The property and its per-side forms, physical and logical: `-top`, `-right`, `-bottom`, `-left`, `-block`, `-block-start`, `-block-end`, `-inline`, `-inline-start`, `-inline-end` (`border-top`, `margin-inline-start`, `border-block-color`…).
 
-This table is `tokenCategories` in `@better-css-modules/core`. Some notes on it:
-
 - Percentages pass for `spacing` and `radius` because they are relative to the box, which no token expresses (`top: 50%`, `border-radius: 50%`).
 - `width`, `height`, their `min-` and `max-` forms, `flex-basis`, grid tracks and border widths belong to no category: they are dimensions of a layout, not steps on a spacing scale.
 - When `shadow` is restricted it owns `box-shadow` and `text-shadow`, and `color` no longer looks inside them.
 - Vendor-prefixed properties are checked as the property they prefix (`-webkit-box-shadow`).
-- Descriptors of `@font-face`, `@page`, `@property`, `@counter-style`, `@font-palette-values`, `@view-transition` and `@color-profile` are not checked.
+- Descriptors of `@font-face`, `@page`, `@property`, `@counter-style`, `@font-palette-values`, `@font-feature-values`, `@view-transition` and `@color-profile` are not checked.
 
 ### `var()` in shorthands
 
@@ -390,8 +530,9 @@ A `var()` in a shorthand could stand for any of its components. The tool reads i
 
 A media query cannot use `var()`, so the widths in `@media` conditions are held to the values of the breakpoint tokens instead.
 
+`src/globals.css`:
+
 ```css
-/* src/globals.css */
 :root {
   --breakpoint-sm: 40rem;
   --breakpoint-md: 48rem;
@@ -399,8 +540,9 @@ A media query cannot use `var()`, so the widths in `@media` conditions are held 
 }
 ```
 
+`src/nav.module.css`:
+
 ```css
-/* src/nav.module.css */
 @media (width >= 48rem) {
   /* fine */
 }
@@ -419,6 +561,7 @@ A media query cannot use `var()`, so the widths in `@media` conditions are held 
 ```
 src/nav.module.css:9:20 error tokens/breakpoint: 47.99rem is not a breakpoint; the breakpoints are 40rem (--breakpoint-sm), 48rem (--breakpoint-md), 64rem (--breakpoint-lg)
 src/nav.module.css:12:20 error tokens/breakpoint: 768px is not a breakpoint; the breakpoints are 40rem (--breakpoint-sm), 48rem (--breakpoint-md), 64rem (--breakpoint-lg)
+[better-css-modules] 2 problem(s)
 ```
 
 - `width`, `min-width` and `max-width` are checked, in the range syntax (both ends of `40rem <= width < 64rem`) and in the `min-` and `max-` form. The direction is free: `width < 48rem` passes as well as `width >= 48rem`. Write `width < 48rem` for the range below a breakpoint rather than `max-width: 47.99rem`.
@@ -427,21 +570,53 @@ src/nav.module.css:12:20 error tokens/breakpoint: 768px is not a breakpoint; the
 - `@media` in the project's global CSS is checked like a module's.
 - Not checked: `height` and the other media features, `@container` (the size of a container is the component's, not the page's), `@custom-media`, and the conditions of `@import`.
 
-## Disable comments
+### Tailwind CSS v4
+
+List your Tailwind entry, the stylesheet with `@import "tailwindcss"`, in `globalCss`. The tool follows the import into Tailwind's own stylesheet for its layers and skips `@theme`, `@utility` and the rest of Tailwind's syntax.
+
+Tokens are read only from plain CSS: `:root` rules and `@property`. A variable in `@theme` is not a token, and Tailwind's compiled CSS holds only the theme variables a build used. A design system built with `@theme static` emits every theme variable in its compiled CSS, in a `:root, :host` rule, so import its compiled stylesheet.
+
+`better-css-modules.config.ts`:
+
+```ts
+import { defineConfig } from "@better-css-modules/core";
+
+export default defineConfig({
+  globalCss: ["./src/app/globals.css"],
+  layer: "components",
+});
+```
+
+`src/app/globals.css`:
 
 ```css
-/* better-css-modules-disable-next-line pure/global -- the date picker renders its own markup */
-.calendar :global(.rdp-day) {
-  border-radius: var(--radius-md);
-}
+@layer properties, theme, base, components, utilities;
+@import "tailwindcss";
+@import "@acme/ui/styles.css";
 
-.logo {
-  /* better-css-modules-disable-next-line tokens/color -- the brand mark is always white */
-  color: #fff;
+@theme {
+  --color-brand: oklch(0.6 0.2 260);
 }
 ```
 
-The comment silences the rules it names (`pure/*`, `tokens/<category>`, `tokens/internal`, `tokens/undeclared`, separated by commas or spaces) for the rule, at-rule or declaration that starts on the next line; above a rule it does not reach the declarations inside it. The reason after `--` is required: a comment without one, without a rule name, or naming a rule that does not exist is reported as `invalid-disable` and silences nothing. `pure/selector` cannot be disabled: a selector without a local class styles the page, which is the global CSS's job, whatever a bundler lets through. There is no file-wide form.
+Here the tokens come from the compiled `@acme/ui/styles.css`. `--color-brand` exists only in `@theme`, so `src/app/page.module.css`
+
+```css
+.page {
+  color: var(--color-fg-base);
+  padding: calc(var(--spacing) * 4);
+  background: var(--color-brand);
+}
+```
+
+is told so:
+
+```
+src/app/page.module.css:4:15 error tokens/unknown: --color-brand is not defined in the global CSS
+[better-css-modules] 1 problem(s)
+```
+
+Declare the layers in one statement before the import, `properties` first: Tailwind's compiled CSS declares that layer ahead of the others, but its source, which the tool reads, does not. With the modules in `components`, Tailwind's utilities win over them.
 
 ## Cascade layers
 
@@ -451,7 +626,6 @@ Name a layer, and the bundler plugins put every CSS Modules file the config incl
 import { defineConfig } from "@better-css-modules/core";
 
 export default defineConfig({
-  include: ["src/**/*.module.css"],
   globalCss: ["./src/globals.css"],
   layer: "components",
 });
@@ -467,12 +641,13 @@ The layer must be one the [global CSS](#global-css) declares at the top level of
 
 reaches the CSS Modules transform as
 
+<!-- prettier-ignore -->
 ```css
 @layer base, components, utilities;
 @layer components {
-  .root {
-    color: var(--color-fg-base);
-  }
+.root {
+  color: var(--color-fg-base);
+}
 }
 ```
 
@@ -489,33 +664,52 @@ reaches the CSS Modules transform as
 | `layer/nested`   | an `@layer` in a module  | The module is already in the layer, so this one nests in it (`components.x`) |
 | `layer/composes` | a `composes` declaration | `composes` does not work inside a layer                                      |
 
-With Tailwind CSS 4, name the layer `components` and declare `@layer properties, theme, base, components, utilities;`: Tailwind's utilities then win over the modules.
-
 ### Bundlers
 
-The wrapping has to happen before the CSS Modules transform. It does with Vite, tsdown (`vp pack`), Rollup, webpack and Rspack with css-loader, Rspack's built-in CSS, esbuild and Next.js (Turbopack). `packages/unplugin/tests/layer.test.ts` builds with Vite, tsdown, Rollup, esbuild, and webpack and Rspack with css-loader to keep it so.
+The wrapping has to happen before the CSS Modules transform. Builds in the tests keep it so for Vite, tsdown (`vp pack`), Rollup, esbuild, webpack with css-loader, and Rspack 1 and 2 with css-loader (`packages/unplugin/tests/layer.test.ts`), and for Next.js 16 with Turbopack (`examples/nextjs/tests/build.test.ts`). Rspack's built-in CSS wraps in the same order, but only a build by hand has shown it.
 
+- With webpack, Rspack and esbuild, the source map of a module points into the wrapped text, a few lines below where a rule was written. Vite, Rollup and Turbopack map it back to the module as written.
 - webpack's experimental built-in CSS (`experiments.css`) leaves the first class after an `@layer` statement unscoped, with or without this tool. Use css-loader.
-- `withBetterCssModules` adds a loader to `turbopack.rules["*.module.css"]` that runs before any loaders already there; it refuses a list of several rules under that key. The loader passes files through when the config names no layer.
-- The plugins read the config when the build starts; restart the dev server after changing it. A change to the global CSS is picked up as it happens.
+- `withBetterCssModules` adds its loader to `turbopack.rules["*.module.css"]` only when the config names a layer. The loader runs before any loaders already under that key, and the files stay CSS Modules under their own names; a list of several rules under that key is refused. Next.js does not document loaders for stylesheets, so the example's build test is what holds this.
+- Vite's dev server and `next dev` read the config when they start; restart them after changing it. webpack, Rspack, Rollup and esbuild read it again at each rebuild in watch mode. A change to the global CSS is picked up as it happens.
+- Storybook with `@storybook/nextjs-vite` builds with Vite, so the Turbopack loader does not run there. Add the Vite plugin to Storybook's Vite config:
 
-## TypeScript Setup
+  ```ts
+  // .storybook/main.ts
+  import type { StorybookConfig } from "@storybook/nextjs-vite";
+  import betterCssModules from "@better-css-modules/vite";
 
-Add `rootDirs` to your `tsconfig.json` so TypeScript resolves the generated types:
+  const config: StorybookConfig = {
+    framework: "@storybook/nextjs-vite",
+    stories: ["../src/**/*.stories.tsx"],
+    viteFinal: (viteConfig) => ({
+      ...viteConfig,
+      plugins: [...(viteConfig.plugins ?? []), betterCssModules()],
+    }),
+  };
 
-```json
-{
-  "compilerOptions": {
-    "rootDirs": [".", "./__generated__"]
-  },
-  "include": ["src", "__generated__"]
-}
-```
+  export default config;
+  ```
+
+## Packages
+
+| Package                                               | Description                                                                          |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [@better-css-modules/cli](./packages/cli)             | The `generate` and `check` commands                                                  |
+| [@better-css-modules/core](./packages/core)           | `defineConfig` for the config file, and the API the CLI and the plugins are built on |
+| [@better-css-modules/turbopack](./packages/turbopack) | Next.js (Turbopack) integration                                                      |
+| [@better-css-modules/vite](./packages/vite)           | Vite plugin                                                                          |
+| [@better-css-modules/webpack](./packages/webpack)     | webpack plugin                                                                       |
+| [@better-css-modules/rspack](./packages/rspack)       | Rspack plugin                                                                        |
+| [@better-css-modules/rollup](./packages/rollup)       | Rollup plugin                                                                        |
+| [@better-css-modules/esbuild](./packages/esbuild)     | esbuild plugin                                                                       |
+
+All packages are ESM only and need Node.js 24 or later. The plugins take their bundler as a peer dependency: `vite` 8, `webpack` 5, `@rspack/core` 1 or 2, `rollup` 4, `esbuild` 0.28 and `next` 16.
 
 ## Examples
 
-- [examples/vite-react](./examples/vite-react) - Vite + React
-- [examples/nextjs](./examples/nextjs) - Next.js (Turbopack)
+- [examples/nextjs](./examples/nextjs): Next.js (Turbopack), with tokens, a layer and `check`
+- [examples/vite-react](./examples/vite-react): Vite and React, with tokens, a layer and `check`
 
 ## Contributing
 
