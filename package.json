@@ -10,7 +10,7 @@
   "scripts": {
     "build": "vp run --filter './packages/*' build",
     "test": "vp run -r test",
-    "check": "vp run build && vp check",
+    "check": "vp run build && vp check && vp run --filter './examples/*' check",
     "typecheck": "vp run build && vp run -r typecheck",
     "smoke": "vp run build && node scripts/smoke.mjs"
   },
