@@ -14,6 +14,11 @@ export interface Config {
   /** Suppress console output */
   silent: boolean;
   /**
+   * Declare the classes as named exports instead of a default export, as
+   * webpack's css-loader and Rspack's built-in CSS export them by default.
+   */
+  namedExports: boolean;
+  /**
    * Global stylesheets that declare the design tokens, in cascade order:
    * `./` or `../` paths relative to the config, or package specifiers.
    */
@@ -26,6 +31,7 @@ const defaultConfig: Config = {
   outDir: "__generated__",
   watch: false,
   silent: false,
+  namedExports: false,
   globalCss: [],
 };
 

@@ -153,6 +153,9 @@ importers:
       postcss-modules:
         specifier: 9.0.1
         version: 9.0.1(postcss@8.5.8)
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
 
   packages/esbuild:
     dependencies:

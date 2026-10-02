@@ -11,17 +11,45 @@ export interface OutputOptions {
   outDir: string;
 }
 
+export interface DtsOptions extends OutputOptions {
+  /** Declare the keys as named exports instead of properties of a default export. */
+  namedExports: boolean;
+}
+
+function quoteUnlessIdentifier(name: string): string {
+  return /^[a-zA-Z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
+}
+
 /**
- * Generate the `.d.ts` source for a module whose default export has the given keys.
+ * Generate the `.d.ts` source for a module that exports the given keys, as
+ * properties of its default export or as named exports.
  */
-export function generateDts(keys: string[]): string {
+export function generateDts(
+  keys: string[],
+  { namedExports }: Pick<DtsOptions, "namedExports">,
+): string {
+  if (namedExports) return generateNamedExports(keys);
   const properties = keys
-    .map((name) => {
-      const key = /^[a-zA-Z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
-      return `  readonly ${key}: string;`;
-    })
+    .map((name) => `  readonly ${quoteUnlessIdentifier(name)}: string;`)
     .join("\n");
   return `declare const styles: {\n${properties}\n};\nexport default styles;\n`;
+}
+
+function generateNamedExports(keys: string[]): string {
+  // A class named `default` would become the default export, and `__esModule`
+  // is the marker below; webpack and Rspack each treat these names differently.
+  const names = keys.filter((name) => name !== "default" && name !== "__esModule");
+  // Through a local, so that a name that is not an identifier exports like the others.
+  const exports = names
+    .map(
+      (name, i) =>
+        `declare const _${i}: string;\nexport { _${i} as ${quoteUnlessIdentifier(name)} };\n`,
+    )
+    .join("");
+  // Without `__esModule`, TypeScript takes a declaration file that has no
+  // default export for CommonJS and accepts `import styles from`, which is
+  // undefined at runtime. webpack and Rspack set it on the module as well.
+  return `${exports}export declare const __esModule: true;\n`;
 }
 
 /**
@@ -38,12 +66,9 @@ export function dtsPathFor(cssFile: string, { cwd, outDir }: OutputOptions): str
   return path.join(cwd, outDir, `${relative}.d.ts`);
 }
 
-export async function writeDts(
-  analysis: CssModuleAnalysis,
-  options: OutputOptions,
-): Promise<string> {
+export async function writeDts(analysis: CssModuleAnalysis, options: DtsOptions): Promise<string> {
   const dtsPath = dtsPathFor(analysis.file, options);
-  const content = generateDts(analysis.exportNames);
+  const content = generateDts(analysis.exportNames, options);
   // An identical rewrite would still wake up editors and watchers.
   const current = await fs.readFile(dtsPath, "utf-8").catch(() => null);
   if (current === content) return dtsPath;
@@ -71,7 +96,7 @@ export interface RegenerateResult {
  */
 export async function regenerateDts(
   cssFile: string,
-  options: OutputOptions,
+  options: DtsOptions,
 ): Promise<RegenerateResult> {
   let analysis: CssModuleAnalysis;
   try {
@@ -98,7 +123,7 @@ export async function generateAll(
   cwd: string = process.cwd(),
 ): Promise<GenerateResult> {
   const { modules, diagnostics } = await loadCssModules(config, cwd);
-  const output = { cwd, outDir: config.outDir };
+  const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
   const written = await Promise.all(modules.map((analysis) => writeDts(analysis, output)));
   return { written, diagnostics: [...diagnostics, ...modules.flatMap((m) => m.diagnostics)] };
 }

@@ -55,7 +55,7 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       // watch mode never reported, so the next build start generates everything.
       generations.clear();
       if (!config || !matches?.(id)) return;
-      const output = { cwd, outDir: config.outDir };
+      const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
 
       if (change.event === "delete") {
         const dtsPath = await removeDts(id, output);
