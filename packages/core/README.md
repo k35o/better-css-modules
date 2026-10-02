@@ -1,6 +1,6 @@
 # @better-css-modules/core
 
-Core library for better-css-modules: CSS Modules analysis, type definition generation, unused class detection, pure CSS Modules and design token checks, cascade layer wrapping, file watching and configuration. The CLI and every bundler plugin are thin layers over these functions.
+The analysis behind better-css-modules: config loading, `.d.ts` generation and the checks. The CLI and every bundler plugin are built on it. Install it next to them for `defineConfig`, which the config file imports.
 
 ## Install
 
@@ -8,186 +8,54 @@ Core library for better-css-modules: CSS Modules analysis, type definition gener
 pnpm add -D @better-css-modules/core
 ```
 
+## The config file
+
+```ts
+// better-css-modules.config.ts
+import { defineConfig } from "@better-css-modules/core";
+
+export default defineConfig({
+  globalCss: ["./src/globals.css"],
+  layer: "components",
+});
+```
+
+`defineConfig` returns the config as it is and types it. The settings are described in the [project README](https://github.com/k35o/better-css-modules#configuration).
+
 ## API
 
 ```ts
 import {
-  analyzeCss,
-  analyzeUsage,
-  defineConfig,
+  check,
+  ConfigError,
   formatDiagnostic,
-  formatGitHubAnnotation,
-  generateAll,
-  generateDts,
+  generate,
   loadConfig,
-  startWatcher,
 } from "@better-css-modules/core";
 
-// Analyze one file: local classes, scoped identifiers, composes, @value,
-// positions and parse problems, all from a single pass.
-const analysis = analyzeCss(".container { color: red; }", "/project/src/a.module.css");
-analysis.exportNames; // => ["container"] — keys the module exports
-analysis.classNames; // => ["container"] — local class names only
-analysis.classes; // => [{ name: "container", range: { start: { line: 1, column: 1 }, ... } }]
-
-// Generate the .d.ts and its declaration map for that file
-const { dts, map } = generateDts(analysis, "/project/__generated__/src/a.module.css.d.ts", {
-  namedExports: false,
-});
-
-// Generate every .d.ts the config includes
-const config = await loadConfig(process.cwd());
-const { written, diagnostics } = await generateAll(config, process.cwd());
-
-// Find unused classes across the project
-const { diagnostics: problems } = await analyzeUsage(config, process.cwd());
-for (const problem of problems) {
-  console.log(formatDiagnostic(problem, process.cwd()));
-  // src/a.module.css:3:1 error unused-class: .title is never used
-  console.log(formatGitHubAnnotation(problem, process.cwd()));
-  // ::error file=src/a.module.css,line=3,col=1,endLine=3,endColumn=7,title=unused-class::.title is never used
+try {
+  const config = await loadConfig();
+  const { files } = await generate(config);
+  const { diagnostics, modules, tokens } = await check(config);
+  for (const diagnostic of diagnostics) console.log(formatDiagnostic(diagnostic, process.cwd()));
+  console.log(`${files.length} types, ${modules} modules, tokens: ${tokens.join(", ")}`);
+} catch (error) {
+  if (!(error instanceof ConfigError)) throw error;
+  console.error(error.message);
+  process.exitCode = 2;
 }
 ```
 
-### Analysis
+- `loadConfig({ cwd?, config? })` loads the config file `config` names, relative to `cwd`, or the `better-css-modules.config.*` in `cwd` (by default the working directory), and returns it as a `ResolvedConfig`: the defaults filled in, checked, and with `root`, the directory every relative path starts from, and `file`, the config file or `null`.
+- `generate(config)` writes the `.d.ts` files and their declaration maps, removes the ones it wrote for stylesheets that are gone, and returns a `GenerateResult`: `files`, `removed` and the syntax `diagnostics`.
+- `check(config)` runs every check and returns a `CheckResult`: the sorted `diagnostics`, how many `modules` it checked, and the token categories (`tokens`) the global CSS restricts.
+- `formatDiagnostic(diagnostic, cwd)` gives the `file:line:col error rule: message` line of the CLI, and `formatGitHubAnnotation(diagnostic, cwd)` the GitHub Actions workflow command of `--format github`.
+- `ConfigError` is a mistake in the config or in the files it names. `loadConfig` throws it, and so does `check` when `include` matches no file, the global CSS cannot be read, or it does not declare the `layer`.
+- The types `Config`, `ResolvedConfig`, `GenerateResult`, `CheckResult`, `Diagnostic` and `RuleId` describe these.
 
-`analyzeCss(source, file)` returns a `CssModuleAnalysis`:
+`@better-css-modules/core/internal` holds what the CLI and the plugins share. It is for those packages only and outside semver.
 
-| Field         | Contents                                                                                       |
-| ------------- | ---------------------------------------------------------------------------------------------- |
-| `classes`     | Every locally scoped class selector with its source range, in source order                     |
-| `classNames`  | Unique local class names, sorted                                                               |
-| `identifiers` | Locally scoped ids, keyframes names (declared or referenced) and view-transition classes       |
-| `exportNames` | `classNames` plus `identifiers`, sorted: the keys both lightningcss and postcss-modules export |
-| `composes`    | `composes` declarations with the composing class, composed names and their source              |
-| `values`      | `@value` declarations (not exported as keys)                                                   |
-| `root`        | The postcss tree, for consumers that need declarations or at-rules                             |
-| `diagnostics` | Parse problems (`syntax`, `invalid-composes`); the rest of the analysis is still usable        |
-
-Structure comes from postcss; selectors, at-rule preludes and values are parsed with css-tree (with the csstools syntax patches). `:global` / `:local` in all their forms, nesting, `@scope` preludes and escaped names follow CSS Modules semantics. `analyzeCss` throws postcss's `CssSyntaxError` only when the stylesheet itself cannot be parsed; `loadCssModules` turns that into a `syntax` diagnostic.
-
-### Type generation
-
-- `generateDts(analysis, dtsPath, { namedExports })` renders `{ dts, map }`: the `.d.ts` source, with the keys as properties of a default export or as named exports, and its declaration map, which ties each key to where it first appears in the stylesheet.
-- `dtsPathFor(cssFile, { cwd, outDir })` mirrors the path relative to `cwd` under `outDir` and throws for files outside `cwd`.
-- `writeDts(analysis, { cwd, outDir, namedExports })` writes one `.d.ts` and its map; `removeDts(cssFile, { cwd, outDir })` deletes both.
-- `generateAll(config, cwd)` does it for every included file and returns `{ written, diagnostics }`.
-
-### Usage analysis
-
-`analyzeUsage(config, cwd)` parses every source file under `cwd` (except `node_modules`, `.git`, `dist`, `.next` and `outDir`) with oxc, resolves imports with oxc-resolver honouring the nearest `tsconfig.json`, aggregates usage per CSS file and returns `{ diagnostics, modules }`. `diagnostics` are sorted by file and position:
-
-- `unused-class` at the first occurrence of the class in the CSS
-- `unused-module` at line 1 of a CSS file nothing imports
-- `unanalyzable-usage` at the source position where usage stops being static: `styles[expr]`, rest destructuring, dynamic `import()`, or the module object being passed around as a value
-
-`composes` counts: a composed class is used whenever the composing class is, including across files named by `from`.
-
-`modules` holds the analysis of every included CSS file that parses, at its real path, so `checkCss` can run on them without parsing the files again.
-
-### Pure and token checks
-
-`loadGlobalCss(config, cwd)` reads the stylesheets `config.globalCss` lists, follows their `@import` and returns a `GlobalCss`: the stylesheets in cascade order and the tokens they declare. It throws when a stylesheet cannot be resolved or parsed, is not standard CSS, imports itself, or is also an included CSS module. Each `Token` holds:
-
-| Field      | Content                                                                                                 |
-| ---------- | ------------------------------------------------------------------------------------------------------- |
-| `name`     | The custom property, such as `--color-fg-base`                                                          |
-| `category` | The category its prefix names, or `null` for an internal name                                           |
-| `value`    | Its value as css-tree nodes, with every `var()` of another token replaced by that token's value         |
-| `file`     | The stylesheet of the declaration the value comes from                                                  |
-| `node`     | That declaration as a postcss node: the last one at `:root`, or the `@property` rule when there is none |
-
-`checkCss(analysis, globalCss)` holds one analyzed module to the pure rules and the tokens, and `checkGlobalCss(globalCss)` checks the project's own stylesheets of the global CSS, which the pure rules leave alone. Both return `Diagnostic[]` sorted by position and are pure functions: they read nothing but their arguments, so they run the same from the CLI, a plugin or a test.
-
-```ts
-import { analyzeCss, checkCss, loadConfig, loadGlobalCss } from "@better-css-modules/core";
-
-// globalCss: ["./src/tokens.css"], which declares --color-fg-base at :root
-const config = await loadConfig(cwd);
-const globalCss = await loadGlobalCss(config, cwd);
-const analysis = analyzeCss(".a { color: var(--color-fg-bsae); }", "/project/src/a.module.css");
-checkCss(analysis, globalCss);
-// => [{ line: 1, column: 13, rule: "tokens/color",
-//       message: "--color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?", ... }]
-```
-
-- `pure/selector`, `pure/subject`, `pure/global`, `pure/id`, `pure/important` and `pure/at-rule` in a module, always: a selector or subject without a local class, `:global`, an id, `!important`, a global-only at-rule such as `@font-face`
-- `tokens/<category>` at a raw value, at a `var()` of a custom property that is not a token of the category, at a token name the global CSS does not declare, or at a custom property a module declares under a token name
-- `tokens/breakpoint` at a width in an `@media` condition that is not the value of a breakpoint token, and at a breakpoint token of the project's global CSS whose value is not one length
-- `tokens/internal` at a module's use or declaration of a name the global CSS declares without a category prefix
-- `tokens/undeclared` at a mode of the global CSS that declares a name `:root` does not
-- `invalid-disable` at a `better-css-modules-disable-next-line` comment without a reason, with an unknown rule, or naming `pure/selector`
-
-`tokenCategories` is the table the check works from: for each category, its properties, the part of their value that belongs to it, and the keywords it accepts. `categoryOf(name)` gives the category a custom property name belongs to. The rules are described in the project README: [pure CSS Modules](../../README.md#pure-css-modules) and [token enforcement](../../README.md#token-enforcement), with the table itself.
-
-### Cascade layers
-
-```ts
-import { loadConfig, loadGlobalCss, resolveLayer, wrapInLayer } from "@better-css-modules/core";
-
-// layer: "components", and the global CSS declares @layer base, components, utilities;
-const config = await loadConfig(cwd);
-const layer = resolveLayer("components", await loadGlobalCss(config, cwd));
-// => { name: "components", order: ["base", "components", "utilities"] }
-const { code, map } = wrapInLayer(".a { color: red; }", "/project/src/a.module.css", layer);
-// @layer base, components, utilities;
-// @layer components {
-// .a { color: red; }
-// }
-```
-
-- `declaredLayers(globalCss)` lists the layers the global CSS declares at the top level of the cascade, in order: `@layer` statements and blocks and `@import ... layer(name)`, reading the listed stylesheets in turn and each import where it stands. `resolveLayer(name, globalCss)` returns the layer with that order, and throws when the global CSS does not declare it.
-- `wrapInLayer(source, file, layer)` puts the file in the layer behind the statement and returns the CSS with its source map as JSON. `@import` stays in front and imports into the layer. It throws postcss's `CssSyntaxError` at a `composes`, which the CSS Modules transforms get wrong inside a layer. Run it before the bundler's CSS Modules transform; what the plugins do and why is in the [project README](../../README.md#cascade-layers).
-- `checkLayer(analysis, layer)` reports what the wrapping would break in a module: `layer/nested` at an `@layer` and `layer/composes` at a `composes`.
-
-### Diagnostics
-
-```ts
-interface Diagnostic {
-  file: string; // absolute path
-  line: number; // 1-based
-  column: number; // 1-based
-  endLine?: number;
-  endColumn?: number;
-  rule: string;
-  message: string;
-}
-```
-
-`formatDiagnostic` prints `path:line:col error rule: message`; `formatGitHubAnnotation` prints a GitHub Actions `::error` command. `sortDiagnostics` orders by file, line and column.
-
-### Config, matching and watching
-
-- `defineConfig` / `loadConfig(cwd)` read `better-css-modules.config.{ts,mts,cts,js,mjs,cjs}`; `configFile(cwd)` returns its path, or `null` when there is none.
-- `createMatcher(config, cwd)` returns a predicate for "is this path one of the included files"; `findCssModules` and `loadCssModules` list or analyze them.
-- `startWatcher(config, cwd)` regenerates `.d.ts` files as included files change. Run `generateAll` first; the watcher only reacts to changes.
-
-## Configuration
-
-```ts
-import { defineConfig } from "@better-css-modules/core";
-
-export default defineConfig({
-  include: ["src/**/*.module.css"],
-  exclude: [],
-  outDir: "__generated__",
-  watch: false,
-  silent: false,
-  namedExports: false,
-  globalCss: [],
-});
-```
-
-| Option         | Type       | Default                   | Description                                                         |
-| -------------- | ---------- | ------------------------- | ------------------------------------------------------------------- |
-| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                          |
-| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                            |
-| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                        |
-| `watch`        | `boolean`  | `false`                   | Enable watch mode (CLI only)                                        |
-| `silent`       | `boolean`  | `false`                   | Suppress console output                                             |
-| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export    |
-| `globalCss`    | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order |
-| `layer`        | `string`   | unset                     | Cascade layer the plugins wrap every module in                      |
+The rules `check` reports are described in the [project README](https://github.com/k35o/better-css-modules#rules).
 
 ## License
 

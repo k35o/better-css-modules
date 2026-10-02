@@ -1,12 +1,14 @@
 # @better-css-modules/vite
 
-Vite plugin for better-css-modules. Automatically generates `.d.ts` type definitions for CSS Modules during development and build, and wraps each module in the cascade layer the config names.
+Vite plugin for better-css-modules. It generates the `.d.ts` files for CSS Modules when the dev server or a build starts, keeps them in sync while the dev server runs, and puts every module in the cascade layer the config names.
 
 ## Install
 
 ```bash
-pnpm add -D @better-css-modules/vite
+pnpm add -D @better-css-modules/vite @better-css-modules/core @better-css-modules/cli
 ```
+
+The config file imports `defineConfig` from `@better-css-modules/core`, and the CLI runs `check`. The plugin needs Vite 8.
 
 ## Usage
 
@@ -20,9 +22,11 @@ export default defineConfig({
 });
 ```
 
+The types are generated once per process for each config, however many environments Vite builds and however many projects Vitest runs. The dev server reads the config when it starts; restart it after changing the config.
+
 ## Vite+ with `vite` aliased to its core
 
-The plugin declares `vite` `^7.0.0 || ^8.0.0` as a peer dependency. A Vite+ project that declares `vite` as an alias of the Vite+ core, such as `"vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"` in a catalog, installs a package whose own version is outside that range. pnpm then reports the peer as unmet, as it does for every Vite plugin, and npm stops with `ERESOLVE`. `vp migrate` relaxes the peer for you; if you set up the alias yourself, do the same.
+The plugin declares `vite` `^8.0.0` as a peer dependency. A Vite+ project that declares `vite` as an alias of the Vite+ core, such as `"vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"` in a catalog, installs a package whose own version is outside that range. pnpm then reports the peer as unmet, as it does for every Vite plugin, and npm stops with `ERESOLVE`. `vp migrate` relaxes the peer for you; if you set up the alias yourself, do the same.
 
 With pnpm, in `pnpm-workspace.yaml`:
 
@@ -44,26 +48,9 @@ With npm, override `vite` with the same alias in `package.json`:
 }
 ```
 
-## Options
+## Configuration
 
-Options can be passed directly to the plugin or configured via `better-css-modules.config.ts`.
-
-```ts
-betterCssModules({
-  include: ["src/**/*.module.css"],
-  exclude: [],
-  outDir: "__generated__",
-  silent: false,
-});
-```
-
-| Option    | Type       | Default                   | Description                                                                                 |
-| --------- | ---------- | ------------------------- | ------------------------------------------------------------------------------------------- |
-| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                                                  |
-| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                                                                    |
-| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                                                |
-| `silent`  | `boolean`  | `false`                   | Suppress console output                                                                     |
-| `layer`   | `string`   | unset                     | Cascade layer to wrap every module in; see [Cascade layers](../../README.md#cascade-layers) |
+The plugin takes one option, the config file to use, relative to the working directory: `betterCssModules({ config: "config/better-css-modules.config.ts" })`. By default it reads the `better-css-modules.config.*` in the working directory, the same file the CLI reads. See the project README for the [Quick Start](https://github.com/k35o/better-css-modules#quick-start), which sets up `tsconfig.json`, the [configuration](https://github.com/k35o/better-css-modules#configuration) and [cascade layers](https://github.com/k35o/better-css-modules#cascade-layers).
 
 ## License
 

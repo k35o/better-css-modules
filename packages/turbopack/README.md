@@ -1,71 +1,42 @@
 # @better-css-modules/turbopack
 
-Next.js / Turbopack integration for better-css-modules. Generates `.d.ts` files for CSS Modules when Next.js loads its config and keeps them fresh in development, and wraps each module in the cascade layer the config names.
+Next.js (Turbopack) integration for better-css-modules. It generates the `.d.ts` files for CSS Modules when Next.js loads its config, keeps them in sync during `next dev`, and puts every module in the cascade layer the config names.
 
 ## Install
 
 ```bash
-pnpm add -D @better-css-modules/turbopack
+pnpm add -D @better-css-modules/turbopack @better-css-modules/core @better-css-modules/cli
 ```
+
+The config file imports `defineConfig` from `@better-css-modules/core`, and the CLI runs `check`. The integration needs Next.js 16.
 
 ## Usage
 
 ```ts
 // next.config.ts
+import type { NextConfig } from "next";
 import { withBetterCssModules } from "@better-css-modules/turbopack";
 
-export default withBetterCssModules();
-
-// With existing Next.js config
-export default withBetterCssModules({
+const nextConfig: NextConfig = {
   reactStrictMode: true,
-});
+};
+
+export default withBetterCssModules(nextConfig);
 ```
 
-## Options
+`withBetterCssModules(nextConfig?, { config? })` returns an async config function. Put it outside every other wrapper, around the config object they return: a wrapper that takes only an object cannot take a function. `config` is the config file to use, relative to the working directory; by default it is the `better-css-modules.config.*` there.
 
-Options can be passed as the second argument or configured via `better-css-modules.config.ts`.
+- For `next dev`, `next build` and `next typegen`, it reads the config and generates every `.d.ts` once. For any other command it leaves the Next.js config as it is.
+- During `next dev`, a watcher brings the `.d.ts` of each added, changed or removed stylesheet in line. It does not keep the process alive.
+- A config it cannot load rejects the config function, which stops Next.js. A stylesheet that does not parse is reported, and its `.d.ts` is left as it was.
+- Only when the config names a `layer` does it add a loader to `turbopack.rules["*.module.css"]`, which puts each included module in the layer. The loader runs before any loaders already under that key and keeps the files CSS Modules under their own names; it refuses a list of several rules under that key. It reads the global CSS again when one of its files changes.
+- The better-css-modules config is read when Next.js loads its own, so restart `next dev` after changing it.
 
-```ts
-export default withBetterCssModules(
-  {},
-  {
-    include: ["src/**/*.module.css"],
-    exclude: [],
-    outDir: "__generated__",
-    silent: false,
-  },
-);
-```
+The types are generated here rather than in the loader, because Turbopack's persistent cache skips loaders for files that did not change. The integration runs no checks; run `better-css-modules check` for them.
 
-| Option    | Type       | Default                   | Description                                                                                 |
-| --------- | ---------- | ------------------------- | ------------------------------------------------------------------------------------------- |
-| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                                                  |
-| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                                                                    |
-| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                                                |
-| `silent`  | `boolean`  | `false`                   | Suppress console output                                                                     |
-| `layer`   | `string`   | unset                     | Cascade layer to wrap every module in; see [Cascade layers](../../README.md#cascade-layers) |
+## Configuration
 
-## How It Works
-
-- When `next.config.ts` is evaluated, generates `.d.ts` files for every included CSS Modules file
-- In development, watches for file additions, changes and deletions and regenerates the affected `.d.ts`
-- Adds a loader to `turbopack.rules["*.module.css"]` that wraps each included file in the [cascade layer](../../README.md#cascade-layers) the config names. It runs before any loaders already under that key, and passes files through when the config names no layer.
-
-Types are generated outside the loader, because Turbopack's persistent cache skips loaders for unchanged files. The loader tells Turbopack it depends on the config and the global CSS, so a cached result never outlives a change to either. Run `better-css-modules check` from `@better-css-modules/cli` for unused-class detection; a production build sees only the files it bundles.
-
-## TypeScript Setup
-
-Add `rootDirs` to your `tsconfig.json`:
-
-```json
-{
-  "compilerOptions": {
-    "rootDirs": [".", "./__generated__"]
-  },
-  "include": ["src", "__generated__"]
-}
-```
+The settings go in `better-css-modules.config.ts`; see the project README for [setting up Next.js](https://github.com/k35o/better-css-modules#nextjs-turbopack), including `tsconfig.json`, the [configuration](https://github.com/k35o/better-css-modules#configuration) and [cascade layers](https://github.com/k35o/better-css-modules#cascade-layers).
 
 ## License
 
