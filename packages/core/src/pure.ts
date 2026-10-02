@@ -134,7 +134,7 @@ function visitScope(atRule: AtRule, context: Context, checker: Checker): Context
   const root = scope?.root?.type === "SelectorList" ? scope.root : null;
   const scan: Scan = { local: false, globals: [], ids: [] };
   for (const list of [root, scope?.limit]) {
-    if (list?.type === "SelectorList") scanList(list, context.local, text, scan);
+    if (list?.type === "SelectorList") scanList(list, context.local, false, text, scan);
   }
   checker.report(atRule, [
     ...scan.globals.map((found) => globalDiagnostic(found, checker.file)),
@@ -154,7 +154,7 @@ function checkSelectorList(
   list.children.forEach((selector) => {
     if (selector.type !== "Selector") return;
     const scan: Scan = { local: false, globals: [], ids: [] };
-    scanSelector(selector, context.local, text, scan);
+    scanSelector(selector, context.local, false, text, scan);
     if (!context.nested && !scan.local) {
       // Scoped but not nested: a top-level @scope rooted at a local class.
       const hint = context.scoped
@@ -182,13 +182,30 @@ function checkSelectorList(
   return diagnostics;
 }
 
-function scanList(list: CssTree.SelectorList, local: boolean, text: string, scan: Scan): void {
+/**
+ * Scan for local classes, :global and ids. `inGlobal` is set inside the
+ * argument of `:global()`, which stays global whatever `:local` it holds:
+ * bundlers emit it as written, and no key is generated for it.
+ */
+function scanList(
+  list: CssTree.SelectorList,
+  local: boolean,
+  inGlobal: boolean,
+  text: string,
+  scan: Scan,
+): void {
   list.children.forEach((selector) => {
-    if (selector.type === "Selector") scanSelector(selector, local, text, scan);
+    if (selector.type === "Selector") scanSelector(selector, local, inGlobal, text, scan);
   });
 }
 
-function scanSelector(selector: CssTree.Selector, local: boolean, text: string, scan: Scan): void {
+function scanSelector(
+  selector: CssTree.Selector,
+  local: boolean,
+  inGlobal: boolean,
+  text: string,
+  scan: Scan,
+): void {
   // Bare `:global` / `:local` switch the mode for the rest of the selector.
   let mode = local;
   selector.children.forEach((node) => {
@@ -200,21 +217,24 @@ function scanSelector(selector: CssTree.Selector, local: boolean, text: string, 
     } else if (node.type === "PseudoClassSelector") {
       const name = node.name.toLowerCase();
       if (name !== "global" && name !== "local") {
-        scanArguments(node.children, mode, text, scan);
+        scanArguments(node.children, mode, inGlobal, text, scan);
         return;
       }
       if (name === "global") scan.globals.push({ node, text });
+      const switched = name === "local" && !inGlobal;
       if (node.children === null) {
-        mode = name === "local";
+        mode = switched;
         return;
       }
       const argument = argumentOf(node);
-      if (argument) scanList(argument.list, name === "local", argument.text, scan);
+      if (argument) {
+        scanList(argument.list, switched, inGlobal || name === "global", argument.text, scan);
+      }
     } else if (node.type === "PseudoElementSelector") {
       // A view-transition class names a pseudo-element, not an element; bundlers
       // do not count it.
       if (node.name.toLowerCase().startsWith("view-transition-")) return;
-      scanArguments(node.children, mode, text, scan);
+      scanArguments(node.children, mode, inGlobal, text, scan);
     }
   });
 }
@@ -222,13 +242,16 @@ function scanSelector(selector: CssTree.Selector, local: boolean, text: string, 
 function scanArguments(
   children: CssTree.List<CssTree.CssNode> | null,
   local: boolean,
+  inGlobal: boolean,
   text: string,
   scan: Scan,
 ): void {
   children?.forEach((child) => {
-    if (child.type === "SelectorList") scanList(child, local, text, scan);
-    else if (child.type === "Selector") scanSelector(child, local, text, scan);
-    else if (child.type === "Nth" && child.selector) scanList(child.selector, local, text, scan);
+    if (child.type === "SelectorList") scanList(child, local, inGlobal, text, scan);
+    else if (child.type === "Selector") scanSelector(child, local, inGlobal, text, scan);
+    else if (child.type === "Nth" && child.selector) {
+      scanList(child.selector, local, inGlobal, text, scan);
+    }
   });
 }
 

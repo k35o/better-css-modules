@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
-import postcss from "postcss";
+import postcss, { type AtRule, type Rule } from "postcss";
 import { checkCss, checkGlobalCss } from "../src/check.js";
-import { analyzeCss } from "../src/css.js";
+import { analyzeCss, type SourcePosition } from "../src/css.js";
+import { parse } from "../src/csstree.js";
 import { globalCssFrom } from "../src/global.js";
+import { cssCases } from "./fixtures/css-cases.js";
 
 const FILE = "/project/src/a.module.css";
 
@@ -66,6 +68,11 @@ describe("checkCss: selectors without a local class (pure/selector)", () => {
     expect(rules(":global(.x) {}")).toEqual(["pure/selector", "pure/global"]);
     expect(rules(":global .x {}")).toEqual(["pure/selector", "pure/global"]);
     expect(rules("::view-transition-old(.a) {}")).toEqual(["pure/selector"]);
+  });
+
+  it("keeps the argument of :global() global, even through :local()", () => {
+    expect(rules(":global(:local(.a)) {}")).toEqual(["pure/selector", "pure/global"]);
+    expect(rules(":global(.x :is(:local(.a))) {}")).toEqual(["pure/selector", "pure/global"]);
   });
 
   it("does not count the root of a top-level @scope, as bundlers do not", () => {
@@ -354,3 +361,50 @@ describe("checkGlobalCss: the global CSS", () => {
     expect(checkGlobalCss(globalCss).filter((d) => d.rule.startsWith("pure/"))).toEqual([]);
   });
 });
+
+// The generated keys and pure/selector decide what is local in two separate
+// walks; they must agree on every selector of a top-level rule.
+describe("pure/selector agrees with the local classes and ids of the generated keys", () => {
+  it.each([
+    ...cssCases.map(({ name, css }) => ({ name, css })),
+    { name: "local inside global", css: ":global(:local(.a)) {} .b, :global(.c) a {}" },
+  ])("$name", ({ css }) => {
+    const analysis = analyzeCss(css, FILE);
+    const locals = [
+      ...analysis.classes,
+      ...analysis.identifiers.filter(({ kind }) => kind === "id"),
+    ].map(({ range }) => range.start);
+    const withoutLocal: string[] = [];
+    analysis.root.walkRules((rule) => {
+      if (isNested(rule)) return;
+      const start = rule.source?.start ?? { line: 1, column: 1 };
+      const text = rule.raws.selector?.raw ?? rule.selector;
+      const list = parse(text, { context: "selectorList", positions: true, ...start });
+      if (list.type !== "SelectorList") return;
+      list.children.forEach(({ loc }) => {
+        if (!loc) return;
+        const holds = locals.some((at) => !isBefore(at, loc.start) && isBefore(at, loc.end));
+        if (!holds) withoutLocal.push(`${loc.start.line}:${loc.start.column}`);
+      });
+    });
+    const reported = diagnose(css)
+      .filter(({ rule }) => rule === "pure/selector")
+      .map(({ line, column }) => `${line}:${column}`);
+    expect(reported).toEqual(withoutLocal);
+  });
+});
+
+/** Inside a style rule, which stands for the local class, or a keyframes block. */
+function isNested(rule: Rule): boolean {
+  for (let parent = rule.parent; parent; parent = parent.parent) {
+    if (parent.type === "rule") return true;
+    if (parent.type === "atrule" && /keyframes$/i.test((parent as AtRule).name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isBefore(a: SourcePosition, b: SourcePosition): boolean {
+  return a.line < b.line || (a.line === b.line && a.column < b.column);
+}

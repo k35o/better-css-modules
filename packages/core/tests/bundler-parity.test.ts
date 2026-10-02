@@ -99,6 +99,7 @@ describe("pure/selector matches lightningcss's pure mode", () => {
     "::view-transition-old(.a) {}",
     ":global(.x) {}",
     ":global(.x) .a {}",
+    ":global(:local(.a)) {}",
     ".a :global(.x) {}",
     ":export { a: b; }",
     ".a { a {} }",
