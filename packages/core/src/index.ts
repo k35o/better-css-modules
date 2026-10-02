@@ -26,16 +26,7 @@ export type {
 } from "./dts.js";
 export { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "./layer.js";
 export type { Layer, WrapResult } from "./layer.js";
-export {
-  createMatcher,
-  defaultIgnore,
-  findCssModules,
-  loadCssModule,
-  loadCssModuleFiles,
-  loadCssModules,
-  syntaxDiagnosticFrom,
-} from "./project.js";
-export type { LoadResult } from "./project.js";
+export { createMatcher } from "./project.js";
 export { categoryOf, tokenCategories } from "./tokens.js";
 export type { TokenCategory, TokenCategoryDefinition, ValuePart } from "./tokens.js";
 export { analyzeUsage } from "./usage.js";

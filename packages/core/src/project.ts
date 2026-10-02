@@ -66,44 +66,45 @@ export async function findCssModules(config: ResolvedConfig): Promise<string[]> 
   return files.sort();
 }
 
-/** Read and analyze one file. Throws postcss's `CssSyntaxError` for a broken stylesheet. */
-export async function loadCssModule(file: string): Promise<CssModuleAnalysis> {
-  return analyzeCss(await fs.readFile(file, "utf-8"), file);
-}
-
-/** The diagnostic for a stylesheet postcss could not parse, or null for any other error. */
-export function syntaxDiagnosticFrom(error: unknown, file: string): Diagnostic | null {
-  if (!(error instanceof CssSyntaxError)) return null;
-  return {
-    file,
-    line: error.line ?? 1,
-    column: error.column ?? 1,
-    rule: "syntax",
-    message: error.reason,
-  };
-}
-
-export interface LoadResult {
-  modules: CssModuleAnalysis[];
-  /** Files that could not be parsed at all; they are absent from `modules`. */
+export interface LoadedCssModule {
+  /** null when postcss cannot parse the stylesheet at all. */
+  analysis: CssModuleAnalysis | null;
+  /** The syntax problems of the file. */
   diagnostics: Diagnostic[];
 }
 
-export async function loadCssModules(config: ResolvedConfig): Promise<LoadResult> {
-  return loadCssModuleFiles(await findCssModules(config));
+/** Read and analyze one file. A stylesheet that does not parse yields its syntax diagnostic. */
+export async function loadCssModule(file: string): Promise<LoadedCssModule> {
+  const source = await fs.readFile(file, "utf-8");
+  try {
+    const analysis = analyzeCss(source, file);
+    return { analysis, diagnostics: analysis.diagnostics };
+  } catch (error) {
+    if (!(error instanceof CssSyntaxError)) throw error;
+    const diagnostic: Diagnostic = {
+      file,
+      line: error.line ?? 1,
+      column: error.column ?? 1,
+      rule: "syntax",
+      message: error.reason,
+    };
+    return { analysis: null, diagnostics: [diagnostic] };
+  }
 }
 
-export async function loadCssModuleFiles(files: string[]): Promise<LoadResult> {
-  const modules: CssModuleAnalysis[] = [];
-  const diagnostics: Diagnostic[] = [];
+export interface LoadResult {
+  /** The analyses of the files that parse. */
+  modules: CssModuleAnalysis[];
+  /** The syntax problems of every file. */
+  diagnostics: Diagnostic[];
+}
+
+export async function loadCssModules(files: string[]): Promise<LoadResult> {
+  const result: LoadResult = { modules: [], diagnostics: [] };
   for (const file of files) {
-    try {
-      modules.push(await loadCssModule(file));
-    } catch (error) {
-      const diagnostic = syntaxDiagnosticFrom(error, file);
-      if (!diagnostic) throw error;
-      diagnostics.push(diagnostic);
-    }
+    const { analysis, diagnostics } = await loadCssModule(file);
+    if (analysis) result.modules.push(analysis);
+    result.diagnostics.push(...diagnostics);
   }
-  return { modules, diagnostics };
+  return result;
 }

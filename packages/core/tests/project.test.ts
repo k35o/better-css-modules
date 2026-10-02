@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type Config, ConfigError, resolveConfig } from "../src/config.js";
-import { createMatcher, findCssModules } from "../src/project.js";
+import { createMatcher, findCssModules, loadCssModules } from "../src/project.js";
 
 describe("createMatcher", () => {
   const cwd = path.resolve("/project");
@@ -156,5 +156,27 @@ describe("include and exclude", () => {
   ])("select the same files when enumerated and when matched: %j", async (config) => {
     const { found, matched } = await selected(config);
     expect(matched).toEqual(found);
+  });
+});
+
+describe("loadCssModules", () => {
+  it("returns the analyses of the files that parse and the syntax problems of all of them", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "bcm-load-"));
+    const files = ["a.module.css", "b.module.css", "c.module.css"].map((name) =>
+      path.join(dir, name),
+    );
+    await fs.writeFile(files[0], ".a {}");
+    await fs.writeFile(files[1], ".b { color: red;");
+    await fs.writeFile(files[2], ".c, %%% {}");
+    try {
+      const { modules, diagnostics } = await loadCssModules(files);
+      expect(modules.map((analysis) => analysis.file)).toEqual([files[0], files[2]]);
+      expect(diagnostics).toMatchObject([
+        { file: files[1], line: 1, column: 1, rule: "syntax", message: "Unclosed block" },
+        { file: files[2], line: 1, column: 5, rule: "syntax" },
+      ]);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

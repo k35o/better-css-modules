@@ -4,7 +4,7 @@ import { SourceMapGenerator } from "source-map-js";
 import { isOutside, type ResolvedConfig } from "./config.js";
 import type { CssModuleAnalysis, SourcePosition, SourceRange } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
-import { loadCssModule, loadCssModules, syntaxDiagnosticFrom } from "./project.js";
+import { findCssModules, loadCssModule, loadCssModules } from "./project.js";
 
 /** Generated files mirror paths relative to the root. */
 export type OutputOptions = Pick<ResolvedConfig, "root" | "outDir">;
@@ -193,15 +193,8 @@ export async function regenerateDts(
   cssFile: string,
   options: DtsOptions,
 ): Promise<RegenerateResult> {
-  let analysis: CssModuleAnalysis;
-  try {
-    analysis = await loadCssModule(cssFile);
-  } catch (error) {
-    const diagnostic = syntaxDiagnosticFrom(error, cssFile);
-    if (!diagnostic) throw error;
-    return { dtsPath: null, diagnostics: [diagnostic] };
-  }
-  return { dtsPath: await writeDts(analysis, options), diagnostics: analysis.diagnostics };
+  const { analysis, diagnostics } = await loadCssModule(cssFile);
+  return { dtsPath: analysis && (await writeDts(analysis, options)), diagnostics };
 }
 
 export interface GenerateResult {
@@ -214,7 +207,7 @@ export interface GenerateResult {
  * Generate `.d.ts` files for every CSS Modules file the config includes.
  */
 export async function generateAll(config: ResolvedConfig): Promise<GenerateResult> {
-  const { modules, diagnostics } = await loadCssModules(config);
+  const { modules, diagnostics } = await loadCssModules(await findCssModules(config));
   const written = await Promise.all(modules.map((analysis) => writeDts(analysis, config)));
-  return { written, diagnostics: [...diagnostics, ...modules.flatMap((m) => m.diagnostics)] };
+  return { written, diagnostics };
 }
