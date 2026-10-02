@@ -25,6 +25,8 @@
   },
   "include": [
     "next-env.d.ts",
+    "better-css-modules.config.ts",
+    "next.config.ts",
     "src",
     "__generated__",
     ".next/types/**/*.ts",

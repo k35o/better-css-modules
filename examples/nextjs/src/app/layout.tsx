@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import "./global.css";
 
 export const metadata = {
   title: "better-css-modules - Next.js example",
