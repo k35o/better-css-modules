@@ -7,7 +7,6 @@ import {
   checkGlobalCss,
   checkLayer,
   ConfigError,
-  type Diagnostic,
   formatDiagnostic,
   formatGitHubAnnotation,
   generateAll,
@@ -23,11 +22,6 @@ const cli = cac("better-css-modules");
 
 const CONFIG_OPTION = "Config file to use instead of better-css-modules.config.* in the cwd";
 
-function report(diagnostics: Diagnostic[], cwd: string, format: string): void {
-  const formatter = format === "github" ? formatGitHubAnnotation : formatDiagnostic;
-  for (const diagnostic of diagnostics) console.log(formatter(diagnostic, cwd));
-}
-
 cli
   .command("generate", "Generate type definition files")
   .option("-w, --watch", "Keep regenerating as files change")
@@ -41,10 +35,10 @@ cli
       console.log(`[better-css-modules] generated ${written.length} file(s)`);
       for (const dtsPath of written) console.log(`  ${path.relative(cwd, dtsPath)}`);
     }
-    report(diagnostics, cwd, "text");
+    for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
 
     if (options.watch) {
-      console.log("[better-css-modules] watching for changes...");
+      if (!config.silent) console.log("[better-css-modules] watching for changes...");
       startWatcher(config);
       return;
     }
@@ -83,7 +77,8 @@ cli
       if (!config.silent) console.log("[better-css-modules] no problems found");
       return;
     }
-    report(diagnostics, cwd, options.format);
+    const formatter = options.format === "github" ? formatGitHubAnnotation : formatDiagnostic;
+    for (const diagnostic of diagnostics) console.log(formatter(diagnostic, cwd));
     console.log(`[better-css-modules] ${diagnostics.length} problem(s)`);
     process.exitCode = 1;
   });

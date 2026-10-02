@@ -1,5 +1,5 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { spawnSync } from "node:child_process";
+import { describe, it, expect, afterAll, vi } from "vitest";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -41,6 +41,71 @@ const card = {
   "src/card.module.css": ".used {\n  color: #fff;\n}\n\n.ghost {\n  color: red;\n}\n",
   "src/card.ts": 'import styles from "./card.module.css";\n\nexport const card = styles.used;\n',
 };
+
+describe("generate", () => {
+  it("lists the files it wrote and exits with 0", async () => {
+    expect(run(await project(card), "generate")).toEqual({
+      status: 0,
+      stdout: [
+        "[better-css-modules] generated 1 file(s)",
+        "  __generated__/src/card.module.css.d.ts",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+
+  it("prints a stylesheet that does not parse to stderr and exits with 1", async () => {
+    const dir = await project({ ...card, "src/broken.module.css": ".a {\n" });
+    expect(run(dir, "generate")).toEqual({
+      status: 1,
+      stdout: [
+        "[better-css-modules] generated 1 file(s)",
+        "  __generated__/src/card.module.css.d.ts",
+        "",
+      ].join("\n"),
+      stderr: "src/broken.module.css:1:1 error syntax: Unclosed block\n",
+    });
+  });
+
+  const silent = {
+    ...card,
+    "better-css-modules.config.mjs": "export default { silent: true };\n",
+  };
+
+  it("leaves out the progress but not the diagnostics when silent", async () => {
+    const dir = await project({ ...silent, "src/broken.module.css": ".a {\n" });
+    expect(run(dir, "generate")).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: "src/broken.module.css:1:1 error syntax: Unclosed block\n",
+    });
+  });
+
+  it("prints nothing while it watches when silent", async () => {
+    const dir = await project(silent);
+    const css = path.join(dir, "src/card.module.css");
+    const dts = path.join(dir, "__generated__/src/card.module.css.d.ts");
+    const watching = spawn(process.execPath, [BIN, "generate", "--watch"], { cwd: dir });
+    let output = "";
+    watching.stdout.on("data", (chunk) => (output += chunk));
+    watching.stderr.on("data", (chunk) => (output += chunk));
+    try {
+      // Edit until the watcher, which starts after the first generation, picks one up.
+      let edits = 0;
+      await vi.waitFor(
+        async () => {
+          await fs.writeFile(css, `.used {}\n.edit${++edits} {}\n`);
+          expect(await fs.readFile(dts, "utf-8").catch(() => "")).toMatch(/edit\d+/);
+        },
+        { timeout: 10_000, interval: 200 },
+      );
+    } finally {
+      watching.kill();
+    }
+    expect(output).toBe("");
+  });
+});
 
 describe("check", () => {
   it("reports token violations and unused classes together in file order, and exits with 1", async () => {
