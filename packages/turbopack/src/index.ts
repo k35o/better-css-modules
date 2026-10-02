@@ -42,6 +42,9 @@ export function withBetterCssModules(
   options: Options = {},
 ): (phase: PHASE_TYPE) => Promise<NextConfig> {
   return async (phase) => {
+    if (phase !== "phase-development-server" && phase !== "phase-production-build") {
+      return nextConfig;
+    }
     // When next dev exits, Next.js's telemetry flushes in a detached process
     // that evaluates the config as the dev server did.
     if (/[\\/]telemetry[\\/]detached-flush/.test(process.argv[1] ?? "")) return nextConfig;
@@ -49,18 +52,16 @@ export function withBetterCssModules(
     const config = await loadConfig({ config: options.config });
     const cwd = process.cwd();
 
-    if (phase === "phase-development-server" || phase === "phase-production-build") {
-      if (process.env[GENERATED] === undefined) {
-        process.env[GENERATED] = "1";
-        const { files, removed, diagnostics } = await generate(config);
-        if (!config.silent) {
-          console.log(`[better-css-modules] generated ${files.length} file(s)`);
-          for (const dtsPath of removed) {
-            console.log(`[better-css-modules] removed: ${path.relative(cwd, dtsPath)}`);
-          }
+    if (process.env[GENERATED] === undefined) {
+      process.env[GENERATED] = "1";
+      const { files, removed, diagnostics } = await generate(config);
+      if (!config.silent) {
+        console.log(`[better-css-modules] generated ${files.length} file(s)`);
+        for (const dtsPath of removed) {
+          console.log(`[better-css-modules] removed: ${path.relative(cwd, dtsPath)}`);
         }
-        for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
       }
+      for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
     }
     if (phase === "phase-development-server" && !watching) {
       watching = true;

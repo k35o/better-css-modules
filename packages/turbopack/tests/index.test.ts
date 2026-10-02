@@ -96,11 +96,11 @@ describe("withBetterCssModules: when Next.js loads the config", () => {
     "phase-analyze",
     "phase-test",
     "phase-info",
-  ] as const)("does nothing for %s", async (phase) => {
+  ] as const)("leaves the config as it is for %s", async (phase) => {
     const { evaluate, startWatcher } = await load();
-    expect(await evaluate(phase, "plain", { reactStrictMode: true })).toEqual({
-      reactStrictMode: true,
-    });
+    const nextConfig = { reactStrictMode: true };
+    // The broken config shows that it is not even read.
+    expect(await evaluate(phase, "broken", nextConfig)).toBe(nextConfig);
 
     await expect(fs.access(DTS())).rejects.toThrow();
     expect(output).toEqual([]);
@@ -145,7 +145,7 @@ describe("withBetterCssModules: when Next.js loads the config", () => {
 
 describe("withBetterCssModules: the layer loader", () => {
   const rulesOf = async (nextConfig: NextConfig) =>
-    (await (await load()).evaluate("phase-production-server", "layered", nextConfig)).turbopack
+    (await (await load()).evaluate("phase-production-build", "layered", nextConfig)).turbopack
       ?.rules;
 
   const ours = () => ({
@@ -162,7 +162,7 @@ describe("withBetterCssModules: the layer loader", () => {
 
   it("adds nothing when the config names no layer", async () => {
     const nextConfig = { reactStrictMode: true };
-    expect(await (await load()).evaluate("phase-production-server", "plain", nextConfig)).toBe(
+    expect(await (await load()).evaluate("phase-production-build", "plain", nextConfig)).toBe(
       nextConfig,
     );
   });
