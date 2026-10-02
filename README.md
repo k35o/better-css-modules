@@ -42,7 +42,7 @@ const withMDX = createMDX();
 export default withBetterCssModules(withMDX(nextConfig));
 ```
 
-It generates the types when Next.js loads its config for `next dev`, `next build` and `next typegen`, and keeps them in sync while `next dev` runs. A config it cannot load stops Next.js.
+It generates the types when Next.js loads its config in the development server or production build phase, as `next dev`, `next build` and `next typegen` do, and keeps them in sync in the development server phase, as during `next dev`. A config it cannot load stops Next.js.
 
 Put the config in `better-css-modules.config.ts`, next to `package.json`:
 

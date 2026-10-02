@@ -25,8 +25,9 @@ const GENERATED = "BETTER_CSS_MODULES_GENERATED";
 let watching = false;
 
 /**
- * Generate `.d.ts` files when Next.js loads its config for `next dev` and
- * `next build` (and `next typegen`), keep them fresh in development, and add
+ * Generate `.d.ts` files when Next.js loads its config in the development
+ * server or production build phase (`next dev`, `next build`, `next typegen`),
+ * keep them fresh in the development server phase, and add
  * the loader that wraps CSS Modules files in the layer the config names.
  *
  * Returns a config function, so it goes around every other wrapper: one that

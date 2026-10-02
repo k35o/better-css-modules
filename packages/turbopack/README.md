@@ -26,8 +26,8 @@ export default withBetterCssModules(nextConfig);
 
 `withBetterCssModules(nextConfig?, { config? })` returns an async config function. Put it outside every other wrapper, around the config object they return: a wrapper that takes only an object cannot take a function. `config` is the config file to use, relative to the working directory; by default it is the `better-css-modules.config.*` there.
 
-- For `next dev`, `next build` and `next typegen`, it reads the config and generates every `.d.ts` once. For any other command it leaves the Next.js config as it is.
-- During `next dev`, a watcher brings the `.d.ts` of each added, changed or removed stylesheet in line. It does not keep the process alive.
+- When Next.js loads its config in the development server or production build phase, as `next dev`, `next build` and `next typegen` do, it reads the config and generates every `.d.ts` once. In any other phase it leaves the Next.js config as it is.
+- In the development server phase, as during `next dev`, a watcher brings the `.d.ts` of each added, changed or removed stylesheet in line. It does not keep the process alive.
 - A config it cannot load rejects the config function, which stops Next.js. A stylesheet that does not parse is reported, and its `.d.ts` is left as it was.
 - Only when the config names a `layer` does it add a loader to `turbopack.rules["*.module.css"]`, which puts each included module in the layer. The loader runs before any loaders already under that key and keeps the files CSS Modules under their own names; it refuses a list of several rules under that key. It reads the global CSS again when one of its files changes.
 - The better-css-modules config is read when Next.js loads its own, so restart `next dev` after changing it.
