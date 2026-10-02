@@ -38,6 +38,7 @@ const designSystem = globalCssOf(`
 }`);
 
 const COLOR_HINT = "use a --color-* token";
+const SPACING_HINT = "use var(--spacing), alone or multiplied in calc()";
 
 /** The diagnostics of token rules and disable comments; pure.test.ts covers the pure rules. */
 function diagnose(css: string, globalCss: GlobalCss = designSystem) {
@@ -76,7 +77,7 @@ describe("checkCss: raw values", () => {
     [
       "a length",
       "padding: 13px",
-      "tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: 13px is a raw value for spacing; ${SPACING_HINT}`,
     ],
     [
       "a font size",
@@ -214,13 +215,29 @@ describe("checkCss: raw values in shorthands", () => {
   });
 });
 
+describe("checkCss: what to write instead", () => {
+  it.each([
+    [["--spacing-sm", "--spacing-md"], "use a --spacing-* token"],
+    [["--spacing"], "use var(--spacing), alone or multiplied in calc()"],
+    [
+      ["--spacing", "--spacing-sm"],
+      "use a --spacing-* token, or var(--spacing), alone or multiplied in calc()",
+    ],
+  ])("names the kinds of token the global CSS declares: %j", (names, hint) => {
+    expect(check(".a { padding: 13px; gap: var(--color-x); }", declaring(...names))).toEqual([
+      `tokens/spacing: 13px is a raw value for spacing; ${hint}`,
+      `tokens/spacing: --color-x is not a spacing token; ${hint}`,
+    ]);
+  });
+});
+
 describe("checkCss: custom properties outside the category", () => {
   it("reports a token of another category", () => {
     expect(check(".a { color: var(--radius-md); }")).toEqual([
       `tokens/color: --radius-md is not a color token; ${COLOR_HINT}`,
     ]);
     expect(check(".a { gap: var(--color-fg-base); }")).toEqual([
-      "tokens/spacing: --color-fg-base is not a spacing token; use a --spacing-* token",
+      `tokens/spacing: --color-fg-base is not a spacing token; ${SPACING_HINT}`,
     ]);
   });
 
@@ -234,7 +251,7 @@ describe("checkCss: custom properties outside the category", () => {
   it("reports a name without the category prefix", () => {
     expect(check(".a { color: var(--nope); }")).toHaveLength(1);
     expect(check(".a { padding: calc(var(--space-2) * 2); }")).toEqual([
-      "tokens/spacing: --space-2 is not a spacing token; use a --spacing-* token",
+      `tokens/spacing: --space-2 is not a spacing token; ${SPACING_HINT}`,
     ]);
   });
 
@@ -251,7 +268,7 @@ describe("checkCss: custom properties outside the category", () => {
       { rule: "tokens/spacing", line: 1, column: 30, endColumn: 34 },
     ]);
     expect(check(".a { padding: env(safe-area-inset-left, 20px); }")).toEqual([
-      "tokens/spacing: 20px is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: 20px is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 
@@ -546,7 +563,7 @@ describe("checkCss: numbers", () => {
     const globalCss = declaring("--spacing", "--z-index-modal");
     expect(check(".a { z-index: calc(var(--z-index-modal) + 1); }", globalCss)).toEqual([]);
     expect(check(".a { padding: calc(var(--spacing) * 4 + 3px); }", globalCss)).toEqual([
-      "tokens/spacing: 3px is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: 3px is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 
@@ -560,8 +577,8 @@ describe("checkCss: numbers", () => {
 
   it("reports raw offsets and keeps the keywords around them", () => {
     expect(check(".a { inset: auto -10cqw -25cqh auto; }")).toEqual([
-      "tokens/spacing: -10cqw is a raw value for spacing; use a --spacing-* token",
-      "tokens/spacing: -25cqh is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: -10cqw is a raw value for spacing; ${SPACING_HINT}`,
+      `tokens/spacing: -25cqh is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 
@@ -729,7 +746,7 @@ describe("checkCss: disable comments", () => {
       `4:3 invalid-disable: ${nothing}`,
       `6:21 tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
       "7:3 invalid-disable: tokens/radius is disabled, but nothing on the next line reports it",
-      "8:12 tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token",
+      `8:12 tokens/spacing: 13px is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 
@@ -797,7 +814,7 @@ describe("checkCss: file-wide disable comments", () => {
   it("reports a rule that nothing in the file reports", () => {
     expect(check(`${disable} tokens/color -- legacy */\n.a { padding: 13px; }`)).toEqual([
       "invalid-disable: tokens/color is disabled, but nothing reports it for this file",
-      "tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: 13px is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 

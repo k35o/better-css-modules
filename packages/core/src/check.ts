@@ -288,11 +288,22 @@ function contextOf(
       category,
       keywords: new Set(definition.keywords),
       percentages: definition.percentages ?? false,
-      hint: `use a --${category}-* token`,
+      hint: hintFor(category, globalCss.tokens),
     });
   }
   const breakpoints = breakpointsOf(globalCss.tokens);
   return { file, tokens: globalCss.tokens, restrictions, breakpoints, global, layer };
+}
+
+/** What to write instead of a raw value: the kinds of token the global CSS declares for the category. */
+function hintFor(category: TokenCategory, tokens: Map<string, Token>): string {
+  const names = [...tokens.values()].filter((token) => token.category === category);
+  const hints = [];
+  if (names.some(({ name }) => name !== `--${category}`)) hints.push(`a --${category}-* token`);
+  if (names.some(({ name }) => name === `--${category}`)) {
+    hints.push(`var(--${category}), alone or multiplied in calc()`);
+  }
+  return `use ${hints.join(", or ")}`;
 }
 
 function checkRoot(root: Root, context: Context, disabled: Keep): Diagnostic[] {
