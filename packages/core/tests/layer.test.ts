@@ -7,7 +7,7 @@ import postcss, { CssSyntaxError } from "postcss";
 import postcssModules from "postcss-modules";
 import { ConfigError, resolveConfig } from "../src/config.js";
 import { type GlobalCss, loadGlobalCss } from "../src/global.js";
-import { declaredLayers, resolveLayer, wrapInLayer } from "../src/layer.js";
+import { resolveLayer, wrapInLayer } from "../src/layer.js";
 import { cssCases } from "./fixtures/css-cases.js";
 
 const FILE = "/project/src/a.module.css";
@@ -74,6 +74,14 @@ describe("wrapInLayer", () => {
       '@import url("./print.css") layer(components) supports(display: grid) print',
       '@import url("./a(1).css") layer(components)',
       "@layer components { .a }",
+    ]);
+  });
+
+  it("inserts the layer after a URL with an escaped parenthesis", () => {
+    expect(wrap("@import url(a\\).css);")).toEqual([
+      "@layer base, components, utilities",
+      "@import url(a\\).css) layer(components)",
+      "@layer components {  }",
     ]);
   });
 
@@ -177,7 +185,7 @@ afterAll(async () => {
   await Promise.all(projects.map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("declaredLayers", () => {
+describe("loadGlobalCss: layers", () => {
   it("lists the layers of @layer statements and blocks by first mention", async () => {
     const globalCss = await globalCssOf(
       {
@@ -186,33 +194,23 @@ describe("declaredLayers", () => {
       },
       ["global.css", "app.css"],
     );
-    expect(declaredLayers(globalCss)).toEqual([
-      "reset",
-      "base",
-      "theme",
-      "components",
-      "utilities",
-    ]);
+    expect(globalCss.layers).toEqual(["reset", "base", "theme", "components", "utilities"]);
   });
 
   it("reads an import where it stands, and a layer() import as the layer it names", async () => {
     const globalCss = await globalCssOf(
       {
         "global.css":
-          '@layer reset;\n@import "./theme.css";\n@import "./base.css" layer(base);\n@layer components { }',
+          '@layer reset;\n@import "./theme.css";\n@import "./base.css" layer(base);\n@import "./anonymous.css" layer;\n@layer components { }',
         "theme.css": "@layer theme, utilities;",
         // Inside base, so base.inner.
         "base.css": "@layer inner;",
+        // Inside an anonymous layer, which nothing can name.
+        "anonymous.css": "@layer hidden;",
       },
       ["global.css"],
     );
-    expect(declaredLayers(globalCss)).toEqual([
-      "reset",
-      "theme",
-      "utilities",
-      "base",
-      "components",
-    ]);
+    expect(globalCss.layers).toEqual(["reset", "theme", "utilities", "base", "components"]);
   });
 
   it("takes nothing from a conditional import or from below the top level", async () => {
@@ -224,7 +222,7 @@ describe("declaredLayers", () => {
       },
       ["global.css"],
     );
-    expect(declaredLayers(globalCss)).toEqual(["base"]);
+    expect(globalCss.layers).toEqual(["base"]);
   });
 });
 
@@ -250,7 +248,7 @@ describe("resolveLayer", () => {
   });
 
   it("asks for global CSS when there is none", async () => {
-    expect(() => resolveLayer("ui", { files: [], tokens: new Map() })).toThrow(
+    expect(() => resolveLayer("ui", { files: [], tokens: new Map(), layers: [] })).toThrow(
       'layer "ui" needs global CSS that declares it; list one in globalCss with @layer ui;',
     );
   });

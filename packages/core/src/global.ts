@@ -35,6 +35,8 @@ export interface GlobalCssImport {
   file: string;
   /** Whether a media or supports condition guards the import. */
   conditional: boolean;
+  /** The layer it imports into: its name, "" for an anonymous one, or null for none. */
+  layer: string | null;
 }
 
 /** A custom property the global CSS declares at `:root` or with `@property`. */
@@ -60,6 +62,8 @@ export interface GlobalCss {
   /** The stylesheets with their imports followed, in cascade order. */
   files: GlobalCssFile[];
   tokens: Map<string, Token>;
+  /** The layers declared at the top level of the cascade, in order. */
+  layers: string[];
 }
 
 /**
@@ -117,7 +121,43 @@ export function globalCssFrom(files: GlobalCssFile[]): GlobalCss {
       node,
     });
   }
-  return { files, tokens };
+  return { files, tokens, layers: layersOf(files) };
+}
+
+/**
+ * The layers the global CSS declares at the top level of the cascade, in the
+ * order it takes them: by first mention, reading the listed stylesheets in
+ * turn and each import where it stands. `@layer` statements and blocks
+ * declare them, and so does `@import ... layer(name)`; the layers inside a
+ * stylesheet imported into a layer nest in it. A conditional import may not
+ * apply, so it declares nothing.
+ */
+function layersOf(files: GlobalCssFile[]): string[] {
+  const byFile = new Map(files.map((sheet) => [sheet.file, sheet]));
+  const names = new Set<string>();
+  const read = new Set<string>();
+  const visit = (sheet: GlobalCssFile) => {
+    if (read.has(sheet.file)) return;
+    read.add(sheet.file);
+    const imports = new Map(sheet.imports.map((imported) => [imported.rule, imported]));
+    sheet.root.each((node) => {
+      if (node.type !== "atrule") return;
+      if (node.name.toLowerCase() === "layer") {
+        for (const name of node.params.split(",")) {
+          // A block without a name is an anonymous layer, which nothing can name.
+          if (name.trim() !== "") names.add(name.trim());
+        }
+        return;
+      }
+      const imported = imports.get(node);
+      if (!imported || imported.conditional) return;
+      const target = byFile.get(imported.file);
+      if (imported.layer === null && target) visit(target);
+      else if (imported.layer) names.add(imported.layer);
+    });
+  };
+  for (const sheet of files) if (sheet.listed) visit(sheet);
+  return [...names];
 }
 
 function initialValueOf(atRule: AtRule): string {
@@ -300,13 +340,15 @@ class Loader {
     this.read.set(file, { entry, imports });
     for (const node of root.nodes) {
       if (node.type !== "atrule" || node.name.toLowerCase() !== "import") continue;
-      const { url, condition } = importOf(node, () => this.at(file, node));
+      const prelude = readImport(node.params);
+      if (!prelude) fail(`${this.at(file, node)}: cannot read @import ${node.params}`);
+      const { url, layer, conditional: condition } = prelude;
       if (/^([a-z][a-z\d+.-]*:|\/\/)/i.test(url)) {
         fail(`${this.at(file, node)}: global CSS cannot import ${url}`);
       }
       const imported = this.imports.sync(path.dirname(file), url).path;
       if (!imported) fail(`${this.at(file, node)}: cannot resolve "${url}"`);
-      entry.imports.push({ rule: node, file: imported, conditional: condition });
+      entry.imports.push({ rule: node, file: imported, conditional: condition, layer });
       if (!condition) imports.push(imported);
       await this.load(imported, conditional || condition, [...importers, file]);
     }
@@ -342,24 +384,43 @@ class Loader {
   }
 }
 
-/** The URL of an `@import` and whether a media or supports condition guards it. */
-function importOf(atRule: AtRule, where: () => string): { url: string; condition: boolean } {
+/** What the prelude of an `@import` says. */
+export interface ImportPrelude {
+  url: string;
+  /** The offset in the prelude just after the URL. */
+  urlEnd: number;
+  /** The layer it imports into: its name, "" for an anonymous one, or null for none. */
+  layer: string | null;
+  /** Whether a media or supports condition guards it. */
+  conditional: boolean;
+}
+
+/** Read the prelude of an `@import`, or null when it is not one css-tree can read. */
+export function readImport(params: string): ImportPrelude | null {
   let prelude: CssTree.CssNode;
   try {
-    prelude = parse(atRule.params, { context: "atrulePrelude", atrule: "import" });
+    prelude = parse(params, { context: "atrulePrelude", atrule: "import", positions: true });
   } catch {
-    fail(`${where()}: cannot read @import ${atRule.params}`);
+    return null;
   }
   const [target, ...rest] = prelude.type === "AtrulePrelude" ? prelude.children.toArray() : [];
-  if (target?.type !== "String" && target?.type !== "Url") {
-    fail(`${where()}: cannot read @import ${atRule.params}`);
-  }
-  const condition = rest.some(
-    (node) =>
+  if ((target?.type !== "String" && target?.type !== "Url") || !target.loc) return null;
+  let layer: string | null = null;
+  let conditional = false;
+  for (const node of rest) {
+    const name =
+      node.type === "Function" || node.type === "Identifier" ? node.name.toLowerCase() : "";
+    if (name === "layer") {
+      const [named] = node.type === "Function" ? node.children.toArray() : [];
+      layer = named?.type === "Layer" ? named.name : "";
+    } else if (
       node.type === "MediaQueryList" ||
-      (node.type === "Function" && node.name.toLowerCase() === "supports"),
-  );
-  return { url: target.value, condition };
+      (node.type === "Function" && name === "supports")
+    ) {
+      conditional = true;
+    }
+  }
+  return { url: target.value, urlEnd: target.loc.end.offset, layer, conditional };
 }
 
 function fail(message: string): never {

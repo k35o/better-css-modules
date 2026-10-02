@@ -1,7 +1,7 @@
 import postcss, { type AtRule, type ChildNode, type Node, type Root } from "postcss";
 import { ConfigError } from "./config.js";
 import type { Diagnostic } from "./diagnostic.js";
-import type { GlobalCss, GlobalCssFile } from "./global.js";
+import { type GlobalCss, readImport } from "./global.js";
 import type { RuleId } from "./rules.js";
 
 /** The cascade layer the bundler plugins put every CSS Modules file in. */
@@ -20,45 +20,9 @@ export interface WrapResult {
 const COMPOSES_MESSAGE =
   "composes does not work inside a cascade layer: lightningcss rejects it, and postcss-modules leaves the rules composed from another file outside the layer; join the class names in JavaScript";
 
-/**
- * The layers the global CSS declares at the top level of the cascade, in the
- * order it takes them: by first mention, reading the listed stylesheets in
- * turn and each import where it stands. `@layer` statements and blocks
- * declare them, and so does `@import ... layer(name)`; the layers inside a
- * stylesheet imported into a layer nest in it. A conditional import may not
- * apply, so it declares nothing.
- */
-export function declaredLayers({ files }: GlobalCss): string[] {
-  const byFile = new Map(files.map((sheet) => [sheet.file, sheet]));
-  const names = new Set<string>();
-  const read = new Set<string>();
-  const visit = (sheet: GlobalCssFile) => {
-    if (read.has(sheet.file)) return;
-    read.add(sheet.file);
-    const imports = new Map(sheet.imports.map((imported) => [imported.rule, imported]));
-    sheet.root.each((node) => {
-      if (isAtRule(node, "layer")) {
-        for (const name of node.params.split(",")) {
-          // A block without a name is an anonymous layer, which nothing can name.
-          if (name.trim() !== "") names.add(name.trim());
-        }
-        return;
-      }
-      const imported = isAtRule(node, "import") ? imports.get(node) : undefined;
-      if (!imported || imported.conditional) return;
-      const into = layerOfImport(imported.rule);
-      const target = byFile.get(imported.file);
-      if (into === null && target) visit(target);
-      else if (into) names.add(into);
-    });
-  };
-  for (const sheet of files) if (sheet.listed) visit(sheet);
-  return [...names];
-}
-
 /** The layer named `name`, which the global CSS must declare. */
 export function resolveLayer(name: string, globalCss: GlobalCss): Layer {
-  const order = declaredLayers(globalCss);
+  const order = globalCss.layers;
   if (!order.includes(name)) {
     const statement = `@layer ${[...order, name].join(", ")};`;
     throw new ConfigError(
@@ -113,25 +77,10 @@ export function wrapInLayer(source: string, file: string, layer: Layer): WrapRes
 
 /** `@import url` becomes `@import url layer(name)`, unless it names a layer of its own. */
 function importIntoLayer(rule: AtRule, name: string): void {
-  const parts = splitImport(rule);
-  if (parts && layerOfImport(rule) === null)
-    rule.params = `${parts.url} layer(${name})${parts.rest}`;
-}
-
-/** The layer an `@import` imports into: its name, "" for an anonymous one, or null for none. */
-function layerOfImport(rule: AtRule): string | null {
-  const rest = splitImport(rule)?.rest ?? "";
-  const layer = /^\s*layer(?:\(\s*([^)]*?)\s*\)|\b)/i.exec(rest);
-  return layer ? (layer[1] ?? "") : null;
-}
-
-const STRING = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`;
-const IMPORT_URL = new RegExp(String.raw`^\s*(?:url\(\s*(?:${STRING}|[^)]*)\s*\)|${STRING})`, "i");
-
-/** The URL an `@import` starts with, and what follows it. */
-function splitImport(rule: AtRule): { url: string; rest: string } | null {
-  const url = IMPORT_URL.exec(rule.params);
-  return url ? { url: url[0], rest: rule.params.slice(url[0].length) } : null;
+  const prelude = readImport(rule.params);
+  if (prelude?.layer !== null) return;
+  const { params } = rule;
+  rule.params = `${params.slice(0, prelude.urlEnd)} layer(${name})${params.slice(prelude.urlEnd)}`;
 }
 
 /**
