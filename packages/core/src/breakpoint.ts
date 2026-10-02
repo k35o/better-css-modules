@@ -5,8 +5,6 @@ import { generate, lexer, parse, walk } from "./csstree.js";
 import type { Diagnostic } from "./diagnostic.js";
 import type { Token } from "./global.js";
 
-const RULE = "tokens/breakpoint";
-
 /** Media features that compare the width of the viewport. */
 const WIDTH_FEATURES = new Set(["width", "min-width", "max-width"]);
 
@@ -71,7 +69,7 @@ export function checkMediaQuery(
           column: start.column,
           endLine: end.line,
           endColumn: end.column,
-          rule: RULE,
+          rule: "tokens/breakpoint",
           message,
         });
       }
@@ -96,7 +94,7 @@ export function checkBreakpointToken(token: Token): Diagnostic[] {
       column: range.start.column,
       endLine: range.end.line,
       endColumn: range.end.column,
-      rule: RULE,
+      rule: "tokens/breakpoint",
       message: `${token.name} must be one length such as 48rem; media queries compare widths with its value`,
     },
   ];

@@ -17,6 +17,7 @@ export { loadGlobalCss } from "./global.js";
 export type { GlobalCss, GlobalCssFile, GlobalCssImport, Token } from "./global.js";
 export { formatDiagnostic, formatGitHubAnnotation } from "./diagnostic.js";
 export type { Diagnostic } from "./diagnostic.js";
+export type { RuleId } from "./rules.js";
 export { dtsPathFor, generate, generateDts, regenerateDts, writeDts } from "./dts.js";
 export type {
   DtsOptions,

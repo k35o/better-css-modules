@@ -328,16 +328,15 @@ describe("checkCss: disable comments for pure rules", () => {
     expect(rules(css)).toEqual(["pure/important"]);
   });
 
-  it("refuses to silence pure/selector", () => {
-    expect(check(`${disable} pure/selector -- reset */\nbody {}`)).toEqual([
-      "invalid-disable: pure/selector cannot be disabled: a selector without a local class styles the page, which is the global CSS's job",
-      `pure/selector: body has no local class; ${SELECTOR_HINT}`,
-    ]);
+  it("silences pure/selector", () => {
+    expect(
+      check(`${disable} pure/selector -- the print layout hides the page chrome */\nbody {}`),
+    ).toEqual([]);
   });
 
   it("reports an unknown pure rule", () => {
     expect(check(`${disable} pure/ids -- legacy */\n#a {}`)).toEqual([
-      'invalid-disable: unknown rule "pure/ids" in a disable comment',
+      'invalid-disable: unknown rule "pure/ids"',
       "pure/id: #a is an id; its specificity defeats overrides from outside the component, so use a class",
     ]);
   });

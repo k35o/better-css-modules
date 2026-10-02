@@ -11,6 +11,7 @@ import { ConfigError, type ResolvedConfig } from "./config.js";
 import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
+import { readDisableComments } from "./disable.js";
 import {
   declaresToken,
   type GlobalCss,
@@ -20,7 +21,8 @@ import {
 } from "./global.js";
 import { checkLayer, type Layer, resolveLayer } from "./layer.js";
 import { findCssModules, loadCssModules } from "./project.js";
-import { checkPure, GLOBAL_AT_RULES, PURE_RULES } from "./pure.js";
+import { checkPure, GLOBAL_AT_RULES } from "./pure.js";
+import type { RuleId } from "./rules.js";
 import {
   categoryOf,
   tokenCategories,
@@ -29,13 +31,6 @@ import {
   type ValuePart,
 } from "./tokens.js";
 import { analyzeUsage } from "./usage.js";
-
-const DISABLE_NEXT_LINE = "better-css-modules-disable-next-line";
-
-const RULE_PREFIX = "tokens/";
-const UNKNOWN = "tokens/unknown";
-const INTERNAL = "tokens/internal";
-const DECLARATION = "tokens/declaration";
 
 const CSS_WIDE_KEYWORDS = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
 
@@ -232,7 +227,7 @@ export function checkCss(
   const invalid = analysis.composes.filter(({ className }) => className === null);
   return sortDiagnostics([
     ...diagnostics,
-    ...invalid.map(({ range }) => ({
+    ...invalid.map(({ range }): Diagnostic => ({
       file: analysis.file,
       line: range.start.line,
       column: range.start.column,
@@ -279,11 +274,10 @@ function contextOf(
 }
 
 function checkRoot(root: Root, context: Context): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-  const disabled = collectDisabled(root, context.file, diagnostics);
+  const disabled = readDisableComments(root, context.file);
+  const diagnostics: Diagnostic[] = [...disabled.problems];
   const keep = (node: Node, found: Diagnostic[]) => {
-    const rules = disabled.get(node.source?.start?.line ?? 0);
-    diagnostics.push(...found.filter((diagnostic) => !rules?.has(diagnostic.rule)));
+    diagnostics.push(...disabled.keep(node, found));
   };
   // The global CSS styles the page; only a module is held to the pure rules.
   if (!context.global) checkPure(root, context.file, keep);
@@ -308,69 +302,6 @@ function checkRoot(root: Root, context: Context): Diagnostic[] {
     }
   }
   return sortDiagnostics(diagnostics);
-}
-
-/**
- * Read the disable comments of the file: the line each one silences and the
- * rules it silences there. A malformed comment silences nothing and is reported.
- */
-function collectDisabled(
-  root: Root,
-  file: string,
-  diagnostics: Diagnostic[],
-): Map<number, Set<string>> {
-  const disabled = new Map<number, Set<string>>();
-  root.walkComments((comment) => {
-    const start = comment.source?.start;
-    const end = comment.source?.end;
-    if (!start || !end || !comment.text.startsWith(DISABLE_NEXT_LINE)) return;
-    const body = comment.text.slice(DISABLE_NEXT_LINE.length);
-    const separator = /(?:^|\s)--(?:\s|$)/.exec(body);
-    const reason = separator ? body.slice(separator.index + separator[0].length).trim() : "";
-    const rules = (separator ? body.slice(0, separator.index) : body)
-      .split(/[\s,]+/)
-      .filter(Boolean);
-    const problems =
-      reason === ""
-        ? ['a disable comment needs a reason: add " -- <why>" after the rule names']
-        : rules.length === 0
-          ? ["a disable comment must name the rules it disables, such as tokens/color"]
-          : rules.flatMap(problemsSilencing);
-    for (const message of problems) {
-      diagnostics.push({
-        file,
-        line: start.line,
-        column: start.column,
-        endLine: end.line,
-        // postcss ends a node on its last character; diagnostics end after it.
-        endColumn: end.column + 1,
-        rule: "invalid-disable",
-        message,
-      });
-    }
-    if (problems.length > 0) return;
-    const line = end.line + 1;
-    disabled.set(line, new Set([...(disabled.get(line) ?? []), ...rules]));
-  });
-  return disabled;
-}
-
-/** What is wrong with naming a rule in a disable comment, if anything. */
-function problemsSilencing(rule: string): string[] {
-  // Turbopack builds some of these selectors (`:root`, `html`), so the build
-  // does not stop them; this rule is the one place that does.
-  if (rule === "pure/selector") {
-    return [
-      "pure/selector cannot be disabled: a selector without a local class styles the page, which is the global CSS's job",
-    ];
-  }
-  const isToken =
-    rule === UNKNOWN ||
-    rule === INTERNAL ||
-    rule === DECLARATION ||
-    (rule.startsWith(RULE_PREFIX) &&
-      Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length)));
-  return isToken || PURE_RULES.has(rule) ? [] : [`unknown rule "${rule}" in a disable comment`];
 }
 
 function checkDeclaration(declaration: Declaration, context: Context): Diagnostic[] {
@@ -425,34 +356,29 @@ function checkDeclaredName(
   node: Declaration | AtRule,
   context: Context,
 ): Diagnostic[] {
-  const report = (rule: string, message: string): Diagnostic[] => [
+  const report = (message: string): Diagnostic[] => [
     {
       file: context.file,
       line: start.line,
       column: start.column,
       endLine: start.line,
       endColumn: start.column + name.length,
-      rule,
+      rule: "tokens/declaration",
       message,
     },
   ];
   if (context.global) {
     if (context.tokens.has(name) || declaresToken(node, context.global.conditional)) return [];
-    return report(
-      DECLARATION,
-      `${name} is not declared at :root; a mode can only override a token`,
-    );
+    return report(`${name} is not declared at :root; a mode can only override a token`);
   }
   const category = categoryOf(name);
   if (category && context.restrictions.has(category)) {
     return report(
-      DECLARATION,
       `${name} is a ${category} token name and cannot be declared here; rename the custom property`,
     );
   }
   if (!category && context.tokens.has(name)) {
     return report(
-      DECLARATION,
       `${name} is internal to the global CSS and cannot be declared here; rename the custom property`,
     );
   }
@@ -478,10 +404,10 @@ function checkReferences(
         if (category && context.restrictions.has(category) && !context.tokens.has(name)) {
           const suggestion = closestToken(name, category, context.tokens);
           const message = `${name} is not defined in the global CSS${suggestion ? `; did you mean ${suggestion}?` : ""}`;
-          diagnostics.push(...diagnosticAt(context.file, child, child, UNKNOWN, message));
+          diagnostics.push(...diagnosticAt(context.file, child, child, "tokens/unknown", message));
         } else if (!category && !context.global && context.tokens.has(name)) {
           const message = `${name} is internal to the global CSS; use a token with a category prefix`;
-          diagnostics.push(...diagnosticAt(context.file, child, child, INTERNAL, message));
+          diagnostics.push(...diagnosticAt(context.file, child, child, "tokens/internal", message));
         }
       }
       checkReferences(fallbackOf(child), context, diagnostics);
@@ -762,7 +688,7 @@ function report(
   last: CssTree.CssNode,
   message: string,
 ): void {
-  const rule = `${RULE_PREFIX}${scope.restriction.category}`;
+  const rule = `tokens/${scope.restriction.category}` as const;
   scope.diagnostics.push(...diagnosticAt(scope.context.file, first, last, rule, message));
 }
 
@@ -770,7 +696,7 @@ function diagnosticAt(
   file: string,
   first: CssTree.CssNode,
   last: CssTree.CssNode,
-  rule: string,
+  rule: RuleId,
   message: string,
 ): Diagnostic[] {
   if (!first.loc || !last.loc) return [];

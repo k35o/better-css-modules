@@ -2,6 +2,7 @@ import postcss, { type AtRule, type ChildNode, type Node, type Root } from "post
 import { ConfigError } from "./config.js";
 import type { Diagnostic } from "./diagnostic.js";
 import type { GlobalCss, GlobalCssFile } from "./global.js";
+import type { RuleId } from "./rules.js";
 
 /** The cascade layer the bundler plugins put every CSS Modules file in. */
 export interface Layer {
@@ -143,7 +144,7 @@ export function checkLayer(
   layer: Layer,
   report: (node: Node, found: Diagnostic[]) => void,
 ): void {
-  const at = (node: ChildNode, keyword: string, rule: string, message: string) => {
+  const at = (node: ChildNode, keyword: string, rule: RuleId, message: string) => {
     const start = node.source?.start ?? { line: 1, column: 1 };
     const diagnostic: Diagnostic = {
       file,

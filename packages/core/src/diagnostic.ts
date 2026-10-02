@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { RuleId } from "./rules.js";
 
 export interface Diagnostic {
   /** Absolute path of the file the diagnostic points at. */
@@ -9,8 +10,7 @@ export interface Diagnostic {
   column: number;
   endLine?: number;
   endColumn?: number;
-  /** Rule identifier such as `unused-class`. */
-  rule: string;
+  rule: RuleId;
   message: string;
 }
 

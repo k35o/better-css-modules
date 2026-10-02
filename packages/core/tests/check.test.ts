@@ -669,8 +669,19 @@ describe("checkCss: disable comments", () => {
       `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
     ]);
     expect(check(`.a {\n  ${disable} tokens/colour -- because */\n  color: #fff;\n}`)).toEqual([
-      'invalid-disable: unknown rule "tokens/colour" in a disable comment',
+      'invalid-disable: unknown rule "tokens/colour"',
       `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+    ]);
+  });
+
+  it.each([
+    ["syntax", "the bundlers cannot read the stylesheet either"],
+    ["invalid-composes", "the bundlers reject composes there"],
+    ["layer/composes", "the plugins stop the build at composes in a layer"],
+    ["invalid-disable", "fix or remove the disable comment instead"],
+  ])("refuses to disable %s and says why", (rule, reason) => {
+    expect(check(`${disable} ${rule} -- legacy */\n.a {}`)).toEqual([
+      `invalid-disable: ${rule} cannot be disabled: ${reason}`,
     ]);
   });
 
@@ -702,6 +713,18 @@ describe("checkCss: the layer the plugins put the module in", () => {
 
   it("reports composes", () => {
     expect(check(".a { color: red; }\n.b { composes: a; }")).toEqual(["2:6 layer/composes"]);
+  });
+
+  it("silences layer/nested but not layer/composes", () => {
+    const css = [
+      "/* better-css-modules-disable-next-line layer/nested -- a sublayer of components */",
+      "@layer x { .a { color: red; } }",
+      ".b {",
+      "  /* better-css-modules-disable-next-line layer/composes -- legacy */",
+      "  composes: a;",
+      "}",
+    ].join("\n");
+    expect(check(css)).toEqual(["4:3 invalid-disable", "5:3 layer/composes"]);
   });
 
   it("reports nothing about layers without one", () => {

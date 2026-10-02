@@ -3,16 +3,7 @@ import type * as CssTree from "css-tree";
 import { paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, parse } from "./csstree.js";
 import type { Diagnostic } from "./diagnostic.js";
-
-/** The rules that keep a CSS Module pure: scoped to its own classes and overridable from outside. */
-export const PURE_RULES = new Set([
-  "pure/selector",
-  "pure/subject",
-  "pure/global",
-  "pure/id",
-  "pure/important",
-  "pure/at-rule",
-]);
+import type { RuleId } from "./rules.js";
 
 /**
  * At-rules that define something for the whole document, which takes effect
@@ -381,7 +372,7 @@ function idDiagnostic(found: Located, file: string): Diagnostic {
 function diagnosticAt(
   { node, text }: Located,
   file: string,
-  rule: string,
+  rule: RuleId,
   message: (written: string) => string,
 ): Diagnostic {
   const loc = node.loc;
