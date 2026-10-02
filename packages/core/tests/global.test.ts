@@ -204,6 +204,19 @@ describe("checkGlobalCss", () => {
     expect(checkGlobalCss(globalCss)).toEqual([]);
   });
 
+  it("reports a disable comment that silences nothing", () => {
+    const globalCss = read(
+      `${tokens}\n.dark {\n  /* better-css-modules-disable-next-line tokens/declaration -- set by the theme script */\n  --color-fg-base: #fff;\n}`,
+    );
+    expect(checkGlobalCss(globalCss)).toMatchObject([
+      {
+        line: 3,
+        rule: "invalid-disable",
+        message: "tokens/declaration is disabled, but nothing on the next line reports it",
+      },
+    ]);
+  });
+
   it("leaves a package's stylesheets alone", () => {
     const globalCss = read(`${tokens}\n.dark { --color-new: red; }\nbody { color: #000; }`, {
       checked: false,

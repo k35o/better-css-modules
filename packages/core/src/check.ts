@@ -234,9 +234,10 @@ export function checkCss(
   const disabled = readDisableComments(analysis.root, analysis.file);
   const context = contextOf(analysis.file, globalCss, null, layer);
   const diagnostics = sortDiagnostics([
-    ...disabled.problems,
     ...checkRoot(analysis.root, context, disabled.keep),
     ...usage.flatMap(({ node, diagnostic }) => disabled.keep(node, [diagnostic])),
+    // Only now can a comment be told to silence nothing.
+    ...disabled.problems(),
   ]);
   // In a layer, layer/composes already reports every composes.
   if (layer) return diagnostics;
@@ -267,7 +268,7 @@ export function checkGlobalCss(globalCss: GlobalCss): Diagnostic[] {
       .flatMap((file) => {
         const disabled = readDisableComments(file.root, file.file);
         const context = contextOf(file.file, globalCss, file);
-        return [...disabled.problems, ...checkRoot(file.root, context, disabled.keep)];
+        return [...checkRoot(file.root, context, disabled.keep), ...disabled.problems()];
       }),
   );
 }

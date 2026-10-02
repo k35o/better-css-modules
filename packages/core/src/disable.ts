@@ -1,7 +1,8 @@
-import type { Node, Root } from "postcss";
+import type { Comment, Node, Root } from "postcss";
 import type { Diagnostic } from "./diagnostic.js";
 import { problemDisabling } from "./rules.js";
 
+const PREFIX = "better-css-modules-";
 const DISABLE_NEXT_LINE = "better-css-modules-disable-next-line";
 const DISABLE = "better-css-modules-disable";
 
@@ -14,8 +15,20 @@ export type Keep = (node: Node | null, found: Diagnostic[]) => Diagnostic[];
 /** The disable comments of one stylesheet. */
 export interface Disabled {
   keep: Keep;
-  /** The problems of the comments themselves. */
-  problems: Diagnostic[];
+  /**
+   * The problems of the comments themselves, including each rule a comment
+   * names but silences nothing of. Ask once every diagnostic has been kept.
+   */
+  problems: () => Diagnostic[];
+}
+
+/** A well-formed disable comment and the rules it has silenced something of. */
+interface Directive {
+  comment: Comment;
+  rules: string[];
+  /** The line it silences, or null for the whole file. */
+  line: number | null;
+  silenced: Set<string>;
 }
 
 /**
@@ -25,15 +38,22 @@ export interface Disabled {
  * the whole file. A malformed comment silences nothing and is reported.
  */
 export function readDisableComments(root: Root, file: string): Disabled {
-  const byLine = new Map<number, Set<string>>();
-  const fileWide = new Set<string>();
-  const problems: Diagnostic[] = [];
+  const directives: Directive[] = [];
+  const malformed: Diagnostic[] = [];
   const first = root.nodes.find((node) => node.type !== "comment");
   root.walkComments((comment) => {
-    const start = comment.source?.start;
-    const end = comment.source?.end;
     const [directive] = comment.text.split(/\s/, 1);
-    if (!start || !end || (directive !== DISABLE_NEXT_LINE && directive !== DISABLE)) return;
+    if (!directive.startsWith(PREFIX)) return;
+    if (directive !== DISABLE_NEXT_LINE && directive !== DISABLE) {
+      malformed.push(
+        invalid(
+          file,
+          comment,
+          `unknown directive "${directive}"; write ${DISABLE_NEXT_LINE} or ${DISABLE}`,
+        ),
+      );
+      return;
+    }
     const body = comment.text.slice(directive.length);
     const separator = /(?:^|\s)--(?:\s|$)/.exec(body);
     const reason = separator ? body.slice(separator.index + separator[0].length).trim() : "";
@@ -53,29 +73,58 @@ export function readDisableComments(root: Root, file: string): Disabled {
           ? ["a disable comment must name the rules it disables, such as tokens/color"]
           : rules.map(problemDisabling).filter((message) => message !== null)),
     ];
-    for (const message of messages) {
-      problems.push({
-        file,
-        line: start.line,
-        column: start.column,
-        endLine: end.line,
-        // postcss ends a node on its last character; diagnostics end after it.
-        endColumn: end.column + 1,
-        rule: "invalid-disable",
-        message,
-      });
-    }
+    malformed.push(...messages.map((message) => invalid(file, comment, message)));
     if (messages.length > 0) return;
-    if (directive === DISABLE) {
-      for (const rule of rules) fileWide.add(rule);
-      return;
-    }
-    const line = end.line + 1;
-    byLine.set(line, new Set([...(byLine.get(line) ?? []), ...rules]));
+    const end = comment.source?.end?.line ?? 0;
+    directives.push({
+      comment,
+      rules,
+      line: directive === DISABLE ? null : end + 1,
+      silenced: new Set(),
+    });
   });
+
   const keep: Keep = (node, found) => {
-    const rules = byLine.get(node?.source?.start?.line ?? 0);
-    return found.filter(({ rule }) => !fileWide.has(rule) && !rules?.has(rule));
+    const line = node?.source?.start?.line;
+    const applying = directives.filter(
+      (directive) => directive.line === null || directive.line === line,
+    );
+    return found.filter(({ rule }) => {
+      const silencing = applying.filter(({ rules }) => rules.includes(rule));
+      for (const directive of silencing) directive.silenced.add(rule);
+      return silencing.length === 0;
+    });
   };
+  const problems = () => [
+    ...malformed,
+    ...directives.flatMap(({ comment, rules, line, silenced }) =>
+      rules
+        .filter((rule) => !silenced.has(rule))
+        .map((rule) =>
+          invalid(
+            file,
+            comment,
+            line === null
+              ? `${rule} is disabled, but nothing reports it for this file`
+              : `${rule} is disabled, but nothing on the next line reports it`,
+          ),
+        ),
+    ),
+  ];
   return { keep, problems };
+}
+
+function invalid(file: string, comment: Comment, message: string): Diagnostic {
+  const start = comment.source?.start ?? { line: 1, column: 1 };
+  const end = comment.source?.end ?? start;
+  return {
+    file,
+    line: start.line,
+    column: start.column,
+    endLine: end.line,
+    // postcss ends a node on its last character; diagnostics end after it.
+    endColumn: end.column + 1,
+    rule: "invalid-disable",
+    message,
+  };
 }

@@ -690,6 +690,58 @@ describe("checkCss: disable comments", () => {
       check(`.a {\n  ${disable} tokens/color */\n  color: #fff;\n}`, globalCssFrom([])),
     ).toHaveLength(1);
   });
+
+  it("reports a comment that silences nothing: stale, apart from its line or naming another rule", () => {
+    const css = [
+      ".a {",
+      `  ${disable} tokens/color -- the old brand color */`,
+      "  color: var(--color-fg-base);",
+      `  ${disable} tokens/color -- the logo color */`,
+      "",
+      "  background-color: #fff;",
+      `  ${disable} tokens/radius -- the optical inset */`,
+      "  padding: 13px;",
+      "}",
+    ].join("\n");
+    const nothing = "tokens/color is disabled, but nothing on the next line reports it";
+    expect(diagnose(css).map((d) => `${d.line}:${d.column} ${d.rule}: ${d.message}`)).toEqual([
+      `2:3 invalid-disable: ${nothing}`,
+      `4:3 invalid-disable: ${nothing}`,
+      `6:21 tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+      "7:3 invalid-disable: tokens/radius is disabled, but nothing on the next line reports it",
+      "8:12 tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token",
+    ]);
+  });
+
+  it("reports each named rule that silences nothing", () => {
+    const globalCss = declaring("--font-size-md", "--color-fg-base");
+    const css = `.a {\n  ${disable} tokens/font-size, tokens/color -- optical alignment */\n  font: 700 17px serif;\n}`;
+    expect(check(css, globalCss)).toEqual([
+      "invalid-disable: tokens/color is disabled, but nothing on the next line reports it",
+    ]);
+  });
+
+  it("reports a comment for a category the global CSS no longer restricts", () => {
+    expect(
+      check(`.a {\n  ${disable} tokens/color -- legacy */\n  color: #fff;\n}`, globalCssFrom([])),
+    ).toEqual([
+      "invalid-disable: tokens/color is disabled, but nothing on the next line reports it",
+    ]);
+  });
+
+  it("reports a comment that looks like a directive but is neither form", () => {
+    const css = [
+      "/* better-css-modules-disable-line tokens/color -- legacy */",
+      ".a { color: #fff; }",
+      "/* better-css-modules-enable */",
+      "/* the better-css-modules-disable comments are listed in the README */",
+    ].join("\n");
+    expect(check(css)).toEqual([
+      'invalid-disable: unknown directive "better-css-modules-disable-line"; write better-css-modules-disable-next-line or better-css-modules-disable',
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+      'invalid-disable: unknown directive "better-css-modules-enable"; write better-css-modules-disable-next-line or better-css-modules-disable',
+    ]);
+  });
 });
 
 describe("checkCss: file-wide disable comments", () => {
@@ -719,6 +771,13 @@ describe("checkCss: file-wide disable comments", () => {
     expect(check(inside)).toEqual([
       message,
       `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+    ]);
+  });
+
+  it("reports a rule that nothing in the file reports", () => {
+    expect(check(`${disable} tokens/color -- legacy */\n.a { padding: 13px; }`)).toEqual([
+      "invalid-disable: tokens/color is disabled, but nothing reports it for this file",
+      "tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token",
     ]);
   });
 
@@ -855,7 +914,10 @@ describe("check", () => {
           ".ghost {}",
         ].join("\n"),
       });
-      expect(await run(dir)).toEqual(["src/card.module.css:5:7 usage/unused-class"]);
+      expect(await run(dir)).toEqual([
+        "src/card.module.css:5:7 usage/unused-class",
+        "src/card.module.css:6:1 invalid-disable",
+      ]);
     });
 
     it("silences usage/unused-class and usage/unused-module file-wide", async () => {
@@ -873,7 +935,10 @@ describe("check", () => {
         "src/card.module.css": ".used {}\n",
         "src/print.module.css": `${next} usage/unused-module -- loaded by the print preview */\n.page {}\n`,
       });
-      expect(await run(dir)).toEqual(["src/print.module.css:1:1 usage/unused-module"]);
+      expect(await run(dir)).toEqual([
+        "src/print.module.css:1:1 usage/unused-module",
+        "src/print.module.css:1:1 invalid-disable",
+      ]);
     });
 
     it("silences usage/unanalyzable in the source from the module, counting every class used", async () => {
@@ -891,7 +956,10 @@ describe("check", () => {
         ...files,
         "src/card.module.css": `${next} usage/unanalyzable -- the tone comes from the API */\n.loud {}\n`,
       });
-      expect(await run(nextLine)).toEqual(["src/card.ts:2:39 usage/unanalyzable"]);
+      expect(await run(nextLine)).toEqual([
+        "src/card.module.css:1:1 invalid-disable",
+        "src/card.ts:2:39 usage/unanalyzable",
+      ]);
     });
   });
 
