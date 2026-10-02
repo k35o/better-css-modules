@@ -30,9 +30,10 @@ export interface Breakpoint extends Length {
 export function breakpointsOf(tokens: Map<string, Token>): Breakpoint[] {
   const breakpoints: Breakpoint[] = [];
   for (const token of tokens.values()) {
+    if (token.category !== "breakpoint") continue;
     const [node] = token.value;
     const length = token.value.length === 1 ? lengthOf(node) : null;
-    if (token.category === "breakpoint" && length) {
+    if (length) {
       breakpoints.push({ name: token.name, text: generate(node), ...length });
     }
   }
