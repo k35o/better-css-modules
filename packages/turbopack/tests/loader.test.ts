@@ -18,43 +18,60 @@ afterAll(async () => {
 
 const SOURCE = ".root { color: red; }\n";
 
-/** Run the loader on `src/<file>` as Turbopack would, with the overrides as its options. */
-async function run(file: string, overrides: LoaderOptions["overrides"]) {
-  const dependencies: string[] = [];
-  const context = {
-    resourcePath: path.join(dir, "src", file),
-    getOptions: (): LoaderOptions => ({ cwd: dir, overrides }),
-    addDependency: (dependency: string) => dependencies.push(dependency),
-  };
-  const result = loader.call(context, SOURCE);
-  return { result, dependencies };
-}
+const options = (): LoaderOptions => ({
+  root: dir,
+  include: ["src/**/*.module.css"],
+  exclude: [],
+  outDir: "__generated__",
+  globalCss: ["./src/global.css"],
+  layer: "components",
+});
 
-const wrapping = { globalCss: ["./src/global.css"], layer: "components" };
+/** Run the loader on `src/<file>` as Turbopack would; resolves to what it called back with. */
+async function run(file: string, overrides: Partial<LoaderOptions> = {}) {
+  const dependencies: string[] = [];
+  const result = await new Promise<{ error: Error | null; code?: string; map?: string }>(
+    (resolve) => {
+      loader.call(
+        {
+          resourcePath: path.join(dir, "src", file),
+          getOptions: () => ({ ...options(), ...overrides }),
+          addDependency: (dependency: string) => dependencies.push(dependency),
+          async: () => (error, code, map) => resolve({ error, code, map }),
+        },
+        SOURCE,
+      );
+    },
+  );
+  return { ...result, dependencies };
+}
 
 describe("the Turbopack loader", () => {
   it("wraps an included file in the layer and depends on the global CSS", async () => {
-    const { result, dependencies } = await run("a.module.css", wrapping);
-    expect(await result).toBe(
-      "@layer base, components;\n@layer components {\n.root { color: red; }\n}\n",
-    );
+    const { error, code, dependencies } = await run("a.module.css");
+    expect(error).toBeNull();
+    expect(code).toBe("@layer base, components;\n@layer components {\n.root { color: red; }\n}\n");
     expect(dependencies).toEqual([path.join(dir, "src/global.css")]);
   });
 
-  it("passes the file through when the config names no layer", async () => {
-    const { result, dependencies } = await run("a.module.css", { globalCss: ["./src/global.css"] });
-    expect(await result).toBe(SOURCE);
-    expect(dependencies).toEqual([]);
+  it("hands back a source map to the file as written", async () => {
+    const { map } = await run("a.module.css");
+    expect(JSON.parse(map ?? "")).toMatchObject({
+      sources: ["a.module.css"],
+      sourcesContent: [SOURCE],
+    });
   });
 
   it("passes through a file the config does not include", async () => {
-    const { result } = await run("a.module.css", { ...wrapping, include: ["other/**/*.css"] });
-    expect(await result).toBe(SOURCE);
+    const { error, code, map } = await run("a.module.css", { include: ["other/**/*.css"] });
+    expect(error).toBeNull();
+    expect(code).toBe(SOURCE);
+    expect(map).toBeUndefined();
   });
 
   it("refuses a layer the global CSS does not declare, depending on it to rerun once fixed", async () => {
-    const { result, dependencies } = await run("a.module.css", { ...wrapping, layer: "ui" });
-    await expect(result).rejects.toThrow('layer "ui" is not declared by the global CSS');
+    const { error, dependencies } = await run("a.module.css", { layer: "ui" });
+    expect(error?.message).toContain('layer "ui" is not declared by the global CSS');
     expect(dependencies).toEqual([path.join(dir, "src/global.css")]);
   });
 });

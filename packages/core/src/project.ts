@@ -7,8 +7,11 @@ import type { ResolvedConfig } from "./config.js";
 import { analyzeCss, type CssModuleAnalysis } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 
+/** What telling the included CSS Modules files apart reads of the config. */
+export type ModuleOptions = Pick<ResolvedConfig, "root" | "include" | "exclude" | "outDir">;
+
 /** Globs no `include` pattern should reach: dependencies and the tool's own output. */
-export function defaultIgnore(config: ResolvedConfig): string[] {
+export function defaultIgnore(config: Pick<ResolvedConfig, "outDir">): string[] {
   const { outDir } = config;
   // Excluding an outDir that is the root would exclude everything; the .d.ts
   // files then sit next to their stylesheets and match no include pattern.
@@ -20,7 +23,7 @@ export function defaultIgnore(config: ResolvedConfig): string[] {
  * excludes, and an exclude pattern also excludes everything under the
  * directories it names, as a glob's ignore list does with a directory.
  */
-function patternsOf(config: ResolvedConfig): { include: string[]; exclude: string[] } {
+function patternsOf(config: ModuleOptions): { include: string[]; exclude: string[] } {
   const negated = config.include.filter((pattern) => pattern.startsWith("!"));
   const exclude = [
     ...config.exclude,
@@ -37,7 +40,7 @@ function patternsOf(config: ResolvedConfig): { include: string[]; exclude: strin
  * A predicate telling whether an absolute path is one of the CSS Modules files
  * the config includes. Files outside the root never match.
  */
-export function createMatcher(config: ResolvedConfig): (file: string) => boolean {
+export function createMatcher(config: ModuleOptions): (file: string) => boolean {
   const { root } = config;
   const patterns = patternsOf(config);
   const include = picomatch(patterns.include);

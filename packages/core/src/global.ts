@@ -13,7 +13,7 @@ import { ResolverFactory } from "oxc-resolver";
 import type * as CssTree from "css-tree";
 import { ConfigError, type ResolvedConfig } from "./config.js";
 import { lexer, parse, walk } from "./csstree.js";
-import { createMatcher } from "./project.js";
+import { createMatcher, type ModuleOptions } from "./project.js";
 import { categoryOf, type TokenCategory } from "./tokens.js";
 
 /** One stylesheet of the global CSS. */
@@ -260,7 +260,9 @@ function replaceVars(text: string, substitute: (name: string) => string | null):
  * tokens. Throws when a stylesheet cannot be resolved or parsed, imports
  * itself, or is also one of the CSS Modules files.
  */
-export async function loadGlobalCss(config: ResolvedConfig): Promise<GlobalCss> {
+export async function loadGlobalCss(
+  config: ModuleOptions & Pick<ResolvedConfig, "globalCss">,
+): Promise<GlobalCss> {
   const loader = new Loader(config);
   for (const entry of config.globalCss) {
     const file = loader.resolve(config.root, entry);
@@ -290,7 +292,7 @@ class Loader {
     preferRelative: true,
   });
 
-  constructor(config: ResolvedConfig) {
+  constructor(config: ModuleOptions) {
     // The resolver returns real paths, so the project is compared by its real path too.
     this.root = realpathSync(config.root);
     this.isModule = createMatcher({ ...config, root: this.root });

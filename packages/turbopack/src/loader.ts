@@ -1,64 +1,36 @@
-import fs from "node:fs";
-import { type Config, loadConfig } from "@better-css-modules/core";
-import { createLayerWrapper } from "@better-css-modules/core/internal";
+import { createLayerWrapper, type LayerConfig } from "@better-css-modules/core/internal";
 
-// A type rather than an interface, so that it fits Turbopack's JSON options.
-export type LoaderOptions = {
-  cwd: string;
-  /** The config file, when there is one. */
-  config?: string;
-  /** What `withBetterCssModules` was given over the config file. */
-  overrides: Partial<Config>;
-};
+/**
+ * The part of the resolved config the loader reads. `withBetterCssModules`
+ * adds the loader only for a layer, so it is always there.
+ */
+export type LoaderOptions = Required<LayerConfig>;
 
 /** The part of the webpack loader API Turbopack provides that the loader uses. */
 interface LoaderContext {
   resourcePath: string;
   getOptions(): LoaderOptions;
   addDependency(file: string): void;
+  async(): (error: Error | null, code?: string, map?: string) => void;
 }
 
-type Wrap = ReturnType<typeof createLayerWrapper>;
-
-let cached: { key: string; wrap: Promise<Wrap> } | undefined;
+let cached: { key: string; wrap: ReturnType<typeof createLayerWrapper> } | undefined;
 
 /**
  * Turbopack loader for `*.module.css`. Wraps each file the config includes in
- * the layer it names; with no layer the file passes through as written.
+ * the layer it names, with a source map back to the file as written.
  */
-export default async function loader(this: LoaderContext, source: string): Promise<string> {
+export default function loader(this: LoaderContext, source: string): void {
+  // An async function could not hand Turbopack the source map.
+  const callback = this.async();
   const options = this.getOptions();
-  // Turbopack keeps loader results across restarts; they depend on the config.
-  // `options` names the file, so creating one also invalidates them.
-  if (options.config) this.addDependency(options.config);
-  const wrap = await wrapperFor(options);
-  const wrapped = await wrap(source, this.resourcePath, (file) => this.addDependency(file));
-  return wrapped?.code ?? source;
-}
-
-/**
- * The wrapper of the config, loaded once per edit of the file: the loader runs
- * in a process that outlives edits, and a result made from a stale config would
- * be cached as if it came from the new one.
- */
-function wrapperFor(options: LoaderOptions): Promise<Wrap> {
-  const key = JSON.stringify([options, options.config ? modified(options.config) : null]);
-  if (cached?.key !== key) {
-    cached = {
-      key,
-      wrap: loadConfig({ cwd: options.cwd, config: options.config }).then((loaded) =>
-        createLayerWrapper({
-          ...loaded,
-          ...options.overrides,
-          root: loaded.root,
-          file: loaded.file,
-        }),
-      ),
-    };
-  }
-  return cached.wrap;
-}
-
-function modified(file: string): number | null {
-  return fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? null;
+  // One wrapper per config, so that it reads the global CSS once for every module.
+  const key = JSON.stringify(options);
+  if (cached?.key !== key) cached = { key, wrap: createLayerWrapper(options) };
+  cached
+    .wrap(source, this.resourcePath, (file) => this.addDependency(file))
+    .then(
+      (wrapped) => (wrapped ? callback(null, wrapped.code, wrapped.map) : callback(null, source)),
+      (error: Error) => callback(error),
+    );
 }

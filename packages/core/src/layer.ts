@@ -3,7 +3,7 @@ import postcss, { type AtRule, type ChildNode, type Node, type Root } from "post
 import { ConfigError, type ResolvedConfig } from "./config.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { type GlobalCss, loadGlobalCss, readImport } from "./global.js";
-import { createMatcher } from "./project.js";
+import { createMatcher, type ModuleOptions } from "./project.js";
 import type { RuleId } from "./rules.js";
 
 /** The cascade layer the bundler plugins put every CSS Modules file in. */
@@ -77,6 +77,9 @@ export function wrapInLayer(source: string, file: string, layer: Layer): WrapRes
   return { code: result.css, map: result.map.toString() };
 }
 
+/** What wrapping modules in the layer reads of the config. */
+export type LayerConfig = ModuleOptions & Pick<ResolvedConfig, "globalCss" | "layer">;
+
 /**
  * What the bundler plugins run on each stylesheet: it wraps the CSS Modules
  * files the config includes in the layer it names, and resolves to null for
@@ -88,7 +91,7 @@ export function wrapInLayer(source: string, file: string, layer: Layer): WrapRes
  * that failed is tried again on the next call.
  */
 export function createLayerWrapper(
-  config: ResolvedConfig,
+  config: LayerConfig,
 ): (source: string, file: string, depend: (file: string) => void) => Promise<WrapResult | null> {
   const matches = createMatcher(config);
   let reading: Promise<{ css: GlobalCss; stamps: Map<string, number | null> }> | undefined;
