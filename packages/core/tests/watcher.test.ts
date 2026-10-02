@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveConfig } from "../src/config.js";
-import { startWatcher } from "../src/watcher.js";
+import { createSync, startWatcher } from "../src/watcher.js";
 
 const INTERNAL = path.resolve(import.meta.dirname, "../dist/internal.mjs");
 
@@ -56,5 +56,78 @@ startWatcher(${JSON.stringify(config())}, { persistent: false });`,
     } finally {
       watching.kill();
     }
+  });
+});
+
+describe("createSync", () => {
+  let output: { log: string[]; error: string[] };
+
+  beforeEach(() => {
+    output = { log: [], error: [] };
+    vi.spyOn(console, "log").mockImplementation((...args) => void output.log.push(args.join(" ")));
+    vi.spyOn(console, "error").mockImplementation(
+      (...args) => void output.error.push(args.join(" ")),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A project of its own with one module, synced by its config with `overrides`. */
+  async function syncing(overrides: object = {}) {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(dir, "sync-")));
+    await fs.mkdir(path.join(root, "src"));
+    const css = path.join(root, "src/a.module.css");
+    await fs.writeFile(css, ".a {}\n");
+    const sync = createSync(resolveConfig(overrides, root));
+    const rel = (file: string) => path.relative(process.cwd(), path.join(root, file));
+    return { root, css, sync, rel };
+  }
+
+  it("brings the .d.ts of an included module in line and says what it did", async () => {
+    const { css, sync, rel } = await syncing();
+    await sync(css);
+    await fs.writeFile(css, ".a {");
+    await sync(css);
+    await fs.rm(css);
+    await sync(css);
+
+    const dts = rel("__generated__/src/a.module.css.d.ts");
+    expect(output.log).toEqual([
+      `[better-css-modules] generated: ${dts}`,
+      `[better-css-modules] removed: ${dts}`,
+    ]);
+    expect(output.error).toEqual([`${rel("src/a.module.css")}:1:1 error syntax: Unclosed block`]);
+  });
+
+  it("prints only the diagnostics when silent", async () => {
+    const { css, sync } = await syncing({ silent: true });
+    await sync(css);
+    await fs.writeFile(css, ".a {");
+    await sync(css);
+    expect(output.log).toEqual([]);
+    expect(output.error).toHaveLength(1);
+  });
+
+  it("leaves a file the config does not include alone", async () => {
+    const { root, sync } = await syncing();
+    const other = path.join(root, "other.module.css");
+    await fs.writeFile(other, ".a {");
+    await sync(other);
+    expect(output).toEqual({ log: [], error: [] });
+    await expect(fs.access(path.join(root, "__generated__"))).rejects.toThrow();
+  });
+
+  it("prints an error rather than throwing when the sync fails", async () => {
+    const { root, css, sync, rel } = await syncing();
+    // A file where the .d.ts needs a directory.
+    await fs.mkdir(path.join(root, "__generated__"));
+    await fs.writeFile(path.join(root, "__generated__/src"), "");
+    await expect(sync(css)).resolves.toBeUndefined();
+    expect(output.log).toEqual([]);
+    expect(output.error).toEqual([
+      expect.stringContaining(`[better-css-modules] error processing ${rel("src/a.module.css")}:`),
+    ]);
   });
 });

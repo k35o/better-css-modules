@@ -6,11 +6,7 @@ import {
   loadConfig,
   type ResolvedConfig,
 } from "@better-css-modules/core";
-import {
-  createLayerWrapper,
-  createMatcher,
-  regenerateDts,
-} from "@better-css-modules/core/internal";
+import { createLayerWrapper, createSync } from "@better-css-modules/core/internal";
 
 export interface Options {
   /**
@@ -27,7 +23,7 @@ const generations = new Map<string, Promise<void>>();
 
 interface Setup {
   config: ResolvedConfig;
-  matches: (file: string) => boolean;
+  sync: ReturnType<typeof createSync>;
   wrap: ReturnType<typeof createLayerWrapper>;
 }
 
@@ -46,7 +42,7 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
 
   const load = async (): Promise<Setup> => {
     const config = await loadConfig({ cwd, config: options.config });
-    return { config, matches: createMatcher(config), wrap: createLayerWrapper(config) };
+    return { config, sync: createSync(config), wrap: createLayerWrapper(config) };
   };
 
   const log = (config: ResolvedConfig, message: string) => {
@@ -116,13 +112,7 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       generations.clear();
       // A setup that failed was reported by the build start that made it.
       const current = await setup?.catch(() => undefined);
-      if (!current?.matches(id)) return;
-
-      const { config } = current;
-      const { generated, removed, diagnostics } = await regenerateDts(id, config);
-      if (generated) log(config, `generated: ${path.relative(cwd, generated)}`);
-      if (removed) log(config, `removed: ${path.relative(cwd, removed)}`);
-      for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
+      await current?.sync(id);
     },
   };
 });
