@@ -377,7 +377,9 @@ describe("checkGlobalCss: the global CSS", () => {
       "#app :global(.x) {}",
     ].join("\n");
     const root = postcss.parse(css, { from: file });
-    const globalCss = globalCssFrom([{ file, root, checked: true, conditional: false }]);
+    const globalCss = globalCssFrom([
+      { file, root, checked: true, conditional: false, listed: true, imports: [] },
+    ]);
     expect(checkGlobalCss(globalCss).filter((d) => d.rule.startsWith("pure/"))).toEqual([]);
   });
 });

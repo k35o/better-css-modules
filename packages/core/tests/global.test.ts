@@ -172,6 +172,8 @@ describe("checkGlobalCss", () => {
         root: postcss.parse(tokens, { from: GLOBAL }),
         checked: true,
         conditional: false,
+        listed: true,
+        imports: [],
       },
       {
         file: "/project/src/contrast.css",

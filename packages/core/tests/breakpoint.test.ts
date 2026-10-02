@@ -9,7 +9,9 @@ const GLOBAL = "/project/src/global.css";
 
 function globalCssOf(css: string, { checked = true } = {}): GlobalCss {
   const root = postcss.parse(css, { from: GLOBAL });
-  return globalCssFrom([{ file: GLOBAL, root, checked, conditional: false }]);
+  return globalCssFrom([
+    { file: GLOBAL, root, checked, conditional: false, listed: true, imports: [] },
+  ]);
 }
 
 const designSystem = globalCssOf(`
