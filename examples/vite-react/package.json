@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",
+    "check": "better-css-modules check",
     "typecheck": "better-css-modules generate && tsc --noEmit"
   },
   "dependencies": {
@@ -14,6 +15,7 @@
   },
   "devDependencies": {
     "@better-css-modules/cli": "workspace:*",
+    "@better-css-modules/core": "workspace:*",
     "@better-css-modules/vite": "workspace:*",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",

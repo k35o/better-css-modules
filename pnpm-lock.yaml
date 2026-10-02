@@ -79,6 +79,9 @@ importers:
       '@better-css-modules/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@better-css-modules/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@better-css-modules/vite':
         specifier: workspace:*
         version: link:../../packages/vite
