@@ -134,7 +134,24 @@ export function resolveConfig(
     if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
       return fail(`"${key}" must be an array of strings`);
     }
+    if (value.includes("")) fail(`"${key}" must not contain an empty string`);
     return [...value];
+  };
+  const patterns = (key: "include" | "exclude", fallback: string[]): string[] => {
+    const value = strings(key, fallback);
+    for (const pattern of value) {
+      const glob = key === "include" && pattern.startsWith("!") ? pattern.slice(1) : pattern;
+      if (glob === "") fail(`"${key}" must not contain an empty string`);
+      // fast-glob resolves these against the file system, while the matcher of
+      // the watcher and the plugins compares them with paths relative to the
+      // root, so the two would take in different files.
+      if (path.isAbsolute(glob) || glob.split("/").includes("..")) {
+        fail(
+          `"${key}" pattern "${pattern}" must be relative to the project root ${root}, without ".."`,
+        );
+      }
+    }
+    return value;
   };
   const string = (key: keyof Config): string | undefined => {
     const value = input[key];
@@ -154,8 +171,8 @@ export function resolveConfig(
   return {
     root,
     file,
-    include: strings("include", ["src/**/*.module.css"]),
-    exclude: strings("exclude", []),
+    include: patterns("include", ["src/**/*.module.css"]),
+    exclude: patterns("exclude", []),
     outDir: outDir.split(path.sep).join("/") || ".",
     silent: boolean("silent"),
     namedExports: boolean("namedExports"),

@@ -219,6 +219,33 @@ describe("resolveConfig", () => {
     expect(resolveConfig({ outDir }, "/project").outDir).toBe(expected);
   });
 
+  it.each([
+    ["include", [""]],
+    ["include", ["!"]],
+    ["exclude", ["src/legacy", ""]],
+    ["globalCss", [""]],
+  ])("rejects an empty string in %s", (key, value) => {
+    const resolve = () => resolveConfig({ [key]: value }, "/project");
+    expect(resolve).toThrow(ConfigError);
+    expect(resolve).toThrow(`"${key}" must not contain an empty string`);
+  });
+
+  it.each([
+    ["include", "/project/src/**/*.module.css"],
+    ["include", "!/project/src/legacy/**"],
+    ["include", "../shared/*.module.css"],
+    ["include", "src/../src/**/*.module.css"],
+    ["exclude", "/"],
+    ["exclude", "/project/src/legacy"],
+    ["exclude", "src/legacy/.."],
+  ])("rejects in %s the pattern %s, which is not relative to the root", (key, pattern) => {
+    const resolve = () => resolveConfig({ [key]: [pattern] }, "/project");
+    expect(resolve).toThrow(ConfigError);
+    expect(resolve).toThrow(
+      `"${key}" pattern "${pattern}" must be relative to the project root /project, without ".."`,
+    );
+  });
+
   it("takes an absolute outDir inside the root relative to it", () => {
     expect(resolveConfig({ outDir: "/project/types" }, "/project").outDir).toBe("types");
   });

@@ -3,7 +3,7 @@ import path from "node:path";
 import fg from "fast-glob";
 import picomatch from "picomatch";
 import { CssSyntaxError } from "postcss";
-import { ConfigError, isOutside, type ResolvedConfig } from "./config.js";
+import type { ResolvedConfig } from "./config.js";
 import { analyzeCss, type CssModuleAnalysis } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 
@@ -50,19 +50,10 @@ export function createMatcher(config: ResolvedConfig): (file: string) => boolean
   };
 }
 
-/**
- * The CSS Modules files the config includes. One outside the root is a
- * mistake in the config: its `.d.ts` could not mirror its path under outDir.
- */
+/** The CSS Modules files the config includes. */
 export async function findCssModules(config: ResolvedConfig): Promise<string[]> {
   const { include, exclude } = patternsOf(config);
   const files = await fg(include, { cwd: config.root, ignore: exclude, absolute: true });
-  const outside = files.find((file) => isOutside(path.relative(config.root, file)));
-  if (outside) {
-    throw new ConfigError(
-      `include matches ${path.relative(process.cwd(), outside)}, which is outside the project root ${config.root}`,
-    );
-  }
   return files.sort();
 }
 

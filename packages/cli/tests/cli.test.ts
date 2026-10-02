@@ -384,7 +384,7 @@ describe("a command that cannot run", () => {
     expect(run(path.join(dir, "app"), "generate")).toEqual({
       status: 2,
       stdout: "",
-      stderr: `[better-css-modules] include matches ../shared/a.module.css, which is outside the project root ${await fs.realpath(path.join(dir, "app"))}\n`,
+      stderr: `[better-css-modules] better-css-modules.config.mjs: "include" pattern "../shared/*.module.css" must be relative to the project root ${await fs.realpath(path.join(dir, "app"))}, without ".."\n`,
     });
   });
 
