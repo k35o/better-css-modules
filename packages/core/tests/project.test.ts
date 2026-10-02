@@ -30,6 +30,10 @@ const FILES = [
   "src/types/b.module.css",
   "src/generated/c.module.css",
   "src/node_modules/d.module.css",
+  "src/legacy/old.module.css",
+  "src/legacy/deep/older.module.css",
+  "src/legacy/.hidden/h.module.css",
+  "src/ui/b/button.module.css",
   "types/e.module.css",
   "node_modules/pkg/f.module.css",
 ];
@@ -64,7 +68,10 @@ describe("files the tool never takes in", () => {
     expect(found).toEqual([
       "src/a.module.css",
       "src/generated/c.module.css",
+      "src/legacy/deep/older.module.css",
+      "src/legacy/old.module.css",
       "src/types/b.module.css",
+      "src/ui/b/button.module.css",
     ]);
     expect(matched).toEqual(found);
   });
@@ -86,9 +93,57 @@ describe("files the tool never takes in", () => {
     expect(found).toEqual([
       "src/a.module.css",
       "src/generated/c.module.css",
+      "src/legacy/deep/older.module.css",
+      "src/legacy/old.module.css",
       "src/types/b.module.css",
+      "src/ui/b/button.module.css",
       "types/e.module.css",
     ]);
+    expect(matched).toEqual(found);
+  });
+});
+
+describe("include and exclude", () => {
+  it("leave out everything under a directory that exclude names", async () => {
+    const { found, matched } = await selected({ exclude: ["src/legacy"] });
+    expect(found).toEqual([
+      "src/a.module.css",
+      "src/generated/c.module.css",
+      "src/types/b.module.css",
+      "src/ui/b/button.module.css",
+    ]);
+    expect(matched).toEqual(found);
+  });
+
+  it("treat a negated include pattern as an exclusion", async () => {
+    const { found, matched } = await selected({
+      include: ["src/**/*.module.css", "!src/legacy/**", "!src/types/**"],
+    });
+    expect(found).toEqual([
+      "src/a.module.css",
+      "src/generated/c.module.css",
+      "src/ui/b/button.module.css",
+    ]);
+    expect(matched).toEqual(found);
+  });
+
+  // The CLI enumerates the files; the watcher and the bundler plugins match
+  // one path at a time. Both must take in the same files.
+  it.each([
+    { include: ["src/**/*.module.css"], exclude: ["src/legacy/"] },
+    { include: ["src/**/*.module.css"], exclude: ["src/legacy/**"] },
+    { include: ["**/*.module.css"], exclude: ["**/b"] },
+    { include: ["**/*.module.css"], exclude: ["src/*"] },
+    { include: ["**/*.module.css"], exclude: ["src/*.module.css"] },
+    { include: ["src/**/*.module.css", "!**/b/**"], exclude: [] },
+    { include: ["src/{legacy,ui}/**/*.module.css"], exclude: ["src/legacy/deep"] },
+    {
+      include: ["src/legacy/**/*.module.css", "src/legacy/.hidden/*.module.css"],
+      exclude: ["src/**"],
+    },
+    { include: ["src/legacy/.hidden/*.module.css"], exclude: [] },
+  ])("select the same files when enumerated and when matched: %j", async (config) => {
+    const { found, matched } = await selected(config);
     expect(matched).toEqual(found);
   });
 });

@@ -16,12 +16,32 @@ export function defaultIgnore(config: Config): string[] {
 }
 
 /**
+ * The globs `include` and `exclude` stand for. A negated include pattern
+ * excludes, and an exclude pattern also excludes everything under the
+ * directories it names, as a glob's ignore list does with a directory.
+ */
+function patternsOf(config: Config): { include: string[]; exclude: string[] } {
+  const negated = config.include.filter((pattern) => pattern.startsWith("!"));
+  const exclude = [
+    ...config.exclude,
+    ...negated.map((pattern) => pattern.slice(1)),
+    ...defaultIgnore(config),
+  ].flatMap((pattern) => {
+    const trimmed = pattern.replace(/\/+$/, "");
+    return trimmed.endsWith("/**") ? [trimmed] : [trimmed, `${trimmed}/**`];
+  });
+  return { include: config.include.filter((pattern) => !negated.includes(pattern)), exclude };
+}
+
+/**
  * A predicate telling whether an absolute path is one of the CSS Modules files
  * the config includes. Files outside `cwd` never match.
  */
 export function createMatcher(config: Config, cwd: string): (file: string) => boolean {
-  const include = picomatch(config.include);
-  const exclude = picomatch([...config.exclude, ...defaultIgnore(config)]);
+  const patterns = patternsOf(config);
+  const include = picomatch(patterns.include);
+  // fast-glob matches its ignore patterns with `dot`, so an exclusion reaches dot directories.
+  const exclude = picomatch(patterns.exclude, { dot: true });
   return (file) => {
     const relative = path.relative(cwd, path.resolve(cwd, file)).split(path.sep).join("/");
     if (relative.startsWith("../") || path.isAbsolute(relative)) return false;
@@ -30,11 +50,8 @@ export function createMatcher(config: Config, cwd: string): (file: string) => bo
 }
 
 export async function findCssModules(config: Config, cwd: string): Promise<string[]> {
-  const files = await fg(config.include, {
-    cwd,
-    ignore: [...config.exclude, ...defaultIgnore(config)],
-    absolute: true,
-  });
+  const { include, exclude } = patternsOf(config);
+  const files = await fg(include, { cwd, ignore: exclude, absolute: true });
   return files.sort();
 }
 
