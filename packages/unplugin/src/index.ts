@@ -68,6 +68,8 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       const wrapped = await wrap(code, id, (file) => this.addWatchFile(file));
       if (!wrapped) return;
       // unplugin hands esbuild the map as a `//#` comment, which is not CSS.
+      // Its webpack and Rspack loader drops the map unless a loader before it
+      // passed one, so there the module maps to the wrapped text.
       return meta.framework === "esbuild" ? wrapped.code : wrapped;
     },
   };
