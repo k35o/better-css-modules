@@ -162,6 +162,14 @@ export const tsCases: TsCase[] = [
     unused: ["a.module.css:b"],
   },
   {
+    name: "named-import-of-a-name-that-is-not-an-identifier",
+    files: {
+      "a.module.css": `.primary-btn { color: red; } .b { color: red; }`,
+      "a.tsx": `import { "primary-btn" as primary } from './a.module.css';\nexport const A = () => <div className={primary} />;`,
+    },
+    unused: ["a.module.css:b"],
+  },
+  {
     name: "named-default-import",
     files: {
       "a.module.css": `.a { color: red; } .b { color: red; }`,
