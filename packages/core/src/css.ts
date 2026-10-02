@@ -57,12 +57,6 @@ interface ComposesDeclaration {
   range: SourceRange;
 }
 
-export interface ValueDeclaration {
-  name: string;
-  /** Specifier of `@value ... from '...'`, or `null` for a value defined in this file. */
-  from: string | null;
-}
-
 /**
  * Everything the tool needs to know about one CSS Modules file, extracted in a
  * single pass. Type generation, usage analysis and checks all consume this.
@@ -79,7 +73,8 @@ export interface CssModuleAnalysis {
   /** Keys of the module's default export: class names plus scoped identifiers, sorted. */
   exportNames: string[];
   composes: ComposesDeclaration[];
-  values: ValueDeclaration[];
+  /** Specifiers of the files `@value ... from` reads values from. */
+  valueImports: string[];
   /** Syntax problems in selectors and at-rule preludes; the analysis is still usable. */
   diagnostics: Diagnostic[];
 }
@@ -91,7 +86,7 @@ interface Collector {
   classes: ClassOccurrence[];
   identifiers: ScopedIdentifier[];
   composes: ComposesDeclaration[];
-  values: ValueDeclaration[];
+  valueImports: string[];
   diagnostics: Diagnostic[];
 }
 
@@ -146,7 +141,7 @@ export function analyzeCss(source: string, file: string): CssModuleAnalysis {
     classes: [],
     identifiers: [],
     composes: [],
-    values: [],
+    valueImports: [],
     diagnostics: [],
   };
   walkContainer(root, true, collector);
@@ -161,7 +156,7 @@ export function analyzeCss(source: string, file: string): CssModuleAnalysis {
     identifiers: collector.identifiers,
     exportNames,
     composes: collector.composes,
-    values: collector.values,
+    valueImports: collector.valueImports,
     diagnostics: collector.diagnostics,
   };
 }
@@ -203,7 +198,7 @@ function visitRule(rule: Rule, local: boolean, collector: Collector): void {
 
 function visitAtRule(atRule: AtRule, local: boolean, collector: Collector): void {
   const name = atRule.name.toLowerCase();
-  if (name === "value") collectValue(atRule, collector);
+  if (name === "value") collectValueImport(atRule, collector);
   else if (name === "scope") collectScopePrelude(atRule, local, collector);
   else if (isKeyframes(atRule) && local) collectKeyframesName(atRule, collector);
   if (atRule.nodes) walkContainer(atRule, local, collector);
@@ -430,21 +425,10 @@ function visitDeclaration(declaration: Declaration, collector: Collector): void 
   });
 }
 
-function collectValue(atRule: AtRule, collector: Collector): void {
+function collectValueImport(atRule: AtRule, collector: Collector): void {
   const params = (atRule.raws.params?.raw ?? atRule.params).trim();
-  const imported = /^(.+?)\s+from\s+(?:"([^"]*)"|'([^']*)')$/s.exec(params);
-  if (imported) {
-    const specifier = imported[2] ?? imported[3] ?? "";
-    for (const entry of imported[1].split(",")) {
-      // `@value a as b from '...'` binds `b`.
-      const alias = /^(.+?)\s+as\s+(.+)$/.exec(entry.trim());
-      const name = alias ? alias[2] : entry.trim();
-      if (name) collector.values.push({ name, from: specifier });
-    }
-    return;
-  }
-  const defined = /^([\w-]+)\s*:?/.exec(params);
-  if (defined) collector.values.push({ name: defined[1], from: null });
+  const imported = /^.+?\s+from\s+(?:"([^"]*)"|'([^']*)')$/s.exec(params);
+  if (imported) collector.valueImports.push(imported[1] ?? imported[2] ?? "");
 }
 
 function collectComposes(

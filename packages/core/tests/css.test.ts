@@ -113,15 +113,11 @@ describe("analyzeCss: scoped identifiers", () => {
 });
 
 describe("analyzeCss: @value", () => {
-  it("records defined and imported values without exporting them as classes", () => {
-    const css = `@value primary: #0c77f8;\n@value small, large as big from './bp.module.css';\n.v { color: primary; }`;
+  it("records the files values come from without exporting values as classes", () => {
+    const css = `@value primary: #0c77f8;\n@value small, large as big from './bp.module.css';\n@value gap from "./space.module.css";\n.v { color: primary; }`;
     const analysis = analyzeCss(css, FILE);
     expect(classNamesOf(analysis)).toEqual(["v"]);
-    expect(analysis.values).toEqual([
-      { name: "primary", from: null },
-      { name: "small", from: "./bp.module.css" },
-      { name: "big", from: "./bp.module.css" },
-    ]);
+    expect(analysis.valueImports).toEqual(["./bp.module.css", "./space.module.css"]);
   });
 });
 

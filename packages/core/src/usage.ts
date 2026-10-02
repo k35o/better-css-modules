@@ -469,9 +469,8 @@ function linkCssReferences(
 ): void {
   const edges: { from: string; className: string; to: string; names: string[] }[] = [];
   for (const analysis of modules) {
-    for (const value of analysis.values) {
-      if (value.from === null) continue;
-      const to = resolvers.resolve(analysis.file, value.from);
+    for (const specifier of analysis.valueImports) {
+      const to = resolvers.resolve(analysis.file, specifier);
       if (to && byPath.has(to) && to !== analysis.file) usage.get(to)!.importers.add(analysis.file);
     }
     for (const composes of analysis.composes) {
