@@ -519,35 +519,7 @@ Add `rootDirs` to your `tsconfig.json` so TypeScript resolves the generated type
 
 ## Contributing
 
-```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Run tests
-pnpm test
-
-# Lint and format
-pnpm check
-
-# Type-check packages and examples
-pnpm typecheck
-
-# Add a change intent before submitting a PR
-pnpm change
-```
-
-## Release
-
-Versioning and publishing use
-[pnpm's built-in release management](https://pnpm.io/versioning), driven in CI
-by [k35o/pnpm-release-action](https://github.com/k35o/pnpm-release-action)
-(`.github/workflows/release.yml`). Add a change intent with `pnpm change`
-(changesets-format `.changeset/*.md`); merging to `main` opens/updates the
-release PR (branch `pnpm-release/main`), and merging that publishes to npm via
-OIDC trusted publishing.
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 
