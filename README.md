@@ -84,7 +84,7 @@ export default defineConfig({
 });
 ```
 
-The plugins generate the types when a build starts and, when the config names a [layer](#cascade-layers), put every module in it. Their one option is the config file to use, relative to the working directory: `betterCssModules({ config: "config/better-css-modules.config.ts" })`. Without it they read the `better-css-modules.config.*` in the working directory. Everything else goes in the config file, which the CLI reads too.
+The plugins generate the types when a build starts and, when the config names a [layer](#cascade-layers), put every module in it. Their one option is the config file to use, relative to the working directory: `betterCssModules({ config: "apps/web/better-css-modules.config.ts" })`. Without it they read the `better-css-modules.config.*` in the working directory. The directory of the config file is the project root, and `include`, `outDir` and the search for sources stay inside it, so put the config in a directory that holds the stylesheets and the sources. Everything else goes in the config file, which the CLI reads too.
 
 webpack's css-loader 7, with its default options, and Rspack's built-in CSS export each class by name and have no default export. With either, set `namedExports: true` in the config and import the module as a namespace or by name:
 

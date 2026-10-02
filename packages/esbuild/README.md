@@ -28,7 +28,7 @@ With a `layer`, esbuild's source map of a module points into the text with the l
 
 ## Configuration
 
-The plugin takes one option, the config file to use, relative to the working directory: `betterCssModules({ config: "config/better-css-modules.config.ts" })`. By default it reads the `better-css-modules.config.*` in the working directory, the same file the CLI reads. See the project README for the [Quick Start](https://github.com/k35o/better-css-modules#quick-start), which sets up `tsconfig.json`, the [configuration](https://github.com/k35o/better-css-modules#configuration) and [cascade layers](https://github.com/k35o/better-css-modules#cascade-layers).
+The plugin takes one option, the config file to use, relative to the working directory: `betterCssModules({ config: "apps/web/better-css-modules.config.ts" })`. By default it reads the `better-css-modules.config.*` in the working directory, the same file the CLI reads. The directory of the config file is the project root, and `include`, `outDir` and the search for sources stay inside it, so put the config in a directory that holds the stylesheets and the sources. See the project README for the [Quick Start](https://github.com/k35o/better-css-modules#quick-start), which sets up `tsconfig.json`, the [configuration](https://github.com/k35o/better-css-modules#configuration) and [cascade layers](https://github.com/k35o/better-css-modules#cascade-layers).
 
 ## License
 
