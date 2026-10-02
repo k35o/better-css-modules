@@ -10,5 +10,5 @@
     "noEmit": true,
     "rootDirs": [".", "./__generated__"]
   },
-  "include": ["better-css-modules.config.ts", "vite.config.ts", "src", "__generated__"]
+  "include": ["better-css-modules.config.ts", "vite.config.ts", "src", "tests", "__generated__"]
 }

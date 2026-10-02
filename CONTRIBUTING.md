@@ -11,7 +11,7 @@ pnpm install
 # Build the packages
 pnpm build
 
-# Run the tests of every package and of the Next.js example, which builds it with next build
+# Run the tests of every package and of the examples, which build them with next build and vite build
 pnpm test
 
 # Build, lint and format, then run better-css-modules check in the examples
