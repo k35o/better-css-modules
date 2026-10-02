@@ -9,8 +9,10 @@ import type { Diagnostic } from "./diagnostic.js";
 
 /** Globs no `include` pattern should reach: dependencies and the tool's own output. */
 export function defaultIgnore(config: Config): string[] {
-  const outDir = config.outDir.replace(/^\.\//, "").replace(/\/+$/, "");
-  return ["**/node_modules/**", `**/${outDir}/**`];
+  const outDir = path.posix.normalize(config.outDir).replace(/\/+$/, "");
+  // Excluding an outDir that is the root would exclude everything; the .d.ts
+  // files then sit next to their stylesheets and match no include pattern.
+  return outDir === "." ? ["**/node_modules/**"] : ["**/node_modules/**", `${outDir}/**`];
 }
 
 /**
