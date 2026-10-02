@@ -137,10 +137,12 @@ export function generateDts(
     }
   });
   const text = lines.map((line) => `${line.text}\n`).join("");
-  return {
-    dts: `${text}//# sourceMappingURL=${path.basename(dtsPath)}.map\n`,
-    map: map.toString(),
-  };
+  return { dts: `${text}${mapComment(dtsPath)}`, map: map.toString() };
+}
+
+/** The last line of every `.d.ts` the tool writes. */
+function mapComment(dtsPath: string): string {
+  return `//# sourceMappingURL=${path.basename(dtsPath)}.map\n`;
 }
 
 /**
@@ -219,7 +221,7 @@ export interface GenerateResult {
 
 /**
  * Generate `.d.ts` files for every CSS Modules file the config includes, and
- * remove the ones left from stylesheets it no longer includes.
+ * remove the ones it wrote for stylesheets it no longer includes.
  */
 export async function generate(config: ResolvedConfig): Promise<GenerateResult> {
   const found = await findCssModules(config);
@@ -227,9 +229,20 @@ export async function generate(config: ResolvedConfig): Promise<GenerateResult> 
   const files = await Promise.all(modules.map((analysis) => writeDts(analysis, config)));
   // A stylesheet that does not parse keeps its previous .d.ts.
   const produced = new Set(found.map((file) => dtsPathFor(file, config)));
-  const removed = (await outputsIn(config)).filter((dtsPath) => !produced.has(dtsPath));
+  const stale = (await outputsIn(config)).filter((dtsPath) => !produced.has(dtsPath));
+  const written = await Promise.all(stale.map(wroteDts));
+  const removed = stale.filter((_, index) => written[index]);
   await Promise.all(removed.map(removeDts));
   return { files, removed, diagnostics: sortDiagnostics(diagnostics) };
+}
+
+/**
+ * Whether the tool wrote a `.d.ts`, or left its map behind. With outDir at
+ * the root, a `.d.ts` next to an excluded stylesheet may be hand-written.
+ */
+async function wroteDts(dtsPath: string): Promise<boolean> {
+  const dts = await fs.readFile(dtsPath, "utf-8").catch(() => null);
+  return dts === null || dts.endsWith(mapComment(dtsPath));
 }
 
 /**

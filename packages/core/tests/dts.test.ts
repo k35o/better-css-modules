@@ -330,6 +330,36 @@ describe("generate", () => {
     });
   });
 
+  it("keeps a .d.ts it did not write next to a stylesheet when outDir is the root", async () => {
+    const handWritten = "declare const styles: { readonly old: string };\nexport default styles;\n";
+    const dir = await project({
+      "src/a.module.css": ".a {}",
+      "src/legacy/old.module.css": ".old {}",
+      "src/legacy/old.module.css.d.ts": handWritten,
+      "src/legacy/gone.module.css.d.ts": handWritten,
+      "src/b.module.css": ".b {}",
+    });
+    await generate(resolveConfig({ outDir: ".", exclude: ["src/legacy"] }, dir));
+
+    expect(
+      await filesAfter(dir, { outDir: ".", exclude: ["src/legacy", "src/b.module.css"] }),
+    ).toEqual({
+      removed: ["src/b.module.css.d.ts"],
+      files: [
+        "src/a.module.css",
+        "src/a.module.css.d.ts",
+        "src/a.module.css.d.ts.map",
+        "src/b.module.css",
+        "src/legacy/gone.module.css.d.ts",
+        "src/legacy/old.module.css",
+        "src/legacy/old.module.css.d.ts",
+      ],
+    });
+    expect(await fs.readFile(path.join(dir, "src/legacy/old.module.css.d.ts"), "utf-8")).toBe(
+      handWritten,
+    );
+  });
+
   it("leaves outDir in place when it removes everything in it", async () => {
     const dir = await project({ "src/a.module.css": ".a {}" });
     await generate(resolveConfig({}, dir));
