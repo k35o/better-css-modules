@@ -955,9 +955,15 @@ describe("check", () => {
         "src/card.module.css": ".used {}\n",
         "src/print.module.css": `${next} usage/unused-module -- loaded by the print preview */\n.page {}\n`,
       });
-      expect(await run(dir)).toEqual([
-        "src/print.module.css:1:1 usage/unused-module",
-        "src/print.module.css:1:1 invalid-disable",
+      expect((await checkIn(dir)).diagnostics).toMatchObject([
+        { line: 1, column: 1, rule: "usage/unused-module" },
+        {
+          line: 1,
+          column: 1,
+          rule: "invalid-disable",
+          message:
+            "usage/unused-module can only be disabled file-wide: write better-css-modules-disable at the top of the file",
+        },
       ]);
     });
 
@@ -976,9 +982,19 @@ describe("check", () => {
         ...files,
         "src/card.module.css": `${next} usage/unanalyzable -- the tone comes from the API */\n.loud {}\n`,
       });
-      expect(await run(nextLine)).toEqual([
-        "src/card.module.css:1:1 invalid-disable",
-        "src/card.ts:2:39 usage/unanalyzable",
+      expect((await checkIn(nextLine)).diagnostics).toMatchObject([
+        {
+          file: path.join(nextLine, "src/card.module.css"),
+          rule: "invalid-disable",
+          message:
+            "usage/unanalyzable can only be disabled file-wide: write better-css-modules-disable at the top of the file",
+        },
+        {
+          file: path.join(nextLine, "src/card.ts"),
+          line: 2,
+          column: 39,
+          rule: "usage/unanalyzable",
+        },
       ]);
     });
   });

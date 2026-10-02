@@ -71,7 +71,9 @@ export function readDisableComments(root: Root, file: string): Disabled {
         ? ['a disable comment needs a reason: add " -- <why>" after the rule names']
         : rules.length === 0
           ? ["a disable comment must name the rules it disables, such as tokens/color"]
-          : rules.map(problemDisabling).filter((message) => message !== null)),
+          : rules
+              .map((rule) => problemDisabling(rule, directive === DISABLE))
+              .filter((message) => message !== null)),
     ];
     malformed.push(...messages.map((message) => invalid(file, comment, message)));
     if (messages.length > 0) return;
