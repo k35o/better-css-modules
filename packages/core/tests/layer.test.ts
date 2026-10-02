@@ -5,7 +5,7 @@ import path from "node:path";
 import { transform } from "lightningcss";
 import postcss, { CssSyntaxError } from "postcss";
 import postcssModules from "postcss-modules";
-import { resolveConfig } from "../src/config.js";
+import { ConfigError, resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
 import { type GlobalCss, loadGlobalCss } from "../src/global.js";
 import { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "../src/layer.js";
@@ -244,14 +244,15 @@ describe("resolveLayer", () => {
     const globalCss = await globalCssOf({ "global.css": "@layer base, components;" }, [
       "global.css",
     ]);
+    expect(() => resolveLayer("ui", globalCss)).toThrow(ConfigError);
     expect(() => resolveLayer("ui", globalCss)).toThrow(
-      '[better-css-modules] layer "ui" is not declared by the global CSS; declare it there in order, such as @layer base, components, ui;',
+      'layer "ui" is not declared by the global CSS; declare it there in order, such as @layer base, components, ui;',
     );
   });
 
   it("asks for global CSS when there is none", async () => {
     expect(() => resolveLayer("ui", { files: [], tokens: new Map() })).toThrow(
-      '[better-css-modules] layer "ui" needs global CSS that declares it; list one in globalCss with @layer ui;',
+      'layer "ui" needs global CSS that declares it; list one in globalCss with @layer ui;',
     );
   });
 });

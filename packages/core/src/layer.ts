@@ -1,4 +1,5 @@
 import postcss, { type AtRule, type ChildNode } from "postcss";
+import { ConfigError } from "./config.js";
 import type { CssModuleAnalysis } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 import type { GlobalCss, GlobalCssFile } from "./global.js";
@@ -60,10 +61,10 @@ export function resolveLayer(name: string, globalCss: GlobalCss): Layer {
   const order = declaredLayers(globalCss);
   if (!order.includes(name)) {
     const statement = `@layer ${[...order, name].join(", ")};`;
-    throw new Error(
+    throw new ConfigError(
       globalCss.files.length > 0
-        ? `[better-css-modules] layer "${name}" is not declared by the global CSS; declare it there in order, such as ${statement}`
-        : `[better-css-modules] layer "${name}" needs global CSS that declares it; list one in globalCss with ${statement}`,
+        ? `layer "${name}" is not declared by the global CSS; declare it there in order, such as ${statement}`
+        : `layer "${name}" needs global CSS that declares it; list one in globalCss with ${statement}`,
     );
   }
   return { name, order };

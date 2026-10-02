@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import postcss from "postcss";
 import { checkGlobalCss } from "../src/check.js";
-import { resolveConfig } from "../src/config.js";
+import { ConfigError, resolveConfig } from "../src/config.js";
 import { generate } from "../src/csstree.js";
 import { type GlobalCss, globalCssFrom, loadGlobalCss } from "../src/global.js";
 
@@ -330,41 +330,41 @@ describe("loadGlobalCss", () => {
       "an entry it cannot resolve",
       { "a.css": "" },
       ["src/a.css"],
-      '[better-css-modules] cannot resolve "src/a.css" listed in globalCss',
+      'cannot resolve "src/a.css" listed in globalCss',
     ],
     [
       "an import it cannot resolve",
       { "a.css": '@import "./missing.css";' },
       ["./a.css"],
-      '[better-css-modules] a.css:1:1: cannot resolve "./missing.css"',
+      'a.css:1:1: cannot resolve "./missing.css"',
     ],
     [
       "an import of a URL",
       { "a.css": '@import url("https://example.com/a.css");' },
       ["./a.css"],
-      "[better-css-modules] a.css:1:1: global CSS cannot import https://example.com/a.css",
+      "a.css:1:1: global CSS cannot import https://example.com/a.css",
     ],
     [
       "stylesheets that import each other",
       { "a.css": '@import "./b.css";', "b.css": '@import "./a.css";' },
       ["./a.css"],
-      "[better-css-modules] a.css → b.css → a.css import each other",
+      "a.css → b.css → a.css import each other",
     ],
     [
       "an at-rule that is not standard CSS",
       { "a.css": ":root { --color-a: #000; }\n@theme {\n  --color-b: #000;\n}" },
       ["./a.css"],
-      "[better-css-modules] a.css:2:1: @theme is not standard CSS; global CSS must be standard CSS",
+      "a.css:2:1: @theme is not standard CSS; global CSS must be standard CSS",
     ],
     [
       "a stylesheet it cannot parse",
       { "a.css": ":root { --color-a: #000;" },
       ["./a.css"],
-      "[better-css-modules] a.css:1:1: Unclosed block",
+      "a.css:1:1: Unclosed block",
     ],
   ])("refuses %s", async (_name, files, globalCss, message) => {
     const { load } = await fixture(files, globalCss);
-    await expect(load()).rejects.toThrow(message);
+    await expect(load()).rejects.toThrow(new ConfigError(message));
   });
 
   it("refuses a stylesheet that is also a CSS module", async () => {
@@ -373,8 +373,9 @@ describe("loadGlobalCss", () => {
       ["./src/a.module.css"],
       ["src/**/*.module.css"],
     );
+    await expect(load()).rejects.toThrow(ConfigError);
     await expect(load()).rejects.toThrow(
-      "[better-css-modules] src/a.module.css is both a CSS module (include) and global CSS (globalCss)",
+      "src/a.module.css is both a CSS module (include) and global CSS (globalCss)",
     );
   });
 

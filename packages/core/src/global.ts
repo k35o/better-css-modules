@@ -10,7 +10,7 @@ import postcss, {
 } from "postcss";
 import { ResolverFactory } from "oxc-resolver";
 import type * as CssTree from "css-tree";
-import type { ResolvedConfig } from "./config.js";
+import { ConfigError, type ResolvedConfig } from "./config.js";
 import { lexer, parse, walk } from "./csstree.js";
 import { createMatcher } from "./project.js";
 import { categoryOf, type TokenCategory } from "./tokens.js";
@@ -363,5 +363,5 @@ function importOf(atRule: AtRule, where: () => string): { url: string; condition
 }
 
 function fail(message: string): never {
-  throw new Error(`[better-css-modules] ${message}`);
+  throw new ConfigError(message);
 }

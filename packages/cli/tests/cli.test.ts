@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pkg from "../package.json" with { type: "json" };
 
 // The bin as it is installed, so the tests cover the wiring users run.
 const BIN = fileURLToPath(new URL("../bin/better-css-modules.mjs", import.meta.url));
@@ -167,5 +168,136 @@ describe("check", () => {
       stdout: "",
       stderr: '[better-css-modules] src/global.css:1:1: cannot resolve "tailwindcss"\n',
     });
+  });
+});
+
+describe("--config", () => {
+  it("reads the config file it names and resolves paths against its directory", async () => {
+    const dir = await project(
+      Object.fromEntries(Object.entries(card).map(([name, content]) => [`app/${name}`, content])),
+    );
+    expect(run(dir, "check", "--config", "app/better-css-modules.config.mjs")).toEqual({
+      status: 1,
+      stdout: [
+        "app/src/card.module.css:2:10 error tokens/color: #fff is a raw value for color; use a --color-* token",
+        "app/src/card.module.css:5:1 error unused-class: .ghost is never used",
+        "app/src/card.module.css:6:10 error tokens/color: red is a raw value for color; use a --color-* token",
+        "[better-css-modules] 3 problem(s)",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+    expect(run(dir, "generate", "--config", "app/better-css-modules.config.mjs")).toEqual({
+      status: 0,
+      stdout: [
+        "[better-css-modules] generated 1 file(s)",
+        "  app/__generated__/src/card.module.css.d.ts",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+});
+
+describe("a command that cannot run", () => {
+  it("prints the help to stderr and exits with 2 without a command", async () => {
+    const { status, stdout, stderr } = run(await project({}));
+    expect({ status, stdout }).toEqual({ status: 2, stdout: "" });
+    expect(stderr).toContain("Usage:");
+  });
+
+  it("names an unknown command before the help and exits with 2", async () => {
+    const { status, stdout, stderr } = run(await project({}), "chekc");
+    expect({ status, stdout }).toEqual({ status: 2, stdout: "" });
+    expect(stderr).toMatch(/^\[better-css-modules\] unknown command "chekc"\n[^]*Usage:/);
+  });
+
+  it.each([
+    [["check", "--fromat", "github"], "Unknown option `--fromat`"],
+    [["generate", "extra"], "Unused args: `extra`"],
+    [["check", "--config"], "option `--config <path>` value is missing"],
+    [["check", "--format", "xml"], 'unknown format "xml"; use text or github'],
+  ])("prints one line and exits with 2 for %j", async (args, message) => {
+    expect(run(await project(card), ...args)).toEqual({
+      status: 2,
+      stdout: "",
+      stderr: `[better-css-modules] ${message}\n`,
+    });
+  });
+
+  it("prints a config file that does not load on one line and exits with 2", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs": "export default { include: [ ;\n",
+    });
+    const { status, stdout, stderr } = run(dir, "check");
+    expect({ status, stdout }).toEqual({ status: 2, stdout: "" });
+    expect(stderr).toMatch(
+      /^\[better-css-modules\] cannot load better-css-modules\.config\.mjs: .+\n$/,
+    );
+  });
+
+  it.each(["globalCSS", "watch"])("refuses the unknown key %s and exits with 2", async (key) => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs": `export default { ${key}: true };\n`,
+    });
+    expect(run(dir, "generate")).toEqual({
+      status: 2,
+      stdout: "",
+      stderr: `[better-css-modules] better-css-modules.config.mjs: unknown key "${key}"\n`,
+    });
+  });
+
+  it("refuses an include that reaches outside the project root", async () => {
+    const dir = await project({
+      "shared/a.module.css": ".a {}\n",
+      "app/better-css-modules.config.mjs":
+        'export default { include: ["../shared/*.module.css"] };\n',
+    });
+    expect(run(path.join(dir, "app"), "generate")).toEqual({
+      status: 2,
+      stdout: "",
+      stderr: `[better-css-modules] include matches ../shared/a.module.css, which is outside the project root ${await fs.realpath(path.join(dir, "app"))}\n`,
+    });
+  });
+
+  it("prints a config mistake as a GitHub Actions annotation with --format github", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs": 'export default { outDir: "../types" };\n',
+    });
+    expect(run(dir, "check", "--format", "github")).toEqual({
+      status: 2,
+      stdout: "",
+      stderr: `::error title=better-css-modules::better-css-modules.config.mjs: outDir "../types" is outside the project root ${await fs.realpath(dir)}\n`,
+    });
+  });
+
+  it("prints the stack of an unexpected error and exits with 2", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs": 'export default { outDir: "blocker" };\n',
+      blocker: "a file where the outDir should be\n",
+    });
+    const { status, stdout, stderr } = run(dir, "generate");
+    expect({ status, stdout }).toEqual({ status: 2, stdout: "" });
+    expect(stderr).toMatch(/^Error: ENOTDIR[^\n]*\n\s+at /);
+  });
+});
+
+describe("--help and --version", () => {
+  it("prints the help to stdout and exits with 0", async () => {
+    const { status, stdout, stderr } = run(await project({}), "--help");
+    expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
+    expect(stdout).toContain("Usage:");
+  });
+
+  it("prints the version of the package and exits with 0", async () => {
+    const { status, stdout, stderr } = run(await project({}), "--version");
+    expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
+    expect(stdout).toMatch(
+      new RegExp(`^better-css-modules/${pkg.version.replaceAll(".", "\\.")} `),
+    );
   });
 });
