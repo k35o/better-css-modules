@@ -1,7 +1,9 @@
+import { statSync } from "node:fs";
 import postcss, { type AtRule, type ChildNode, type Node, type Root } from "postcss";
-import { ConfigError } from "./config.js";
+import { ConfigError, type ResolvedConfig } from "./config.js";
 import type { Diagnostic } from "./diagnostic.js";
-import { type GlobalCss, readImport } from "./global.js";
+import { type GlobalCss, loadGlobalCss, readImport } from "./global.js";
+import { createMatcher } from "./project.js";
 import type { RuleId } from "./rules.js";
 
 /** The cascade layer the bundler plugins put every CSS Modules file in. */
@@ -73,6 +75,55 @@ export function wrapInLayer(source: string, file: string, layer: Layer): WrapRes
 
   const result = root.toResult({ to: file, map: { inline: false, annotation: false } });
   return { code: result.css, map: result.map.toString() };
+}
+
+/**
+ * What the bundler plugins run on each stylesheet: it wraps the CSS Modules
+ * files the config includes in the layer it names, and resolves to null for
+ * any other file, or for every file when the config names no layer.
+ *
+ * `depend` receives each file of the global CSS before the layer is resolved,
+ * so that the bundler wraps the module again once the layer is declared. The
+ * global CSS is read again only after one of its files has changed, and a read
+ * that failed is tried again on the next call.
+ */
+export function createLayerWrapper(
+  config: ResolvedConfig,
+): (source: string, file: string, depend: (file: string) => void) => Promise<WrapResult | null> {
+  const matches = createMatcher(config);
+  let reading: Promise<{ css: GlobalCss; stamps: Map<string, number | null> }> | undefined;
+
+  const read = () => {
+    const promise = loadGlobalCss(config).then((css) => ({
+      css,
+      stamps: new Map(css.files.map(({ file }) => [file, modified(file)])),
+    }));
+    promise.catch(() => {
+      if (reading === promise) reading = undefined;
+    });
+    return promise;
+  };
+  const globalCss = async (): Promise<GlobalCss> => {
+    const last = reading;
+    if (last) {
+      const { css, stamps } = await last;
+      if ([...stamps].every(([file, stamp]) => modified(file) === stamp)) return css;
+      if (reading === last) reading = read();
+    }
+    reading ??= read();
+    return (await reading).css;
+  };
+
+  return async (source, file, depend) => {
+    if (config.layer === undefined || !matches(file)) return null;
+    const css = await globalCss();
+    for (const { file: dependency } of css.files) depend(dependency);
+    return wrapInLayer(source, file, resolveLayer(config.layer, css));
+  };
+}
+
+function modified(file: string): number | null {
+  return statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? null;
 }
 
 /** `@import url` becomes `@import url layer(name)`, unless it names a layer of its own. */

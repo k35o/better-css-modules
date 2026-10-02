@@ -7,12 +7,9 @@ import {
   type ResolvedConfig,
 } from "@better-css-modules/core";
 import {
+  createLayerWrapper,
   createMatcher,
-  type GlobalCss,
-  loadGlobalCss,
   regenerateDts,
-  resolveLayer,
-  wrapInLayer,
 } from "@better-css-modules/core/internal";
 
 export interface Options {
@@ -31,6 +28,7 @@ const generations = new Map<string, Promise<void>>();
 interface Setup {
   config: ResolvedConfig;
   matches: (file: string) => boolean;
+  wrap: ReturnType<typeof createLayerWrapper>;
 }
 
 /**
@@ -47,27 +45,11 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
   // webpack and Rspack build modules while buildStart still runs, so the
   // transform waits for the same setup instead of reading what it left.
   let setup: Promise<Setup> | undefined;
-  let globalCss: Promise<GlobalCss> | undefined;
-  /** The files of the global CSS last read, whose change makes it read again. */
-  let globalFiles = new Set<string>();
 
   const load = async (): Promise<Setup> => {
     const loaded = await loadConfig({ cwd, config: options.config });
-    return { config: loaded, matches: createMatcher(loaded) };
+    return { config: loaded, matches: createMatcher(loaded), wrap: createLayerWrapper(loaded) };
   };
-
-  const readGlobalCss = (config: ResolvedConfig): Promise<GlobalCss> =>
-    loadGlobalCss(config).then(
-      (css) => {
-        globalFiles = new Set(css.files.map(({ file }) => file));
-        return css;
-      },
-      (error: unknown) => {
-        // Not kept: the next transform tries again, after the file is fixed.
-        globalCss = undefined;
-        throw error;
-      },
-    );
 
   const log = (message: string) => {
     if (!config?.silent) console.log(`[better-css-modules] ${message}`);
@@ -88,12 +70,9 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
     // A query (`?raw`, `?inline`) asks for something other than the stylesheet.
     filter: { id: /\.css$/ },
     async handler(code, id) {
-      const { config, matches } = await (setup ??= load());
-      if (config.layer === undefined || !matches(id)) return;
-      const css = await (globalCss ??= readGlobalCss(config));
-      // Before resolving, so that declaring the layer rebuilds the module.
-      for (const { file } of css.files) this.addWatchFile(file);
-      const wrapped = wrapInLayer(code, id, resolveLayer(config.layer, css));
+      const { wrap } = await (setup ??= load());
+      const wrapped = await wrap(code, id, (file) => this.addWatchFile(file));
+      if (!wrapped) return;
       // unplugin hands esbuild the map as a `//#` comment, which is not CSS.
       return meta.framework === "esbuild" ? wrapped.code : wrapped;
     },
@@ -105,7 +84,6 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
     enforce: "pre",
 
     async buildStart() {
-      globalCss = undefined;
       ({ config, matches } = await (setup = load()));
       if (meta.framework !== "vite") return generateTypes(config);
 
@@ -129,7 +107,6 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
       // watch mode never reported, so the next build start generates everything.
       generations.clear();
       if (!config || !matches) return;
-      if (globalFiles.has(id)) globalCss = undefined;
       if (!matches(id)) return;
 
       const { generated, removed, diagnostics } = await regenerateDts(id, config);
