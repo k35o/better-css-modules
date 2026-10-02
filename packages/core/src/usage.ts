@@ -43,6 +43,11 @@ interface ModuleUsage {
   importers: Set<string>;
 }
 
+interface Binding {
+  css: string;
+  namespace: boolean;
+}
+
 interface SourceFile {
   file: string;
   source: string;
@@ -181,8 +186,8 @@ export async function analyzeUsage(
   }
 
   for (const { file, source, result } of files) {
-    // local identifier -> CSS module whose default (or namespace) export it holds
-    const bindings = new Map<string, string>();
+    // local identifier -> CSS module whose default export or namespace object it holds
+    const bindings = new Map<string, Binding>();
     const imported = new Set<string>();
     for (const staticImport of result.module.staticImports) {
       // `import type styles from` never loads the stylesheet.
@@ -198,7 +203,10 @@ export async function analyzeUsage(
           if (entry.importName.kind === "Name" && entry.importName.name !== "default") {
             usage.get(resolved)!.used.add(entry.importName.name ?? "");
           } else {
-            bindings.set(entry.localName.value, resolved);
+            bindings.set(entry.localName.value, {
+              css: resolved,
+              namespace: entry.importName.kind === "NamespaceObject",
+            });
           }
         }
         continue;
@@ -223,7 +231,7 @@ export async function analyzeUsage(
         if (!css) continue;
         usage.get(css)!.importers.add(file);
         imported.add(css);
-        bindings.set(entry.localName.value, css);
+        bindings.set(entry.localName.value, { css, namespace: false });
       }
     }
     for (const dynamicImport of result.module.dynamicImports) {
@@ -303,7 +311,7 @@ export async function analyzeUsage(
 function collectReferences(
   file: string,
   result: ParseResult,
-  bindings: Map<string, string>,
+  bindings: Map<string, Binding>,
   usage: Map<string, ModuleUsage>,
   markOpaque: (css: string, opaque: Opaque) => void,
   rel: (file: string) => string,
@@ -320,37 +328,33 @@ function collectReferences(
       ancestors.push(node);
       if (node.type !== "Identifier" || !rawParent) return;
       const name = (node as IdentifierNode).name;
-      const css = bindings.get(name);
-      if (!css) return;
+      const binding = bindings.get(name);
+      if (!binding) return;
       if (!isReferenceIdentifier(rawNode, rawParent, { mode: "value" })) return;
       const declaration = scopeTracker.getDeclaration(name);
       if (declaration && declaration.type !== "Import") return;
       if (rawParent.type === "TSTypeQuery") return;
 
-      // Look through `styles as T`, `styles!` and the like to the real consumer.
-      let child: AstNode = node;
-      let index = ancestors.length - 2;
-      while (
-        index >= 0 &&
-        TS_WRAPPERS.has(ancestors[index].type) &&
-        (ancestors[index] as WrapperNode).expression === child
-      ) {
-        child = ancestors[index];
-        index--;
+      const { css } = binding;
+      let namespace = binding.namespace;
+      let at = throughWrappers(ancestors, ancestors.length - 1);
+      let parent = ancestors[at - 1];
+      // `s.default` holds what a default import of the module would.
+      if (namespace && isObjectOf(parent, ancestors[at]) && staticKeyOf(parent) === "default") {
+        namespace = false;
+        at = throughWrappers(ancestors, at - 1);
+        parent = ancestors[at - 1];
       }
-      const parent = ancestors[index];
+      const child = ancestors[at];
       const target = usage.get(css)!;
 
-      if (parent.type === "MemberExpression" && (parent as MemberExpressionNode).object === child) {
-        const { property, computed } = parent as MemberExpressionNode;
-        if (!computed && property.type === "Identifier") {
-          target.used.add((property as IdentifierNode).name);
+      if (isObjectOf(parent, child)) {
+        const key = staticKeyOf(parent);
+        if (key !== null) {
+          target.used.add(key);
           return;
         }
-        if (property.type === "Literal" && typeof (property as LiteralNode).value === "string") {
-          target.used.add((property as LiteralNode).value as string);
-          return;
-        }
+        const { property } = parent;
         if (property.type === "TemplateLiteral") {
           const { quasis, expressions } = property as TemplateLiteralNode;
           const head = quasis[0]?.value.cooked ?? "";
@@ -376,7 +380,7 @@ function collectReferences(
         if (declarator.init === child && declarator.id.type === "ObjectPattern") {
           for (const property of (declarator.id as ObjectPatternNode).properties) {
             const key = keyNameOf(property);
-            if (key === null) {
+            if (key === null || (namespace && key === "default")) {
               markOpaque(css, {
                 file,
                 offset: property.start,
@@ -396,6 +400,32 @@ function collectReferences(
       });
     },
   });
+}
+
+/** The outermost of `x as T`, `x!` and the like around `ancestors[index]`, which is what consumes it. */
+function throughWrappers(ancestors: AstNode[], index: number): number {
+  while (
+    index > 0 &&
+    TS_WRAPPERS.has(ancestors[index - 1].type) &&
+    (ancestors[index - 1] as WrapperNode).expression === ancestors[index]
+  ) {
+    index--;
+  }
+  return index;
+}
+
+function isObjectOf(parent: AstNode, child: AstNode): parent is MemberExpressionNode {
+  return parent.type === "MemberExpression" && (parent as MemberExpressionNode).object === child;
+}
+
+/** The property `x.name` or `x["name"]` reads, or null when it is computed. */
+function staticKeyOf(member: MemberExpressionNode): string | null {
+  const { property, computed } = member;
+  if (!computed && property.type === "Identifier") return (property as IdentifierNode).name;
+  if (property.type === "Literal" && typeof (property as LiteralNode).value === "string") {
+    return (property as LiteralNode).value as string;
+  }
+  return null;
 }
 
 /** The static key of an object-pattern property, or null for `...rest` and computed keys. */

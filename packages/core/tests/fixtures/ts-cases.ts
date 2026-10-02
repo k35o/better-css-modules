@@ -183,6 +183,33 @@ export const tsCases: TsCase[] = [
     unused: ["a.module.css:b"],
   },
   {
+    name: "default-member-of-a-namespace-import",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; } .c { color: red; }`,
+      "a.tsx": `import * as s from './a.module.css';\nexport const A = () => <div className={s.default.a + s["default"]?.b} />;`,
+    },
+    unused: ["a.module.css:c"],
+  },
+  {
+    name: "default-member-of-a-namespace-import-escaping",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "a.tsx": `import * as s from './a.module.css';\nimport { Child } from './child';\nexport const A = () => <Child classes={s.default} />;`,
+      "child.tsx": `export const Child = ({ classes }: { classes: Record<string, string> }) => <div className={classes.a} />;`,
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
+    name: "default-member-of-a-namespace-import-destructured",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "a.tsx": `import * as s from './a.module.css';\nconst { default: styles } = s;\nexport const A = () => <div className={styles.a} />;`,
+    },
+    unused: [],
+    unanalyzable: true,
+  },
+  {
     name: "named-import",
     files: {
       "a.module.css": `.a { color: red; } .b { color: red; }`,
