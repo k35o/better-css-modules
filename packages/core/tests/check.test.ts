@@ -690,10 +690,46 @@ describe("checkCss: disable comments", () => {
       check(`.a {\n  ${disable} tokens/color */\n  color: #fff;\n}`, globalCssFrom([])),
     ).toHaveLength(1);
   });
+});
 
-  it("has no file-wide form", () => {
-    const css = "/* better-css-modules-disable tokens/color -- legacy file */\n.a { color: #fff; }";
-    expect(check(css)).toHaveLength(1);
+describe("checkCss: file-wide disable comments", () => {
+  const disable = "/* better-css-modules-disable";
+
+  it("silences the named rules everywhere in the file", () => {
+    const css = [
+      "/* The card of the legacy checkout. */",
+      `${disable} tokens/color, pure/id -- the legacy checkout is replaced next quarter */`,
+      ".a { color: #fff; }",
+      "#b { background-color: #000; }",
+      ".c { padding: 13px; }",
+    ].join("\n");
+    expect(diagnose(css).map((d) => `${d.line} ${d.rule}`)).toEqual(["5 tokens/spacing"]);
+  });
+
+  it("reports one after the first rule, at-rule or declaration and does not honour it", () => {
+    const after = `.a { color: #fff; }\n${disable} tokens/color -- legacy */\n.b { color: #000; }`;
+    const inside = `.a {\n  ${disable} tokens/color -- legacy */\n  color: #fff;\n}`;
+    const message =
+      "invalid-disable: a file-wide disable comment must come before the first rule, at-rule or declaration";
+    expect(check(after)).toEqual([
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+      message,
+      `tokens/color: #000 is a raw value for color; ${COLOR_HINT}`,
+    ]);
+    expect(check(inside)).toEqual([
+      message,
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+    ]);
+  });
+
+  it("needs a reason and the rules like the next-line form", () => {
+    expect(check(`${disable} tokens/color */\n.a { color: #fff; }`)).toEqual([
+      'invalid-disable: a disable comment needs a reason: add " -- <why>" after the rule names',
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+    ]);
+    expect(check(`${disable} syntax -- legacy */\n.a {}`)).toEqual([
+      "invalid-disable: syntax cannot be disabled: the bundlers cannot read the stylesheet either",
+    ]);
   });
 });
 

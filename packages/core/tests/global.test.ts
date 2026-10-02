@@ -197,6 +197,13 @@ describe("checkGlobalCss", () => {
     expect(checkGlobalCss(globalCss)).toEqual([]);
   });
 
+  it("honours file-wide disable comments", () => {
+    const globalCss = read(
+      `/* better-css-modules-disable tokens/declaration -- the theme script sets these */\n${tokens}\n.dark { --color-fg-flash: red; }\n.contrast { --color-fg-loud: red; }`,
+    );
+    expect(checkGlobalCss(globalCss)).toEqual([]);
+  });
+
   it("leaves a package's stylesheets alone", () => {
     const globalCss = read(`${tokens}\n.dark { --color-new: red; }\nbody { color: #000; }`, {
       checked: false,
