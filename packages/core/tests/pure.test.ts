@@ -10,8 +10,9 @@ const FILE = "/project/src/a.module.css";
 
 const SELECTOR_HINT = "every selector of a CSS Module needs one";
 const SUBJECT_HINT =
-  "style the element through a class of its own, or space children with gap on the parent";
-const GLOBAL_HINT = "switch modes by overriding tokens instead";
+  "give the element a class of its own, or style markup the component does not write inside @scope";
+const GLOBAL_HINT =
+  "a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope";
 const AT_RULE_HINT =
   "is global and takes effect only while this module is loaded; move it to the global CSS";
 
@@ -210,7 +211,8 @@ describe("checkCss: :global (pure/global)", () => {
         rule: "pure/global",
         column: 12,
         endColumn: 25,
-        message: `:global(spin) reaches outside this module; ${GLOBAL_HINT}`,
+        message:
+          ":global(spin) reaches outside this module; shared keyframes belong in the global CSS",
       },
     ]);
   });

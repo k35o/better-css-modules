@@ -392,7 +392,9 @@ function checkDeclaredName(
   ];
   if (context.global) {
     if (context.tokens.has(name) || declaresToken(node, context.global.conditional)) return [];
-    return report(`${name} is not declared at :root; a mode can only override a token`);
+    return report(
+      `${name} is not declared at :root; a mode can only override a token, so declare the token in a :root rule`,
+    );
   }
   const category = categoryOf(name);
   if (category && context.restrictions.has(category)) {

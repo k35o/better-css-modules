@@ -349,7 +349,7 @@ function subjectDiagnostic(parts: SubjectPart[], text: string, file: string): Di
     endLine: last?.end.line,
     endColumn: last?.end.column,
     rule: "pure/subject",
-    message: `${written} is not a local class; style the element through a class of its own, or space children with gap on the parent`,
+    message: `${written} is not a local class; give the element a class of its own, or style markup the component does not write inside @scope`,
   };
 }
 
@@ -359,7 +359,7 @@ function globalDiagnostic(found: Located, file: string): Diagnostic {
     file,
     "pure/global",
     (written) =>
-      `${written} reaches outside this module; switch modes by overriding tokens instead`,
+      `${written} reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope`,
   );
 }
 
@@ -437,7 +437,7 @@ function checkKeyframesName(atRule: AtRule, file: string): Diagnostic[] {
       endLine: start.line,
       endColumn: start.column + name.length,
       rule: "pure/global",
-      message: `${name} reaches outside this module; switch modes by overriding tokens instead`,
+      message: `${name} reaches outside this module; shared keyframes belong in the global CSS`,
     },
   ];
 }

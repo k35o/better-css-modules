@@ -155,7 +155,8 @@ describe("checkGlobalCss", () => {
         endLine: 4,
         endColumn: 18,
         rule: "tokens/declaration",
-        message: "--color-fg-loud is not declared at :root; a mode can only override a token",
+        message:
+          "--color-fg-loud is not declared at :root; a mode can only override a token, so declare the token in a :root rule",
       },
       expect.objectContaining({ line: 6, column: 45, rule: "tokens/declaration" }),
     ]);
@@ -182,7 +183,7 @@ describe("checkGlobalCss", () => {
       },
     ]);
     expect(checkGlobalCss(globalCss).map(({ message }) => message)).toEqual([
-      "--color-new is not declared at :root; a mode can only override a token",
+      "--color-new is not declared at :root; a mode can only override a token, so declare the token in a :root rule",
     ]);
   });
 

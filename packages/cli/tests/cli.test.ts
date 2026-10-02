@@ -187,7 +187,7 @@ describe("check", () => {
         "src/card.module.css:2:10 error tokens/color: #fff is a raw value for color; use a --color-* token",
         "src/card.module.css:5:1 error usage/unused-class: .ghost is never used",
         "src/card.module.css:6:10 error tokens/color: red is a raw value for color; use a --color-* token",
-        "src/global.css:5:3 error tokens/declaration: --color-fg-loud is not declared at :root; a mode can only override a token",
+        "src/global.css:5:3 error tokens/declaration: --color-fg-loud is not declared at :root; a mode can only override a token, so declare the token in a :root rule",
         "[better-css-modules] 4 problem(s)",
         "",
       ].join("\n"),
@@ -220,7 +220,7 @@ describe("check", () => {
     expect(run(dir, "check")).toEqual({
       status: 1,
       stdout: [
-        "src/card.module.css:1:1 error pure/global: :global(.dark) reaches outside this module; switch modes by overriding tokens instead",
+        "src/card.module.css:1:1 error pure/global: :global(.dark) reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope",
         "[better-css-modules] 1 problem(s)",
         "",
       ].join("\n"),
