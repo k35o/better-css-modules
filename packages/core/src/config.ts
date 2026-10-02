@@ -79,8 +79,9 @@ export async function loadConfig({
   let mod: unknown;
   try {
     // jiti hands a .mjs or .cjs file to Node, whose module cache keeps the first
-    // version, so every config is transpiled: a long-lived process (a Turbopack
-    // loader worker) then sees an edited one. jiti's default interop would hide
+    // version, so every config is transpiled: a long-lived process (a bundler
+    // in watch mode, whose plugin reads it again at each build start) then sees
+    // an edited one. jiti's default interop would hide
     // whether there is a default export, and throws on `export default null`.
     const jiti = createJiti(file, { moduleCache: false, interopDefault: false });
     mod = await jiti.evalModule(fs.readFileSync(file, "utf-8"), {
