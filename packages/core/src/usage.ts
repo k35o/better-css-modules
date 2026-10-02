@@ -10,7 +10,9 @@ import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { defaultIgnore, findCssModules, loadCssModuleFiles } from "./project.js";
 
 const SOURCE_GLOBS = ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"];
-const IGNORED_DIRS = [".git", "dist", ".next"];
+// Build outputs, which can hold megabytes of bundled JS. Dot directories such
+// as .next need no entry: fast-glob does not enter them.
+const IGNORED_DIRS = ["dist", "build", "out", "coverage", "storybook-static"];
 
 /** Expression wrappers that do not change what is referenced. */
 const TS_WRAPPERS = new Set([

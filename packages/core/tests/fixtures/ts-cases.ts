@@ -365,4 +365,36 @@ export const tsCases: TsCase[] = [
     },
     unused: [],
   },
+  {
+    name: "build-output-directories-are-ignored",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "src/a.tsx": `import styles from '../a.module.css';\nexport const A = () => <div className={styles.a} />;`,
+      "dist/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
+      "build/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
+      "out/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
+      "coverage/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
+      "storybook-static/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
+      "packages/app/build/x.js": `import s from '../../../a.module.css'; export const y = (k) => s[k];`,
+    },
+    unused: ["a.module.css:b"],
+  },
+  {
+    name: "dot-directories-are-not-scanned",
+    files: {
+      "a.module.css": `.a { color: red; }`,
+      ".storybook/preview.tsx": `import styles from '../a.module.css';\nexport const decorators = [() => <div className={styles.a} />];`,
+    },
+    unused: [],
+    orphans: ["a.module.css"],
+  },
+  {
+    name: "declaration-files-are-not-scanned",
+    files: {
+      "a.module.css": `.a { color: red; }`,
+      "types.d.ts": `export * from './a.module.css';`,
+    },
+    unused: [],
+    orphans: ["a.module.css"],
+  },
 ];
