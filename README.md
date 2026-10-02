@@ -6,6 +6,7 @@ A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` 
 
 - Extracts the keys a bundler exports from each `.module.css` and writes a `.d.ts` per file
 - Generated types live in one codegen directory (no `.d.ts` files scattered through `src/`)
+- Go-to-definition on `styles.container` opens the stylesheet at `.container`, through a declaration map next to each `.d.ts`
 - Reports unused classes with `file:line:col`, aggregated across the whole project
 - Keeps each module pure: its selectors style its own classes, with no `:global`, ids, `!important` or global-only at-rules such as `@font-face`
 - Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens and tokens of the wrong kind
@@ -145,6 +146,7 @@ declare const styles: {
   readonly "primary-btn": string;
 };
 export default styles;
+//# sourceMappingURL=button.module.css.d.ts.map
 ```
 
 With `namedExports: true`, the classes are named exports, as webpack's css-loader and Rspack's built-in CSS export them:
@@ -156,11 +158,14 @@ export { _0 as container };
 declare const _1: string;
 export { _1 as "primary-btn" };
 export declare const __esModule: true;
+//# sourceMappingURL=button.module.css.d.ts.map
 ```
 
 `__esModule` makes TypeScript reject `import styles from`, which is `undefined` at runtime under those bundlers; import the module as a namespace (`import * as styles`) or by name (`import { container }`). A class named `default` or `__esModule` is left out of the type: css-loader exports `default` as `_default` while Rspack makes it the default export, so rename it.
 
 The `.d.ts` mirrors the path of the CSS file relative to the project root. Files outside the root are refused rather than written somewhere outside `outDir`.
+
+Next to each `.d.ts` is its declaration map (`button.module.css.d.ts.map`). It ties each key to the selector where the key first appears, so go-to-definition on `styles.container`, or on `container` imported by name, opens the stylesheet at `.container` instead of the generated file.
 
 ## What the type contains
 
