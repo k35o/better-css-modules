@@ -24,6 +24,17 @@ export interface GlobalCssFile {
   checked: boolean;
   /** Whether it was imported under a media or supports condition, which makes all of it a mode. */
   conditional: boolean;
+  /** Whether `globalCss` lists it, rather than only an import reaching it. */
+  listed: boolean;
+  /** The file each of its `@import` rules reads. */
+  imports: GlobalCssImport[];
+}
+
+export interface GlobalCssImport {
+  rule: AtRule;
+  file: string;
+  /** Whether a media or supports condition guards the import. */
+  conditional: boolean;
 }
 
 /** A custom property the global CSS declares at `:root` or with `@property`. */
@@ -277,7 +288,14 @@ class Loader {
       );
     }
 
-    const entry: GlobalCssFile = { file, root, checked: this.isOwn(file), conditional };
+    const entry: GlobalCssFile = {
+      file,
+      root,
+      checked: this.isOwn(file),
+      conditional,
+      listed: importers.length === 0,
+      imports: [],
+    };
     const imports: string[] = [];
     this.read.set(file, { entry, imports });
     for (const node of root.nodes) {
@@ -288,6 +306,7 @@ class Loader {
       }
       const imported = this.imports.sync(path.dirname(file), url).path;
       if (!imported) fail(`${this.at(file, node)}: cannot resolve "${url}"`);
+      entry.imports.push({ rule: node, file: imported, conditional: condition });
       if (!condition) imports.push(imported);
       await this.load(imported, conditional || condition, [...importers, file]);
     }

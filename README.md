@@ -1,6 +1,6 @@
 # better-css-modules
 
-A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` files for `.module.css`, reports classes nothing uses, keeps each module pure and holds plain CSS to your design tokens, from one analysis of your CSS and TypeScript.
+A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` files for `.module.css`, reports classes nothing uses, keeps each module pure, holds plain CSS to your design tokens and puts every module in a cascade layer, from one analysis of your CSS and TypeScript.
 
 ## Features
 
@@ -9,6 +9,7 @@ A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` 
 - Reports unused classes with `file:line:col`, aggregated across the whole project
 - Keeps each module pure: its selectors style its own classes, with no `:global`, ids, `!important` or global-only at-rules such as `@font-face`
 - Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints
+- Wraps CSS Modules in a cascade layer: name one, and the bundler plugins put every module in it, so styles in later layers win without `!important`
 - Reads CSS with postcss and css-tree, and TypeScript with the oxc parser: `:global`, nesting, `composes`, escaped names, path aliases and re-exports all resolve the way bundlers resolve them
 - Verified against both lightningcss (Turbopack) and postcss-modules (Vite): the generated keys match what either bundler exports
 - Works with Vite, webpack, Rollup, Rspack, esbuild and Next.js (Turbopack)
@@ -90,7 +91,7 @@ better-css-modules check
 better-css-modules check --format github
 ```
 
-The bundler plugins only generate types. Run `check` from the CLI (locally, in a pre-commit hook or in CI): it looks at every file the config includes, not just the ones a bundler happens to load.
+The bundler plugins generate types and, when the config names a [`layer`](#cascade-layers), wrap each CSS Modules file in it. Run `check` from the CLI (locally, in a pre-commit hook or in CI): it looks at every file the config includes, not just the ones a bundler happens to load.
 
 ## Configuration
 
@@ -117,6 +118,7 @@ export default defineConfig({
 | `watch`     | `boolean`  | `false`                   | Enable watch mode (CLI only)                                                                                     |
 | `silent`    | `boolean`  | `false`                   | Suppress console output                                                                                          |
 | `globalCss` | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order; see [Token enforcement](#token-enforcement) |
+| `layer`     | `string`   | unset                     | Cascade layer the plugins wrap every module in; see [Cascade layers](#cascade-layers)                            |
 
 ## Output Example
 
@@ -414,6 +416,62 @@ src/nav.module.css:12:20 error tokens/breakpoint: 768px is not a breakpoint; the
 ```
 
 The comment silences the rules it names (`pure/*`, `tokens/<category>`, `tokens/internal`, `tokens/undeclared`, separated by commas or spaces) for the rule, at-rule or declaration that starts on the next line; above a rule it does not reach the declarations inside it. The reason after `--` is required: a comment without one, without a rule name, or naming a rule that does not exist is reported as `invalid-disable` and silences nothing. `pure/selector` cannot be disabled: a selector without a local class styles the page, which is the global CSS's job, whatever a bundler lets through. There is no file-wide form.
+
+## Cascade layers
+
+Name a layer, and the bundler plugins put every CSS Modules file the config includes in it, before the bundler's own CSS Modules transform runs. Styles in a later layer, or in no layer, then win over the modules whatever their specificity or load order. Without `layer` the plugins leave the CSS as written.
+
+```ts
+import { defineConfig } from "@better-css-modules/core";
+
+export default defineConfig({
+  include: ["src/**/*.module.css"],
+  globalCss: ["./src/globals.css"],
+  layer: "components",
+});
+```
+
+The layer must be one the [global CSS](#global-css) declares at the top level of the cascade: in an `@layer` statement such as `@layer base, components, utilities;`, with a block, or with `@import "…" layer(name)`, reading imports where they stand. The plugins stop with an error otherwise, and `check` exits with 2. A module
+
+```css
+.root {
+  color: var(--color-fg-base);
+}
+```
+
+reaches the CSS Modules transform as
+
+```css
+@layer base, components, utilities;
+@layer components {
+  .root {
+    color: var(--color-fg-base);
+  }
+}
+```
+
+- Every module starts with a statement of all the layers of the global CSS in their order, so the order holds whichever stylesheet the browser reads first: a code-split chunk, or the per-component CSS of a library.
+- Declare every layer in one statement at the top of the global CSS. Bundlers may move what an `@import` brings in ahead of the statements before it (Turbopack does), which would make the global CSS disagree with the modules about the order.
+- `@import` stays in front, where it has to be, and imports into the layer (`@import "./reset.css" layer(components)`) unless it names a layer of its own.
+- `@property` and `@keyframes` go in the layer too; browsers register them all the same.
+- `composes` does not work inside a layer: lightningcss (Turbopack, tsdown, Vite with `css.transformer: "lightningcss"`) rejects it, and postcss-modules (Vite) leaves the rules composed from another file outside the layer. The plugins stop at it. Join the class names in JavaScript instead.
+
+`check` reports what the wrapping would break, at the source:
+
+| Rule             | Reported at              | Meaning                                                                      |
+| ---------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `layer/nested`   | an `@layer` in a module  | The module is already in the layer, so this one nests in it (`components.x`) |
+| `layer/composes` | a `composes` declaration | `composes` does not work inside a layer                                      |
+
+With Tailwind CSS 4, name the layer `components` and declare `@layer properties, theme, base, components, utilities;`: Tailwind's utilities then win over the modules.
+
+### Bundlers
+
+The wrapping has to happen before the CSS Modules transform. It does with Vite, tsdown (`vp pack`), Rollup, webpack and Rspack with css-loader, Rspack's built-in CSS, esbuild and Next.js (Turbopack). `packages/unplugin/tests/layer.test.ts` builds with Vite, tsdown, Rollup, esbuild, and webpack and Rspack with css-loader to keep it so.
+
+- webpack's experimental built-in CSS (`experiments.css`) leaves the first class after an `@layer` statement unscoped, with or without this tool. Use css-loader.
+- `withBetterCssModules` adds a loader to `turbopack.rules["*.module.css"]` that runs before any loaders already there; it refuses a list of several rules under that key. The loader passes files through when the config names no layer.
+- The plugins read the config when the build starts; restart the dev server after changing it. A change to the global CSS is picked up as it happens.
 
 ## TypeScript Setup
 

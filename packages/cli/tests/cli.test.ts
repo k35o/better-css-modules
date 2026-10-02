@@ -123,6 +123,43 @@ describe("check", () => {
     });
   });
 
+  it("reports what wrapping the modules in the layer would break", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs":
+        'export default { globalCss: ["./src/global.css"], layer: "components" };\n',
+      "src/global.css": "@layer base, components;\n:root {\n  --color-fg-base: #000;\n}\n",
+      "src/card.module.css":
+        ".used {\n  color: var(--color-fg-base);\n}\n\n@layer x {\n  .other {\n    composes: used;\n  }\n}\n",
+      "src/card.ts":
+        'import styles from "./card.module.css";\n\nexport const card = [styles.used, styles.other];\n',
+    });
+    expect(run(dir, "check")).toEqual({
+      status: 1,
+      stdout: [
+        'src/card.module.css:5:1 error layer/nested: the plugins already put this module in the "components" layer, so this @layer nests inside it; leave the layer to the plugins',
+        "src/card.module.css:7:5 error layer/composes: composes does not work inside a cascade layer: lightningcss rejects it, and postcss-modules leaves the rules composed from another file outside the layer; join the class names in JavaScript",
+        "[better-css-modules] 2 problem(s)",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+
+  it("exits with 2 when the global CSS does not declare the layer", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs":
+        'export default { globalCss: ["./src/global.css"], layer: "components" };\n',
+    });
+    expect(run(dir, "check")).toEqual({
+      status: 2,
+      stdout: "",
+      stderr:
+        '[better-css-modules] layer "components" is not declared by the global CSS; declare it there in order, such as @layer components;\n',
+    });
+  });
+
   it("exits with 2 and prints why when the global CSS cannot be read", async () => {
     const dir = await project({ ...card, "src/global.css": '@import "tailwindcss";\n' });
     expect(run(dir, "check")).toEqual({
