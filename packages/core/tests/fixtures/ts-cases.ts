@@ -465,9 +465,18 @@ export const tsCases: TsCase[] = [
       "out/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
       "coverage/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
       "storybook-static/x.js": `import s from '../a.module.css'; export const y = (k) => s[k];`,
-      "packages/app/build/x.js": `import s from '../../../a.module.css'; export const y = (k) => s[k];`,
     },
     unused: ["a.module.css:b"],
+  },
+  {
+    name: "directories-named-like-build-outputs-below-the-root-are-scanned",
+    files: {
+      "src/app/build/page.module.css": `.a { color: red; }`,
+      "src/app/build/page.tsx": `import styles from './page.module.css';\nexport default () => <div className={styles.a} />;`,
+      "src/components/out/Out.module.css": `.a { color: red; }`,
+      "src/components/out/Out.tsx": `import styles from './Out.module.css';\nexport const Out = () => <div className={styles.a} />;`,
+    },
+    unused: [],
   },
   {
     name: "dot-directories-are-not-scanned",

@@ -11,8 +11,10 @@ import type { Diagnostic } from "./diagnostic.js";
 import { defaultIgnore } from "./project.js";
 
 const SOURCE_GLOBS = ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"];
-// Build outputs, which can hold megabytes of bundled JS. Dot directories such
-// as .next need no entry: fast-glob does not enter them.
+// Build outputs, which can hold megabytes of bundled JS. Only at the root:
+// below it, a directory of one of these names is as likely a route or a
+// component folder. Dot directories such as .next need no entry: fast-glob
+// does not enter them.
 const IGNORED_DIRS = ["dist", "build", "out", "coverage", "storybook-static"];
 
 /** Expression wrappers that do not change what is referenced. */
@@ -507,7 +509,7 @@ function isUsed(moduleUsage: ModuleUsage, name: string): boolean {
 }
 
 async function findSources(config: ResolvedConfig, cwd: string): Promise<string[]> {
-  const ignore = [...defaultIgnore(config), ...IGNORED_DIRS.map((dir) => `**/${dir}/**`)];
+  const ignore = [...defaultIgnore(config), ...IGNORED_DIRS.map((dir) => `${dir}/**`)];
   const files = await fg(SOURCE_GLOBS, { cwd, ignore, absolute: true });
   return files.filter((file) => !/\.d\.[mc]?ts$/.test(file)).sort();
 }
