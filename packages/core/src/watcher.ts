@@ -35,11 +35,9 @@ export function startWatcher(config: ResolvedConfig) {
   const outDir = path.resolve(root, config.outDir);
   const ignored = (watched: string) => {
     const resolved = path.resolve(root, watched);
-    return (
-      resolved.split(path.sep).includes("node_modules") ||
-      resolved === outDir ||
-      resolved.startsWith(outDir + path.sep)
-    );
+    if (resolved.split(path.sep).includes("node_modules")) return true;
+    // An outDir at the root puts each .d.ts next to its stylesheet, where nothing is ignored.
+    return outDir !== root && (resolved === outDir || resolved.startsWith(outDir + path.sep));
   };
 
   const watcher = watch(baseDirs, { cwd: root, ignoreInitial: true, ignored });

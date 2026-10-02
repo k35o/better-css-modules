@@ -82,15 +82,16 @@ describe("generate", () => {
     });
   });
 
-  it("prints nothing while it watches when silent", async () => {
-    const dir = await project(silent);
+  /** Run `generate --watch` until an edit of the card's stylesheet reaches `dts`; returns the output. */
+  async function watchUntilRegenerated(dir: string, dts: string): Promise<string> {
     const css = path.join(dir, "src/card.module.css");
-    const dts = path.join(dir, "__generated__/src/card.module.css.d.ts");
     const watching = spawn(process.execPath, [BIN, "generate", "--watch"], { cwd: dir });
     let output = "";
     watching.stdout.on("data", (chunk) => (output += chunk));
     watching.stderr.on("data", (chunk) => (output += chunk));
     try {
+      // An edit before the first generation finishes would reach the .d.ts without the watcher.
+      await vi.waitFor(() => fs.access(dts), { timeout: 10_000 });
       // Edit until the watcher, which starts after the first generation, picks one up.
       let edits = 0;
       await vi.waitFor(
@@ -103,8 +104,23 @@ describe("generate", () => {
     } finally {
       watching.kill();
     }
-    expect(output).toBe("");
-  });
+    return output;
+  }
+
+  it("prints nothing while it watches when silent", async () => {
+    const dir = await project(silent);
+    const dts = path.join(dir, "__generated__/src/card.module.css.d.ts");
+    expect(await watchUntilRegenerated(dir, dts)).toBe("");
+  }, 30_000);
+
+  it("watches with the outDir at the root, next to the stylesheets", async () => {
+    const dir = await project({
+      ...card,
+      "better-css-modules.config.mjs": 'export default { outDir: ".", silent: true };\n',
+    });
+    const dts = path.join(dir, "src/card.module.css.d.ts");
+    expect(await watchUntilRegenerated(dir, dts)).toBe("");
+  }, 30_000);
 });
 
 describe("check", () => {
