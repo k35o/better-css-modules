@@ -33,8 +33,9 @@ import { analyzeUsage } from "./usage.js";
 const DISABLE_NEXT_LINE = "better-css-modules-disable-next-line";
 
 const RULE_PREFIX = "tokens/";
+const UNKNOWN = "tokens/unknown";
 const INTERNAL = "tokens/internal";
-const UNDECLARED = "tokens/undeclared";
+const DECLARATION = "tokens/declaration";
 
 const CSS_WIDE_KEYWORDS = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
 
@@ -364,8 +365,9 @@ function problemsSilencing(rule: string): string[] {
     ];
   }
   const isToken =
+    rule === UNKNOWN ||
     rule === INTERNAL ||
-    rule === UNDECLARED ||
+    rule === DECLARATION ||
     (rule.startsWith(RULE_PREFIX) &&
       Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length)));
   return isToken || PURE_RULES.has(rule) ? [] : [`unknown rule "${rule}" in a disable comment`];
@@ -436,18 +438,21 @@ function checkDeclaredName(
   ];
   if (context.global) {
     if (context.tokens.has(name) || declaresToken(node, context.global.conditional)) return [];
-    return report(UNDECLARED, `${name} is not declared at :root; a mode can only override a token`);
+    return report(
+      DECLARATION,
+      `${name} is not declared at :root; a mode can only override a token`,
+    );
   }
   const category = categoryOf(name);
   if (category && context.restrictions.has(category)) {
     return report(
-      `${RULE_PREFIX}${category}`,
+      DECLARATION,
       `${name} is a ${category} token name and cannot be declared here; rename the custom property`,
     );
   }
   if (!category && context.tokens.has(name)) {
     return report(
-      INTERNAL,
+      DECLARATION,
       `${name} is internal to the global CSS and cannot be declared here; rename the custom property`,
     );
   }
@@ -473,9 +478,7 @@ function checkReferences(
         if (category && context.restrictions.has(category) && !context.tokens.has(name)) {
           const suggestion = closestToken(name, category, context.tokens);
           const message = `${name} is not defined in the global CSS${suggestion ? `; did you mean ${suggestion}?` : ""}`;
-          diagnostics.push(
-            ...diagnosticAt(context.file, child, child, `${RULE_PREFIX}${category}`, message),
-          );
+          diagnostics.push(...diagnosticAt(context.file, child, child, UNKNOWN, message));
         } else if (!category && !context.global && context.tokens.has(name)) {
           const message = `${name} is internal to the global CSS; use a token with a category prefix`;
           diagnostics.push(...diagnosticAt(context.file, child, child, INTERNAL, message));

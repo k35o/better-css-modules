@@ -136,7 +136,7 @@ describe("checkCss: widths in @media", () => {
 
   it("reports a module that declares a breakpoint token name", () => {
     expect(check(".a { --breakpoint-mine: 30rem; }")).toEqual([
-      "tokens/breakpoint: --breakpoint-mine is a breakpoint token name and cannot be declared here; rename the custom property",
+      "tokens/declaration: --breakpoint-mine is a breakpoint token name and cannot be declared here; rename the custom property",
     ]);
   });
 });

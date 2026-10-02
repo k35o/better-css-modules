@@ -141,10 +141,10 @@ describe("checkGlobalCss", () => {
         column: 3,
         endLine: 4,
         endColumn: 18,
-        rule: "tokens/undeclared",
+        rule: "tokens/declaration",
         message: "--color-fg-loud is not declared at :root; a mode can only override a token",
       },
-      expect.objectContaining({ line: 6, column: 45, rule: "tokens/undeclared" }),
+      expect.objectContaining({ line: 6, column: 45, rule: "tokens/declaration" }),
     ]);
   });
 
@@ -192,7 +192,7 @@ describe("checkGlobalCss", () => {
 
   it("honours disable comments", () => {
     const globalCss = read(
-      `${tokens}\n.dark {\n  /* better-css-modules-disable-next-line tokens/undeclared -- set by the theme script */\n  --color-fg-flash: red;\n}`,
+      `${tokens}\n.dark {\n  /* better-css-modules-disable-next-line tokens/declaration -- set by the theme script */\n  --color-fg-flash: red;\n}`,
     );
     expect(checkGlobalCss(globalCss)).toEqual([]);
   });

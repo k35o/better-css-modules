@@ -150,9 +150,9 @@ describe("check", () => {
       status: 1,
       stdout: [
         "src/card.module.css:2:10 error tokens/color: #fff is a raw value for color; use a --color-* token",
-        "src/card.module.css:5:1 error unused-class: .ghost is never used",
+        "src/card.module.css:5:1 error usage/unused-class: .ghost is never used",
         "src/card.module.css:6:10 error tokens/color: red is a raw value for color; use a --color-* token",
-        "src/global.css:5:3 error tokens/undeclared: --color-fg-loud is not declared at :root; a mode can only override a token",
+        "src/global.css:5:3 error tokens/declaration: --color-fg-loud is not declared at :root; a mode can only override a token",
         "[better-css-modules] 4 problem(s)",
         "",
       ].join("\n"),
@@ -166,7 +166,7 @@ describe("check", () => {
       status: 1,
       stdout: [
         "::error file=src/card.module.css,line=2,col=10,endLine=2,endColumn=14,title=tokens/color::#fff is a raw value for color; use a --color-* token",
-        "::error file=src/card.module.css,line=5,col=1,endLine=5,endColumn=7,title=unused-class::.ghost is never used",
+        "::error file=src/card.module.css,line=5,col=1,endLine=5,endColumn=7,title=usage/unused-class::.ghost is never used",
         "::error file=src/card.module.css,line=6,col=10,endLine=6,endColumn=13,title=tokens/color::red is a raw value for color; use a --color-* token",
         "[better-css-modules] 3 problem(s)",
         "",
@@ -306,7 +306,7 @@ describe("--config", () => {
       status: 1,
       stdout: [
         "app/src/card.module.css:2:10 error tokens/color: #fff is a raw value for color; use a --color-* token",
-        "app/src/card.module.css:5:1 error unused-class: .ghost is never used",
+        "app/src/card.module.css:5:1 error usage/unused-class: .ghost is never used",
         "app/src/card.module.css:6:10 error tokens/color: red is a raw value for color; use a --color-* token",
         "[better-css-modules] 3 problem(s)",
         "",

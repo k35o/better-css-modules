@@ -264,7 +264,7 @@ export async function analyzeUsage(
         file: analysis.file,
         line: 1,
         column: 1,
-        rule: "unused-module",
+        rule: "usage/unused-module",
         message: `${rel(analysis.file)} is never imported`,
       });
       continue;
@@ -275,7 +275,7 @@ export async function analyzeUsage(
         found.push({
           file: opaque.file,
           ...position,
-          rule: "unanalyzable-usage",
+          rule: "usage/unanalyzable",
           message: opaque.message,
         });
       }
@@ -293,7 +293,7 @@ export async function analyzeUsage(
         column: first.range.start.column,
         endLine: first.range.end.line,
         endColumn: first.range.end.column,
-        rule: "unused-class",
+        rule: "usage/unused-class",
         message: `.${name} is never used`,
       });
     }

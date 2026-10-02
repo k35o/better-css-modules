@@ -283,7 +283,7 @@ describe("checkCss: custom properties outside the category", () => {
 describe("checkCss: token names the global CSS does not declare", () => {
   it("reports a misspelt token with the declared name closest to it", () => {
     expect(check(".a { color: var(--color-fg-bsae); }")).toEqual([
-      "tokens/color: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
+      "tokens/unknown: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
     ]);
     expect(diagnose(".a { color: var(--color-fg-bsae); }")).toMatchObject([
       { line: 1, column: 13, endLine: 1, endColumn: 33 },
@@ -294,10 +294,16 @@ describe("checkCss: token names the global CSS does not declare", () => {
     const css =
       ".a { width: calc(var(--spacing-44) * 2); --local: var(--radius-mdd); height: var(--x, var(--color-nope)); }";
     expect(check(css)).toEqual([
-      "tokens/spacing: --spacing-44 is not defined in the global CSS",
-      "tokens/radius: --radius-mdd is not defined in the global CSS; did you mean --radius-md?",
-      "tokens/color: --color-nope is not defined in the global CSS",
+      "tokens/unknown: --spacing-44 is not defined in the global CSS",
+      "tokens/unknown: --radius-mdd is not defined in the global CSS; did you mean --radius-md?",
+      "tokens/unknown: --color-nope is not defined in the global CSS",
     ]);
+  });
+
+  it("keeps it apart from the category, so silencing a raw color leaves the misspelt token", () => {
+    const css =
+      ".a {\n  /* better-css-modules-disable-next-line tokens/color -- the border matches the logo */\n  border: 1px solid var(--color-brnad, #f00);\n}";
+    expect(check(css)).toEqual(["tokens/unknown: --color-brnad is not defined in the global CSS"]);
   });
 
   it("leaves token names of a category the global CSS declares nothing for alone", () => {
@@ -330,7 +336,7 @@ describe("checkCss: internal names", () => {
 
   it("reports declaring it", () => {
     const declared =
-      "tokens/internal: --gray-900 is internal to the global CSS and cannot be declared here; rename the custom property";
+      "tokens/declaration: --gray-900 is internal to the global CSS and cannot be declared here; rename the custom property";
     expect(check(".a { --gray-900: red; }")).toEqual([declared]);
   });
 
@@ -568,13 +574,13 @@ describe("checkCss: numbers", () => {
 // the color category, so token names are not the module's to declare.
 describe("checkCss: declaring a custom property under a token name", () => {
   const message = (name: string) =>
-    `tokens/color: ${name} is a color token name and cannot be declared here; rename the custom property`;
+    `tokens/declaration: ${name} is a color token name and cannot be declared here; rename the custom property`;
 
   it("reports the declaration at its name", () => {
     expect(diagnose(".a {\n  --color-mine: red;\n}")).toMatchObject([
       {
         file: FILE,
-        rule: "tokens/color",
+        rule: "tokens/declaration",
         line: 2,
         column: 3,
         endLine: 2,
@@ -590,7 +596,7 @@ describe("checkCss: declaring a custom property under a token name", () => {
       message("--color-bg-base"),
     ]);
     expect(check(":global(.dark) .a { --spacing: 0; }")).toEqual([
-      "tokens/spacing: --spacing is a spacing token name and cannot be declared here; rename the custom property",
+      "tokens/declaration: --spacing is a spacing token name and cannot be declared here; rename the custom property",
     ]);
   });
 
@@ -609,7 +615,7 @@ describe("checkCss: declaring a custom property under a token name", () => {
 
   it("can be silenced like any token rule", () => {
     const css =
-      ".inverted {\n  /* better-css-modules-disable-next-line tokens/color -- this panel swaps the theme */\n  --color-fg-base: var(--color-bg-base);\n}";
+      ".inverted {\n  /* better-css-modules-disable-next-line tokens/declaration -- this panel swaps the theme */\n  --color-fg-base: var(--color-bg-base);\n}";
     expect(check(css)).toEqual([]);
   });
 });
@@ -638,8 +644,8 @@ describe("checkCss: disable comments", () => {
     expect(check(both, globalCss)).toEqual([]);
   });
 
-  it("silences tokens/internal and tokens/undeclared", () => {
-    const css = `.a {\n  ${disable} tokens/internal, tokens/undeclared -- the legacy header */\n  width: var(--gray-900);\n}`;
+  it("silences tokens/internal", () => {
+    const css = `.a {\n  ${disable} tokens/internal -- the legacy header */\n  width: var(--gray-900);\n}`;
     expect(check(css)).toEqual([]);
   });
 
@@ -761,11 +767,11 @@ describe("check", () => {
     expect(await run(dir)).toEqual([
       "src/broken.module.css:1:1 syntax",
       "src/card.module.css:2:10 tokens/color",
-      "src/card.module.css:4:1 unused-class",
-      "src/card.module.css:5:1 unused-class",
-      "src/card.module.css:5:4 unused-class",
+      "src/card.module.css:4:1 usage/unused-class",
+      "src/card.module.css:5:1 usage/unused-class",
+      "src/card.module.css:5:4 usage/unused-class",
       "src/card.module.css:6:3 invalid-composes",
-      "src/global.css:6:3 tokens/undeclared",
+      "src/global.css:6:3 tokens/declaration",
     ]);
   });
 

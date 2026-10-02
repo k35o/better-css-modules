@@ -38,15 +38,15 @@ function summarize(real: string, diagnostics: Diagnostic[]) {
   const rel = (file: string) => path.relative(real, file);
   return {
     unused: diagnostics
-      .filter((d) => d.rule === "unused-class")
+      .filter((d) => d.rule === "usage/unused-class")
       .map((d) => `${rel(d.file)}:${/^\.(.+) is never used$/.exec(d.message)?.[1]}`),
-    orphans: diagnostics.filter((d) => d.rule === "unused-module").map((d) => rel(d.file)),
+    orphans: diagnostics.filter((d) => d.rule === "usage/unused-module").map((d) => rel(d.file)),
     unanalyzable: diagnostics
-      .filter((d) => d.rule === "unanalyzable-usage")
+      .filter((d) => d.rule === "usage/unanalyzable")
       .map((d) => `${rel(d.file)}:${d.line}:${d.column}`),
-    reasons: diagnostics.filter((d) => d.rule === "unanalyzable-usage").map((d) => d.message),
+    reasons: diagnostics.filter((d) => d.rule === "usage/unanalyzable").map((d) => d.message),
     other: diagnostics.filter(
-      (d) => !["unused-class", "unused-module", "unanalyzable-usage"].includes(d.rule),
+      (d) => !["usage/unused-class", "usage/unused-module", "usage/unanalyzable"].includes(d.rule),
     ),
   };
 }
@@ -86,7 +86,7 @@ describe("analyzeUsage", () => {
       column: 1,
       endLine: 2,
       endColumn: 6,
-      rule: "unused-class",
+      rule: "usage/unused-class",
     });
   });
 
@@ -101,7 +101,7 @@ describe("analyzeUsage", () => {
       file: path.join(real, "a.tsx"),
       line: 3,
       column: 40,
-      rule: "unanalyzable-usage",
+      rule: "usage/unanalyzable",
       message:
         "a class is accessed dynamically here, so usage of a.module.css cannot be determined",
     });
