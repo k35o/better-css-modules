@@ -149,6 +149,7 @@ export function resolveConfig(
   };
 
   const outDir = path.relative(root, path.resolve(root, string("outDir") ?? "__generated__"));
+  if (isOutside(outDir)) fail(`outDir "${input.outDir}" is outside the project root ${root}`);
   const layer = string("layer");
   return {
     root,
@@ -161,6 +162,11 @@ export function resolveConfig(
     globalCss: strings("globalCss", []),
     ...(layer === undefined ? {} : { layer }),
   };
+}
+
+/** Whether a path relative to the root leads out of it. */
+export function isOutside(relative: string): boolean {
+  return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
 }
 
 /** Paths in messages are relative to where the command runs, like those of diagnostics. */

@@ -222,4 +222,13 @@ describe("resolveConfig", () => {
   it("takes an absolute outDir inside the root relative to it", () => {
     expect(resolveConfig({ outDir: "/project/types" }, "/project").outDir).toBe("types");
   });
+
+  it.each(["..", "../types", "types/../../x", "/elsewhere/types", "/project-sibling"])(
+    "rejects the outDir %s, which is outside the root",
+    (outDir) => {
+      const resolve = () => resolveConfig({ outDir }, "/project");
+      expect(resolve).toThrow(ConfigError);
+      expect(resolve).toThrow(`outDir "${outDir}" is outside the project root /project`);
+    },
+  );
 });

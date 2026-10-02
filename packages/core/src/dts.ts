@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { SourceMapGenerator } from "source-map-js";
-import type { ResolvedConfig } from "./config.js";
+import { isOutside, type ResolvedConfig } from "./config.js";
 import type { CssModuleAnalysis, SourcePosition, SourceRange } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { loadCssModule, loadCssModules, syntaxDiagnosticFrom } from "./project.js";
@@ -148,7 +148,7 @@ export function generateDts(
  */
 export function dtsPathFor(cssFile: string, { root, outDir }: OutputOptions): string {
   const relative = path.relative(root, cssFile);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+  if (isOutside(relative)) {
     throw new Error(
       `${cssFile} is outside the project root ${root}; generated .d.ts files mirror paths relative to the root`,
     );

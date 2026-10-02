@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { type Config, resolveConfig } from "../src/config.js";
+import { type Config, ConfigError, resolveConfig } from "../src/config.js";
 import { createMatcher, findCssModules } from "../src/project.js";
 
 describe("createMatcher", () => {
@@ -103,6 +103,18 @@ describe("files the tool never takes in", () => {
 });
 
 describe("include and exclude", () => {
+  it("must not reach a file outside the root", async () => {
+    const root = path.join(cwd, "src/ui");
+    const findings = findCssModules(
+      resolveConfig({ include: ["**/*.module.css", "../*.module.css"] }, root),
+    );
+    const outside = path.relative(process.cwd(), path.join(cwd, "src/a.module.css"));
+    await expect(findings).rejects.toThrow(
+      new ConfigError(`include matches ${outside}, which is outside the project root ${root}`),
+    );
+    await expect(findings).rejects.toBeInstanceOf(ConfigError);
+  });
+
   it("leave out everything under a directory that exclude names", async () => {
     const { found, matched } = await selected({ exclude: ["src/legacy"] });
     expect(found).toEqual([
