@@ -5,6 +5,7 @@ import {
   analyzeUsage,
   checkCss,
   checkGlobalCss,
+  checkLayer,
   type Diagnostic,
   formatDiagnostic,
   formatGitHubAnnotation,
@@ -12,6 +13,7 @@ import {
   type GlobalCss,
   loadConfig,
   loadGlobalCss,
+  resolveLayer,
   sortDiagnostics,
   startWatcher,
 } from "@better-css-modules/core";
@@ -63,6 +65,7 @@ cli
     let globalCss: GlobalCss;
     try {
       globalCss = await loadGlobalCss(config, cwd);
+      if (config.layer !== undefined) resolveLayer(config.layer, globalCss);
     } catch (error) {
       // Global CSS that cannot be read is a mistake in the config, not a
       // finding: no stack, and the exit code of a bad option.
@@ -70,10 +73,14 @@ cli
       process.exitCode = 2;
       return;
     }
+    const { layer } = config;
     const usage = await analyzeUsage(config, cwd);
     const diagnostics = sortDiagnostics([
       ...usage.diagnostics,
       ...usage.modules.flatMap((analysis) => checkCss(analysis, globalCss)),
+      ...(layer === undefined
+        ? []
+        : usage.modules.flatMap((analysis) => checkLayer(analysis, layer))),
       ...checkGlobalCss(globalCss),
     ]);
 

@@ -1,6 +1,6 @@
 # @better-css-modules/webpack
 
-webpack plugin for better-css-modules. Automatically generates `.d.ts` type definitions for CSS Modules.
+webpack plugin for better-css-modules. Automatically generates `.d.ts` type definitions for CSS Modules, and wraps each module in the cascade layer the config names.
 
 ## Install
 
@@ -37,13 +37,14 @@ betterCssModules({
 });
 ```
 
-| Option         | Type       | Default                   | Description                                                      |
-| -------------- | ---------- | ------------------------- | ---------------------------------------------------------------- |
-| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                       |
-| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                         |
-| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                     |
-| `silent`       | `boolean`  | `false`                   | Suppress console output                                          |
-| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export |
+| Option         | Type       | Default                   | Description                                                                                 |
+| -------------- | ---------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| `include`      | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                                                  |
+| `exclude`      | `string[]` | `[]`                      | Glob patterns to exclude                                                                    |
+| `outDir`       | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                                                |
+| `silent`       | `boolean`  | `false`                   | Suppress console output                                                                     |
+| `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export                            |
+| `layer`        | `string`   | unset                     | Cascade layer to wrap every module in; see [Cascade layers](../../README.md#cascade-layers) |
 
 ## License
 

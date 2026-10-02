@@ -9,7 +9,9 @@ const GLOBAL = "/project/src/global.css";
 
 function globalCssOf(css: string): GlobalCss {
   const root = postcss.parse(css, { from: GLOBAL });
-  return globalCssFrom([{ file: GLOBAL, root, checked: true, conditional: false }]);
+  return globalCssFrom([
+    { file: GLOBAL, root, checked: true, conditional: false, listed: true, imports: [] },
+  ]);
 }
 
 /** A global CSS that declares the given tokens, which restricts their categories. */

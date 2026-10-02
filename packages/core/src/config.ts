@@ -23,6 +23,8 @@ export interface Config {
    * `./` or `../` paths relative to the config, or package specifiers.
    */
   globalCss: string[];
+  /** Cascade layer the bundler plugins wrap every CSS Modules file in; unset leaves files as written */
+  layer?: string;
 }
 
 const defaultConfig: Config = {
@@ -39,19 +41,26 @@ export function defineConfig(config: Partial<Config>): Config {
   return { ...defaultConfig, ...config };
 }
 
-export async function loadConfig(cwd: string = process.cwd()): Promise<Config> {
+/** Path of the config file in `cwd`, or null when there is none. */
+export function configFile(cwd: string = process.cwd()): string | null {
   const configFileName = "better-css-modules.config";
   const extensions = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"];
 
   for (const ext of extensions) {
     const configPath = path.resolve(cwd, configFileName + ext);
-    if (fs.existsSync(configPath)) {
-      const jiti = createJiti(cwd);
-      const mod = await jiti.import(configPath);
-      const loaded = (mod as { default?: Config }).default ?? mod;
-      return { ...defaultConfig, ...(loaded as Partial<Config>) };
-    }
+    if (fs.existsSync(configPath)) return configPath;
   }
+  return null;
+}
 
-  return defaultConfig;
+export async function loadConfig(cwd: string = process.cwd()): Promise<Config> {
+  const configPath = configFile(cwd);
+  if (!configPath) return defaultConfig;
+
+  // Without the module cache, loading again in a long-lived process (a
+  // Turbopack loader worker) sees an edited config instead of the first one.
+  const jiti = createJiti(cwd, { moduleCache: false });
+  const mod = await jiti.import(configPath);
+  const loaded = (mod as { default?: Config }).default ?? mod;
+  return { ...defaultConfig, ...(loaded as Partial<Config>) };
 }

@@ -1,5 +1,5 @@
 export { checkCss, checkGlobalCss } from "./check.js";
-export { defineConfig, loadConfig } from "./config.js";
+export { configFile, defineConfig, loadConfig } from "./config.js";
 export type { Config } from "./config.js";
 export { analyzeCss } from "./css.js";
 export type {
@@ -13,7 +13,7 @@ export type {
   ValueDeclaration,
 } from "./css.js";
 export { loadGlobalCss } from "./global.js";
-export type { GlobalCss, GlobalCssFile, Token } from "./global.js";
+export type { GlobalCss, GlobalCssFile, GlobalCssImport, Token } from "./global.js";
 export { formatDiagnostic, formatGitHubAnnotation, sortDiagnostics } from "./diagnostic.js";
 export type { Diagnostic } from "./diagnostic.js";
 export { dtsPathFor, generateAll, generateDts, regenerateDts, removeDts, writeDts } from "./dts.js";
@@ -24,6 +24,8 @@ export type {
   OutputOptions,
   RegenerateResult,
 } from "./dts.js";
+export { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "./layer.js";
+export type { Layer, WrapResult } from "./layer.js";
 export {
   createMatcher,
   defaultIgnore,

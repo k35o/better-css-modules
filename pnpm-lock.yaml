@@ -230,12 +230,36 @@ importers:
         specifier: 3.0.0
         version: 3.0.0
     devDependencies:
+      '@rspack/core':
+        specifier: 2.2.6
+        version: 2.2.6(@swc/helpers@0.5.23)
       '@types/node':
         specifier: 24.12.0
         version: 24.12.0
+      css-loader:
+        specifier: 7.1.5
+        version: 7.1.5(@rspack/core@2.2.6(@swc/helpers@0.5.23))(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0)))
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      mini-css-extract-plugin:
+        specifier: 2.10.2
+        version: 2.10.2(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0)))
+      postcss:
+        specifier: 8.5.8
+        version: 8.5.8
+      postcss-modules:
+        specifier: 9.0.1
+        version: 9.0.1(postcss@8.5.8)
+      rollup:
+        specifier: 4.63.4
+        version: 4.63.4
       vite:
         specifier: 'catalog:'
         version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.12.0)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.51.2)(typescript@7.0.2)'
+      webpack:
+        specifier: 5.111.1
+        version: 5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))
 
   packages/vite:
     dependencies:
@@ -2085,6 +2109,18 @@ packages:
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
+  css-loader@7.1.5:
+    resolution: {integrity: sha512-Q7iAfQkU2twNBryKX/vGAlE+GAmkF7quhSzAGNK8fBimxk3+tqg245rH52UPb9dioBolBc8rP0ihmHBaDTJQBA==}
+    engines: {node: '>= 18.12.0'}
+    peerDependencies:
+      '@rspack/core': 0.x || ^1.0.0 || ^2.0.0-0
+      webpack: ^5.27.0
+    peerDependenciesMeta:
+      '@rspack/core':
+        optional: true
+      webpack:
+        optional: true
+
   css-tree@3.2.1:
     resolution: {integrity: sha512-X7sjQzceUhu1u7Y/ylrRZFU2FS6LRiFVp6rKLPg23y3x3c3DOKAwuXGDp+PAGjh6CSnCjYeAul8pcT8bAl+lSA==}
     engines: {node: ^10 || ^12.20.0 || ^14.13.0 || >=15.0.0}
@@ -2326,6 +2362,12 @@ packages:
   mime-db@1.54.0:
     resolution: {integrity: sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ==}
     engines: {node: '>= 0.6'}
+
+  mini-css-extract-plugin@2.10.2:
+    resolution: {integrity: sha512-AOSS0IdEB95ayVkxn5oGzNQwqAi2J0Jb/kKm43t7H73s8+f5873g0yuj0PNvK4dO75mu5DHg4nlgp4k6Kga8eg==}
+    engines: {node: '>= 12.13.0'}
+    peerDependencies:
+      webpack: ^5.0.0
 
   minimizer-webpack-plugin@5.11.0:
     resolution: {integrity: sha512-2JVy2DY+iBtfRyrQB5cRM7lfurnJIi6jFTgLip/7FxDu0WxswrIRzr4fBySQ0X7HqM7BcwE28zm+HfQ5V6y4Cg==}
@@ -3981,6 +4023,20 @@ snapshots:
 
   convert-source-map@2.0.0: {}
 
+  css-loader@7.1.5(@rspack/core@2.2.6(@swc/helpers@0.5.23))(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))):
+    dependencies:
+      icss-utils: 5.1.0(postcss@8.5.8)
+      postcss: 8.5.8
+      postcss-modules-extract-imports: 3.1.0(postcss@8.5.8)
+      postcss-modules-local-by-default: 4.2.0(postcss@8.5.8)
+      postcss-modules-scope: 3.2.1(postcss@8.5.8)
+      postcss-modules-values: 4.0.0(postcss@8.5.8)
+      postcss-value-parser: 4.2.0
+      semver: 7.8.5
+    optionalDependencies:
+      '@rspack/core': 2.2.6(@swc/helpers@0.5.23)
+      webpack: 5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))
+
   css-tree@3.2.1:
     dependencies:
       mdn-data: 2.27.1
@@ -4183,6 +4239,12 @@ snapshots:
 
   mime-db@1.54.0: {}
 
+  mini-css-extract-plugin@2.10.2(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))):
+    dependencies:
+      schema-utils: 4.5.0
+      tapable: 2.3.3
+      webpack: 5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))
+
   minimizer-webpack-plugin@5.11.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.23)(sharp@0.35.3(@types/node@24.12.0))(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.23)(sharp@0.35.3(@types/node@24.12.0))):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
@@ -4194,6 +4256,19 @@ snapshots:
       esbuild: 0.28.2
       lightningcss: 1.33.0
       postcss: 8.5.23
+      sharp: 0.35.3(@types/node@24.12.0)
+
+  minimizer-webpack-plugin@5.11.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))):
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
+      jest-worker: 27.5.1
+      schema-utils: 4.5.0
+      terser: 5.51.2
+      webpack: 5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))
+    optionalDependencies:
+      esbuild: 0.28.2
+      lightningcss: 1.33.0
+      postcss: 8.5.8
       sharp: 0.35.3(@types/node@24.12.0)
 
   mrmime@2.0.1: {}
@@ -4521,8 +4596,7 @@ snapshots:
       ajv-formats: 3.0.1(ajv@8.20.0)
       ajv-keywords: 5.1.0(ajv@8.20.0)
 
-  semver@7.8.5:
-    optional: true
+  semver@7.8.5: {}
 
   sharp@0.35.3(@types/node@24.12.0):
     dependencies:
@@ -4815,6 +4889,43 @@ snapshots:
       graceful-fs: 4.2.11
       mime-db: 1.54.0
       minimizer-webpack-plugin: 5.11.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.23)(sharp@0.35.3(@types/node@24.12.0))(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.23)(sharp@0.35.3(@types/node@24.12.0)))
+      schema-utils: 4.5.0
+      tapable: 2.3.3
+      watchpack: 2.5.2
+      webpack-sources: 3.5.1
+    transitivePeerDependencies:
+      - '@minify-html/node'
+      - '@napi-rs/image'
+      - '@swc/core'
+      - '@swc/css'
+      - '@swc/html'
+      - clean-css
+      - cssnano
+      - csso
+      - esbuild
+      - html-minifier-terser
+      - imagemin
+      - lightningcss
+      - postcss
+      - sharp
+      - svgo
+      - uglify-js
+
+  webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0)):
+    dependencies:
+      '@types/estree': 1.0.9
+      '@types/json-schema': 7.0.15
+      '@webassemblyjs/ast': 1.14.1
+      '@webassemblyjs/wasm-edit': 1.14.1
+      '@webassemblyjs/wasm-parser': 1.14.1
+      browserslist: 4.29.0
+      chrome-trace-event: 1.0.4
+      enhanced-resolve: 5.25.1
+      es-module-lexer: 2.3.2
+      events: 3.3.0
+      graceful-fs: 4.2.11
+      mime-db: 1.54.0
+      minimizer-webpack-plugin: 5.11.0(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0))(webpack@5.111.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.8)(sharp@0.35.3(@types/node@24.12.0)))
       schema-utils: 4.5.0
       tapable: 2.3.3
       watchpack: 2.5.2

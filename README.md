@@ -1,6 +1,6 @@
 # better-css-modules
 
-A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` files for `.module.css`, reports classes nothing uses, keeps each module pure and holds plain CSS to your design tokens, from one analysis of your CSS and TypeScript.
+A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` files for `.module.css`, reports classes nothing uses, keeps each module pure, holds plain CSS to your design tokens and puts every module in a cascade layer, from one analysis of your CSS and TypeScript.
 
 ## Features
 
@@ -9,7 +9,8 @@ A toolkit for improving the CSS Modules developer experience. Generates `.d.ts` 
 - Go-to-definition on `styles.container` opens the stylesheet at `.container`, through a declaration map next to each `.d.ts`
 - Reports unused classes with `file:line:col`, aggregated across the whole project
 - Keeps each module pure: its selectors style its own classes, with no `:global`, ids, `!important` or global-only at-rules such as `@font-face`
-- Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens and tokens of the wrong kind
+- Enforces design tokens: `check` reads the tokens from your global CSS and fails on raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints
+- Wraps CSS Modules in a cascade layer: name one, and the bundler plugins put every module in it, so styles in later layers win without `!important`
 - Reads CSS with postcss and css-tree, and TypeScript with the oxc parser: `:global`, nesting, `composes`, escaped names, path aliases and re-exports all resolve the way bundlers resolve them
 - Verified against both lightningcss (Turbopack) and postcss-modules (Vite): the generated keys match what either bundler exports
 - Works with Vite, webpack, Rollup, Rspack, esbuild and Next.js (Turbopack)
@@ -97,7 +98,7 @@ better-css-modules check
 better-css-modules check --format github
 ```
 
-The bundler plugins only generate types. Run `check` from the CLI (locally, in a pre-commit hook or in CI): it looks at every file the config includes, not just the ones a bundler happens to load.
+The bundler plugins generate types and, when the config names a [`layer`](#cascade-layers), wrap each CSS Modules file in it. Run `check` from the CLI (locally, in a pre-commit hook or in CI): it looks at every file the config includes, not just the ones a bundler happens to load.
 
 ## Configuration
 
@@ -126,6 +127,7 @@ export default defineConfig({
 | `silent`       | `boolean`  | `false`                   | Suppress console output                                                                                          |
 | `namedExports` | `boolean`  | `false`                   | Declare the classes as named exports instead of a default export; see [Output Example](#output-example)          |
 | `globalCss`    | `string[]` | `[]`                      | Global stylesheets that declare the design tokens, in cascade order; see [Token enforcement](#token-enforcement) |
+| `layer`        | `string`   | unset                     | Cascade layer the plugins wrap every module in; see [Cascade layers](#cascade-layers)                            |
 
 ## Output Example
 
@@ -362,6 +364,7 @@ Any other custom property is free to declare with any value (`--glow: oklch(0.72
 | `line-height` | `line-height`                                                                                                                                                                                                                                                                                                                                | The line height in `font`                                                                                                                                                                                                                                                                    | `normal`                      | raw         |
 | `z-index`     | `z-index`                                                                                                                                                                                                                                                                                                                                    |                                                                                                                                                                                                                                                                                              | `auto`                        | raw         |
 | `duration`    | `transition-duration`, `transition-delay`, `animation-duration`, `animation-delay`                                                                                                                                                                                                                                                           | The times in `transition`, `animation`                                                                                                                                                                                                                                                       | `auto`                        | raw         |
+| `breakpoint`  | No property: the widths in `@media` conditions, see [Breakpoints](#breakpoints)                                                                                                                                                                                                                                                              |                                                                                                                                                                                                                                                                                              |                               | n/a         |
 
 † The property and its per-side forms, physical and logical: `-top`, `-right`, `-bottom`, `-left`, `-block`, `-block-start`, `-block-end`, `-inline`, `-inline-start`, `-inline-end` (`border-top`, `margin-inline-start`, `border-block-color`…).
 
@@ -383,6 +386,47 @@ A `var()` in a shorthand could stand for any of its components. The tool reads i
 - In `font`, the component before the slash is the size and the one after it the line height (`font: 700 var(--font-size-lg) / var(--line-height-tight) sans-serif`). No other `var()` in `font` is tied to a category.
 - In `transition` and `animation` a `var()` may be a time, an easing or a name, so none is tied to `duration`; raw times are still reported. Use `transition-duration` to have the token checked.
 
+### Breakpoints
+
+A media query cannot use `var()`, so the widths in `@media` conditions are held to the values of the breakpoint tokens instead.
+
+```css
+/* src/globals.css */
+:root {
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+}
+```
+
+```css
+/* src/nav.module.css */
+@media (width >= 48rem) {
+  /* fine */
+}
+
+@media (40rem <= width < 64rem) {
+  /* fine */
+}
+
+@media (max-width: 47.99rem) {
+}
+
+@media (min-width: 768px) {
+}
+```
+
+```
+src/nav.module.css:9:20 error tokens/breakpoint: 47.99rem is not a breakpoint; the breakpoints are 40rem (--breakpoint-sm), 48rem (--breakpoint-md), 64rem (--breakpoint-lg)
+src/nav.module.css:12:20 error tokens/breakpoint: 768px is not a breakpoint; the breakpoints are 40rem (--breakpoint-sm), 48rem (--breakpoint-md), 64rem (--breakpoint-lg)
+```
+
+- `width`, `min-width` and `max-width` are checked, in the range syntax (both ends of `40rem <= width < 64rem`) and in the `min-` and `max-` form. The direction is free: `width < 48rem` passes as well as `width >= 48rem`. Write `width < 48rem` for the range below a breakpoint rather than `max-width: 47.99rem`.
+- A width passes when its number and unit are those of a breakpoint (`48rem`, `48.0rem`), and zero passes. Units are not converted: in a media query `rem` and `em` follow the font size the browser is set to and `px` does not, so `768px` is not `48rem`. `48em` is reported too, to keep one spelling.
+- A breakpoint token must be one length, written out or through another token (`--breakpoint-md: var(--tablet)` with `--tablet: 48rem`). The project's global CSS reports any other value, and such a token is no breakpoint.
+- `@media` in the project's global CSS is checked like a module's.
+- Not checked: `height` and the other media features, `@container` (the size of a container is the component's, not the page's), `@custom-media`, and the conditions of `@import`.
+
 ## Disable comments
 
 ```css
@@ -398,6 +442,62 @@ A `var()` in a shorthand could stand for any of its components. The tool reads i
 ```
 
 The comment silences the rules it names (`pure/*`, `tokens/<category>`, `tokens/internal`, `tokens/undeclared`, separated by commas or spaces) for the rule, at-rule or declaration that starts on the next line; above a rule it does not reach the declarations inside it. The reason after `--` is required: a comment without one, without a rule name, or naming a rule that does not exist is reported as `invalid-disable` and silences nothing. `pure/selector` cannot be disabled: a selector without a local class styles the page, which is the global CSS's job, whatever a bundler lets through. There is no file-wide form.
+
+## Cascade layers
+
+Name a layer, and the bundler plugins put every CSS Modules file the config includes in it, before the bundler's own CSS Modules transform runs. Styles in a later layer, or in no layer, then win over the modules whatever their specificity or load order. Without `layer` the plugins leave the CSS as written.
+
+```ts
+import { defineConfig } from "@better-css-modules/core";
+
+export default defineConfig({
+  include: ["src/**/*.module.css"],
+  globalCss: ["./src/globals.css"],
+  layer: "components",
+});
+```
+
+The layer must be one the [global CSS](#global-css) declares at the top level of the cascade: in an `@layer` statement such as `@layer base, components, utilities;`, with a block, or with `@import "…" layer(name)`, reading imports where they stand. The plugins stop with an error otherwise, and `check` exits with 2. A module
+
+```css
+.root {
+  color: var(--color-fg-base);
+}
+```
+
+reaches the CSS Modules transform as
+
+```css
+@layer base, components, utilities;
+@layer components {
+  .root {
+    color: var(--color-fg-base);
+  }
+}
+```
+
+- Every module starts with a statement of all the layers of the global CSS in their order, so the order holds whichever stylesheet the browser reads first: a code-split chunk, or the per-component CSS of a library.
+- Declare every layer in one statement at the top of the global CSS. Bundlers may move what an `@import` brings in ahead of the statements before it (Turbopack does), which would make the global CSS disagree with the modules about the order.
+- `@import` stays in front, where it has to be, and imports into the layer (`@import "./reset.css" layer(components)`) unless it names a layer of its own.
+- `@property` and `@keyframes` go in the layer too; browsers register them all the same.
+- `composes` does not work inside a layer: lightningcss (Turbopack, tsdown, Vite with `css.transformer: "lightningcss"`) rejects it, and postcss-modules (Vite) leaves the rules composed from another file outside the layer. The plugins stop at it. Join the class names in JavaScript instead.
+
+`check` reports what the wrapping would break, at the source:
+
+| Rule             | Reported at              | Meaning                                                                      |
+| ---------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `layer/nested`   | an `@layer` in a module  | The module is already in the layer, so this one nests in it (`components.x`) |
+| `layer/composes` | a `composes` declaration | `composes` does not work inside a layer                                      |
+
+With Tailwind CSS 4, name the layer `components` and declare `@layer properties, theme, base, components, utilities;`: Tailwind's utilities then win over the modules.
+
+### Bundlers
+
+The wrapping has to happen before the CSS Modules transform. It does with Vite, tsdown (`vp pack`), Rollup, webpack and Rspack with css-loader, Rspack's built-in CSS, esbuild and Next.js (Turbopack). `packages/unplugin/tests/layer.test.ts` builds with Vite, tsdown, Rollup, esbuild, and webpack and Rspack with css-loader to keep it so.
+
+- webpack's experimental built-in CSS (`experiments.css`) leaves the first class after an `@layer` statement unscoped, with or without this tool. Use css-loader.
+- `withBetterCssModules` adds a loader to `turbopack.rules["*.module.css"]` that runs before any loaders already there; it refuses a list of several rules under that key. The loader passes files through when the config names no layer.
+- The plugins read the config when the build starts; restart the dev server after changing it. A change to the global CSS is picked up as it happens.
 
 ## TypeScript Setup
 

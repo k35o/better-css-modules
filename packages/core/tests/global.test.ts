@@ -12,7 +12,7 @@ const GLOBAL = "/project/src/global.css";
 
 function read(css: string, { checked = true, conditional = false } = {}): GlobalCss {
   const root = postcss.parse(css, { from: GLOBAL });
-  return globalCssFrom([{ file: GLOBAL, root, checked, conditional }]);
+  return globalCssFrom([{ file: GLOBAL, root, checked, conditional, listed: true, imports: [] }]);
 }
 
 /** The value of each token, as css-tree writes it back. */
@@ -159,7 +159,14 @@ describe("checkGlobalCss", () => {
         checked: true,
         conditional: false,
       },
-      { file: "/project/src/contrast.css", root, checked: true, conditional: true },
+      {
+        file: "/project/src/contrast.css",
+        root,
+        checked: true,
+        conditional: true,
+        listed: false,
+        imports: [],
+      },
     ]);
     expect(checkGlobalCss(globalCss).map(({ message }) => message)).toEqual([
       "--color-new is not declared at :root; a mode can only override a token",
