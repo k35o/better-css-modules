@@ -30,8 +30,10 @@ analysis.exportNames; // => ["container"] — keys the module exports
 analysis.classNames; // => ["container"] — local class names only
 analysis.classes; // => [{ name: "container", range: { start: { line: 1, column: 1 }, ... } }]
 
-// Generate .d.ts content for those keys
-const dts = generateDts(analysis.exportNames, { namedExports: false });
+// Generate the .d.ts and its declaration map for that file
+const { dts, map } = generateDts(analysis, "/project/__generated__/src/a.module.css.d.ts", {
+  namedExports: false,
+});
 
 // Generate every .d.ts the config includes
 const config = await loadConfig(process.cwd());
@@ -66,9 +68,9 @@ Structure comes from postcss; selectors, at-rule preludes and values are parsed 
 
 ### Type generation
 
-- `generateDts(keys, { namedExports })` renders the `.d.ts` source: the keys as properties of a default export, or as named exports.
+- `generateDts(analysis, dtsPath, { namedExports })` renders `{ dts, map }`: the `.d.ts` source, with the keys as properties of a default export or as named exports, and its declaration map, which ties each key to where it first appears in the stylesheet.
 - `dtsPathFor(cssFile, { cwd, outDir })` mirrors the path relative to `cwd` under `outDir` and throws for files outside `cwd`.
-- `writeDts(analysis, { cwd, outDir, namedExports })` writes one file; `removeDts(cssFile, { cwd, outDir })` deletes it.
+- `writeDts(analysis, { cwd, outDir, namedExports })` writes one `.d.ts` and its map; `removeDts(cssFile, { cwd, outDir })` deletes both.
 - `generateAll(config, cwd)` does it for every included file and returns `{ written, diagnostics }`.
 
 ### Usage analysis
