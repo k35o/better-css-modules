@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 import cac from "cac";
-import path from "node:path";
 import {
   check,
   ConfigError,
   formatDiagnostic,
   formatGitHubAnnotation,
-  generate,
   loadConfig,
 } from "@better-css-modules/core";
-import { startWatcher } from "@better-css-modules/core/internal";
+import { generateAndPrint, startWatcher } from "@better-css-modules/core/internal";
 import pkg from "../package.json" with { type: "json" };
 
 const cli = cac("better-css-modules");
@@ -21,18 +19,8 @@ cli
   .option("-w, --watch", "Keep regenerating as files change")
   .option("--config <path>", CONFIG_OPTION)
   .action(async (options: { watch?: boolean; config?: string }) => {
-    const cwd = process.cwd();
     const config = await loadConfig({ config: options.config });
-    const { files, removed, diagnostics } = await generate(config);
-
-    if (!config.silent) {
-      console.log(`[better-css-modules] generated ${files.length} file(s)`);
-      for (const dtsPath of files) console.log(`  ${path.relative(cwd, dtsPath)}`);
-      for (const dtsPath of removed) {
-        console.log(`[better-css-modules] removed: ${path.relative(cwd, dtsPath)}`);
-      }
-    }
-    for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
+    const { diagnostics } = await generateAndPrint(config);
 
     if (options.watch) {
       if (!config.silent) console.log("[better-css-modules] watching for changes...");

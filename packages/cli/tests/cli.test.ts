@@ -43,14 +43,10 @@ const card = {
 };
 
 describe("generate", () => {
-  it("lists the files it wrote and exits with 0", async () => {
+  it("counts the files it wrote and exits with 0", async () => {
     expect(run(await project(card), "generate")).toEqual({
       status: 0,
-      stdout: [
-        "[better-css-modules] generated 1 file(s)",
-        "  __generated__/src/card.module.css.d.ts",
-        "",
-      ].join("\n"),
+      stdout: ["[better-css-modules] generated 1 file(s)", ""].join("\n"),
       stderr: "",
     });
   });
@@ -63,7 +59,6 @@ describe("generate", () => {
       status: 0,
       stdout: [
         "[better-css-modules] generated 1 file(s)",
-        "  __generated__/src/card.module.css.d.ts",
         "[better-css-modules] removed: __generated__/src/old.module.css.d.ts",
         "",
       ].join("\n"),
@@ -75,11 +70,7 @@ describe("generate", () => {
     const dir = await project({ ...card, "src/broken.module.css": ".a {\n" });
     expect(run(dir, "generate")).toEqual({
       status: 1,
-      stdout: [
-        "[better-css-modules] generated 1 file(s)",
-        "  __generated__/src/card.module.css.d.ts",
-        "",
-      ].join("\n"),
+      stdout: ["[better-css-modules] generated 1 file(s)", ""].join("\n"),
       stderr: "src/broken.module.css:1:1 error syntax: Unclosed block\n",
     });
   });
@@ -153,12 +144,11 @@ describe("generate", () => {
       );
     });
     const lines = output.split("\n");
-    expect(lines.slice(0, 3)).toEqual([
+    expect(lines.slice(0, 2)).toEqual([
       "[better-css-modules] generated 1 file(s)",
-      "  __generated__/src/card.module.css.d.ts",
       "[better-css-modules] watching for changes...",
     ]);
-    expect(new Set(lines.slice(3, -2))).toEqual(
+    expect(new Set(lines.slice(2, -2))).toEqual(
       new Set(["[better-css-modules] generated: __generated__/src/card.module.css.d.ts"]),
     );
     expect(lines.slice(-2)).toEqual([removed, ""]);
@@ -367,13 +357,10 @@ describe("--config", () => {
     });
     expect(run(dir, "generate", "--config", "app/better-css-modules.config.mjs")).toEqual({
       status: 0,
-      stdout: [
-        "[better-css-modules] generated 1 file(s)",
-        "  app/__generated__/src/card.module.css.d.ts",
-        "",
-      ].join("\n"),
+      stdout: "[better-css-modules] generated 1 file(s)\n",
       stderr: "",
     });
+    await fs.access(path.join(dir, "app/__generated__/src/card.module.css.d.ts"));
   });
 
   it("names the global CSS in its errors relative to the cwd", async () => {

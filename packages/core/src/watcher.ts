@@ -2,7 +2,7 @@ import path from "node:path";
 import { watch } from "chokidar";
 import type { ResolvedConfig } from "./config.js";
 import { formatDiagnostic } from "./diagnostic.js";
-import { regenerateDts } from "./dts.js";
+import { generate, type GenerateResult, regenerateDts } from "./dts.js";
 import { createMatcher } from "./project.js";
 
 /**
@@ -18,6 +18,27 @@ function extractBaseDir(pattern: string): string {
   return staticParts.join("/") || ".";
 }
 
+/** Print progress unless the config is silent. */
+function logger(config: ResolvedConfig): (message: string) => void {
+  return (message) => {
+    if (!config.silent) console.log(`[better-css-modules] ${message}`);
+  };
+}
+
+/**
+ * Run `generate` and print how many `.d.ts` files it wrote and which it
+ * removed, and its diagnostics on stderr.
+ */
+export async function generateAndPrint(config: ResolvedConfig): Promise<GenerateResult> {
+  const cwd = process.cwd();
+  const log = logger(config);
+  const result = await generate(config);
+  log(`generated ${result.files.length} file(s)`);
+  for (const dtsPath of result.removed) log(`removed: ${path.relative(cwd, dtsPath)}`);
+  for (const diagnostic of result.diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
+  return result;
+}
+
 /**
  * What a watcher runs on each changed file: bring the `.d.ts` of a CSS Modules
  * file the config includes in line with it, and print what it did, its
@@ -26,9 +47,7 @@ function extractBaseDir(pattern: string): string {
 export function createSync(config: ResolvedConfig): (file: string) => Promise<void> {
   const cwd = process.cwd();
   const matches = createMatcher(config);
-  const log = (message: string) => {
-    if (!config.silent) console.log(`[better-css-modules] ${message}`);
-  };
+  const log = logger(config);
   return async (file) => {
     if (!matches(file)) return;
     try {

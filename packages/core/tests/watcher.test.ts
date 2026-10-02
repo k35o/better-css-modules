@@ -14,7 +14,8 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveConfig } from "../src/config.js";
-import { createSync, startWatcher } from "../src/watcher.js";
+import { generate } from "../src/dts.js";
+import { createSync, generateAndPrint, startWatcher } from "../src/watcher.js";
 
 const INTERNAL = path.resolve(import.meta.dirname, "../dist/internal.mjs");
 
@@ -68,21 +69,61 @@ startWatcher(${JSON.stringify(config())}, { persistent: false });`,
   });
 });
 
+let output: { log: string[]; error: string[] };
+
+beforeEach(() => {
+  output = { log: [], error: [] };
+  vi.spyOn(console, "log").mockImplementation((...args) => void output.log.push(args.join(" ")));
+  vi.spyOn(console, "error").mockImplementation(
+    (...args) => void output.error.push(args.join(" ")),
+  );
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("generateAndPrint", () => {
+  /** A project of its own with a module that parses, one that does not, and one that is gone. */
+  async function generating(overrides: object = {}) {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(dir, "generate-")));
+    await fs.mkdir(path.join(root, "src"));
+    await fs.writeFile(path.join(root, "src/a.module.css"), ".a {}\n");
+    await fs.writeFile(path.join(root, "src/old.module.css"), ".old {}\n");
+    const config = resolveConfig(overrides, root);
+    await generate(config);
+    await fs.rm(path.join(root, "src/old.module.css"));
+    await fs.writeFile(path.join(root, "src/broken.module.css"), ".a {");
+    const rel = (file: string) => path.relative(process.cwd(), path.join(root, file));
+    return { config, rel };
+  }
+
+  it("generates and prints the count, the removed files and the diagnostics", async () => {
+    const { config, rel } = await generating();
+    const { files, removed, diagnostics } = await generateAndPrint(config);
+    expect([files, removed, diagnostics.length]).toEqual([
+      [path.join(config.root, "__generated__/src/a.module.css.d.ts")],
+      [path.join(config.root, "__generated__/src/old.module.css.d.ts")],
+      1,
+    ]);
+    expect(output.log).toEqual([
+      "[better-css-modules] generated 1 file(s)",
+      `[better-css-modules] removed: ${rel("__generated__/src/old.module.css.d.ts")}`,
+    ]);
+    expect(output.error).toEqual([
+      `${rel("src/broken.module.css")}:1:1 error syntax: Unclosed block`,
+    ]);
+  });
+
+  it("prints only the diagnostics when silent", async () => {
+    const { config } = await generating({ silent: true });
+    await generateAndPrint(config);
+    expect(output.log).toEqual([]);
+    expect(output.error).toHaveLength(1);
+  });
+});
+
 describe("createSync", () => {
-  let output: { log: string[]; error: string[] };
-
-  beforeEach(() => {
-    output = { log: [], error: [] };
-    vi.spyOn(console, "log").mockImplementation((...args) => void output.log.push(args.join(" ")));
-    vi.spyOn(console, "error").mockImplementation(
-      (...args) => void output.error.push(args.join(" ")),
-    );
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   /** A project of its own with one module, synced by its config with `overrides`. */
   async function syncing(overrides: object = {}) {
     const root = await fs.realpath(await fs.mkdtemp(path.join(dir, "sync-")));

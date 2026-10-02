@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 import type { PHASE_TYPE } from "next/constants.js";
-import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatDiagnostic, generate, loadConfig } from "@better-css-modules/core";
-import { startWatcher } from "@better-css-modules/core/internal";
+import { loadConfig } from "@better-css-modules/core";
+import { generateAndPrint, startWatcher } from "@better-css-modules/core/internal";
 import type { LoaderOptions } from "./loader.js";
 
 export interface Options {
@@ -50,18 +49,10 @@ export function withBetterCssModules(
     if (/[\\/]telemetry[\\/]detached-flush/.test(process.argv[1] ?? "")) return nextConfig;
 
     const config = await loadConfig({ config: options.config });
-    const cwd = process.cwd();
 
     if (process.env[GENERATED] === undefined) {
       process.env[GENERATED] = "1";
-      const { files, removed, diagnostics } = await generate(config);
-      if (!config.silent) {
-        console.log(`[better-css-modules] generated ${files.length} file(s)`);
-        for (const dtsPath of removed) {
-          console.log(`[better-css-modules] removed: ${path.relative(cwd, dtsPath)}`);
-        }
-      }
-      for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
+      await generateAndPrint(config);
     }
     if (phase === "phase-development-server" && !watching) {
       watching = true;

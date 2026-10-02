@@ -1,12 +1,10 @@
 import { createUnplugin, type UnpluginOptions } from "unplugin";
-import path from "node:path";
+import { loadConfig, type ResolvedConfig } from "@better-css-modules/core";
 import {
-  formatDiagnostic,
-  generate,
-  loadConfig,
-  type ResolvedConfig,
-} from "@better-css-modules/core";
-import { createLayerWrapper, createSync } from "@better-css-modules/core/internal";
+  createLayerWrapper,
+  createSync,
+  generateAndPrint,
+} from "@better-css-modules/core/internal";
 
 export interface Options {
   /**
@@ -19,7 +17,7 @@ export interface Options {
 // Vite starts a build per environment and Vitest a server per project, each
 // with its own buildStart; the types do not depend on which one asks, so under
 // Vite the process generates them once per project and config.
-const generations = new Map<string, Promise<void>>();
+const generations = new Map<string, Promise<unknown>>();
 
 interface Setup {
   config: ResolvedConfig;
@@ -43,17 +41,6 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
   const load = async (): Promise<Setup> => {
     const config = await loadConfig({ cwd, config: options.config });
     return { config, sync: createSync(config), wrap: createLayerWrapper(config) };
-  };
-
-  const log = (config: ResolvedConfig, message: string) => {
-    if (!config.silent) console.log(`[better-css-modules] ${message}`);
-  };
-
-  const generateTypes = async (config: ResolvedConfig) => {
-    const { files, removed, diagnostics } = await generate(config);
-    log(config, `generated ${files.length} file(s)`);
-    for (const dtsPath of removed) log(config, `removed: ${path.relative(cwd, dtsPath)}`);
-    for (const diagnostic of diagnostics) console.error(formatDiagnostic(diagnostic, cwd));
   };
 
   // unplugin passes the hook object on to Rollup, Rolldown and Vite but does
@@ -81,11 +68,14 @@ export const unplugin = createUnplugin<Options | undefined>((options = {}, meta)
 
     async buildStart() {
       const { config } = await (setup = load());
-      if (meta.framework !== "vite") return generateTypes(config);
+      if (meta.framework !== "vite") {
+        await generateAndPrint(config);
+        return;
+      }
 
       const key = JSON.stringify(config);
       if (!generations.has(key)) {
-        const generation = generateTypes(config);
+        const generation = generateAndPrint(config);
         generations.set(key, generation);
         // Not kept, so that the next build start tries again.
         generation.catch(() => {
