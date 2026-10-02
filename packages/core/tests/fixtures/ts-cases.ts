@@ -224,6 +224,22 @@ export const tsCases: TsCase[] = [
     orphans: ["a.module.css"],
   },
   {
+    name: "type-query-of-a-value-import",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "a.tsx": `import styles from './a.module.css';\ntype Variant = keyof typeof styles;\nexport const A = ({ v }: { v: Variant }) => <div className={styles.a} data-v={v} />;\nexport const keys: Array<typeof styles> = [];`,
+    },
+    unused: ["a.module.css:b"],
+  },
+  {
+    name: "type-query-of-a-class-is-not-a-use",
+    files: {
+      "a.module.css": `.a { color: red; } .b { color: red; }`,
+      "a.tsx": `import styles from './a.module.css';\nexport type A = typeof styles.a;\nexport const B = () => <div className={styles.b} />;`,
+    },
+    unused: ["a.module.css:a"],
+  },
+  {
     name: "js-extension-import",
     files: {
       "a.module.css": `.a { color: red; } .b { color: red; }`,

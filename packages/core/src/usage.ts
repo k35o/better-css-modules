@@ -325,6 +325,7 @@ function collectReferences(
       if (!isReferenceIdentifier(rawNode, rawParent, { mode: "value" })) return;
       const declaration = scopeTracker.getDeclaration(name);
       if (declaration && declaration.type !== "Import") return;
+      if (rawParent.type === "TSTypeQuery") return;
 
       // Look through `styles as T`, `styles!` and the like to the real consumer.
       let child: AstNode = node;
