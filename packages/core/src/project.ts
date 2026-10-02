@@ -57,7 +57,7 @@ export async function findCssModules(config: ResolvedConfig): Promise<string[]> 
   return files.sort();
 }
 
-export interface LoadedCssModule {
+interface LoadedCssModule {
   /** null when postcss cannot parse the stylesheet at all. */
   analysis: CssModuleAnalysis | null;
   /** The syntax problems of the file. */
@@ -83,7 +83,7 @@ export async function loadCssModule(file: string): Promise<LoadedCssModule> {
   }
 }
 
-export interface LoadResult {
+interface LoadResult {
   /** The analyses of the files that parse. */
   modules: CssModuleAnalysis[];
   /** The syntax problems of every file. */

@@ -31,7 +31,7 @@ export interface GlobalCssFile {
   imports: GlobalCssImport[];
 }
 
-export interface GlobalCssImport {
+interface GlobalCssImport {
   rule: AtRule;
   file: string;
   /** Whether a media or supports condition guards the import. */
@@ -378,7 +378,7 @@ class Loader {
 }
 
 /** What the prelude of an `@import` says. */
-export interface ImportPrelude {
+interface ImportPrelude {
   url: string;
   /** The offset in the prelude just after the URL. */
   urlEnd: number;

@@ -11,7 +11,7 @@ export interface Layer {
   order: string[];
 }
 
-export interface WrapResult {
+interface WrapResult {
   code: string;
   /** Source map, as JSON. */
   map: string;

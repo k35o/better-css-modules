@@ -14,6 +14,7 @@ export default defineConfig({
   pack: {
     entry: {
       index: "src/index.ts",
+      internal: "src/internal.ts",
     },
     dts: true,
     format: ["esm"],

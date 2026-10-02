@@ -8,9 +8,9 @@ import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
 import { findCssModules, loadCssModule, loadCssModules } from "./project.js";
 
 /** Generated files mirror paths relative to the root. */
-export type OutputOptions = Pick<ResolvedConfig, "root" | "outDir">;
+type OutputOptions = Pick<ResolvedConfig, "root" | "outDir">;
 
-export type DtsOptions = Pick<ResolvedConfig, "root" | "outDir" | "namedExports">;
+type DtsOptions = Pick<ResolvedConfig, "root" | "outDir" | "namedExports">;
 
 function quoteUnlessIdentifier(name: string): string {
   return /^[a-zA-Z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
@@ -99,7 +99,7 @@ function earliest(
   return first;
 }
 
-export interface GeneratedDts {
+interface GeneratedDts {
   /** The `.d.ts` source, ending with the comment that points to its map. */
   dts: string;
   /** The declaration map, which leads go-to-definition from a key to the stylesheet. */
@@ -159,7 +159,7 @@ export function dtsPathFor(cssFile: string, { root, outDir }: OutputOptions): st
   return path.join(root, outDir, `${relative}.d.ts`);
 }
 
-export async function writeDts(analysis: CssModuleAnalysis, options: DtsOptions): Promise<string> {
+async function writeDts(analysis: CssModuleAnalysis, options: DtsOptions): Promise<string> {
   const dtsPath = dtsPathFor(analysis.file, options);
   const { dts, map } = generateDts(analysis, dtsPath, options);
   await fs.mkdir(path.dirname(dtsPath), { recursive: true });
@@ -179,7 +179,7 @@ async function removeDts(dtsPath: string): Promise<void> {
   await Promise.all([fs.rm(dtsPath, { force: true }), fs.rm(`${dtsPath}.map`, { force: true })]);
 }
 
-export interface RegenerateResult {
+interface RegenerateResult {
   /** Path of the `.d.ts` written, or null when there is none to write. */
   generated: string | null;
   /** Path of the `.d.ts` removed because its stylesheet is gone, or null. */

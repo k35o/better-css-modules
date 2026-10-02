@@ -37,18 +37,15 @@ export interface ClassOccurrence {
  * reference to a keyframes name from an animation declaration; the others
  * declare the name.
  */
-export interface ScopedIdentifier {
+interface ScopedIdentifier {
   name: string;
   kind: "id" | "keyframes" | "animation" | "view-transition-class";
   range: SourceRange;
 }
 
-export type ComposesSource =
-  | { kind: "local" }
-  | { kind: "global" }
-  | { kind: "file"; specifier: string };
+type ComposesSource = { kind: "local" } | { kind: "global" } | { kind: "file"; specifier: string };
 
-export interface ComposesDeclaration {
+interface ComposesDeclaration {
   /**
    * The local class whose rule holds the `composes` declaration, or null when
    * the selector is not a single local class, where bundlers reject `composes`.

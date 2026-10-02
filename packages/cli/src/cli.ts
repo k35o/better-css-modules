@@ -8,8 +8,8 @@ import {
   formatGitHubAnnotation,
   generate,
   loadConfig,
-  startWatcher,
 } from "@better-css-modules/core";
+import { startWatcher } from "@better-css-modules/core/internal";
 import pkg from "../package.json" with { type: "json" };
 
 const cli = cac("better-css-modules");

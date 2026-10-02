@@ -2,17 +2,19 @@ import { createUnplugin, type UnpluginOptions } from "unplugin";
 import path from "node:path";
 import {
   type Config,
-  createMatcher,
   formatDiagnostic,
   generate,
-  type GlobalCss,
   loadConfig,
-  loadGlobalCss,
   type ResolvedConfig,
+} from "@better-css-modules/core";
+import {
+  createMatcher,
+  type GlobalCss,
+  loadGlobalCss,
   regenerateDts,
   resolveLayer,
   wrapInLayer,
-} from "@better-css-modules/core";
+} from "@better-css-modules/core/internal";
 
 export interface Options extends Partial<Config> {}
 

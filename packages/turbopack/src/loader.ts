@@ -1,14 +1,12 @@
 import fs from "node:fs";
+import { type Config, loadConfig, type ResolvedConfig } from "@better-css-modules/core";
 import {
-  type Config,
   createMatcher,
   type GlobalCss,
-  loadConfig,
   loadGlobalCss,
-  type ResolvedConfig,
   resolveLayer,
   wrapInLayer,
-} from "@better-css-modules/core";
+} from "@better-css-modules/core/internal";
 
 // A type rather than an interface, so that it fits Turbopack's JSON options.
 export type LoaderOptions = {

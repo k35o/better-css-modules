@@ -52,7 +52,7 @@ export function defineConfig(config: Config): Config {
 }
 
 /** Path of the config file in `cwd`, or null when there is none. */
-export function configFile(cwd: string = process.cwd()): string | null {
+export function configFile(cwd: string): string | null {
   const configFileName = "better-css-modules.config";
   const extensions = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"];
 

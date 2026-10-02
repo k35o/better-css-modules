@@ -13,7 +13,7 @@ const DISABLE = "better-css-modules-disable";
 export type Keep = (node: Node | null, found: Diagnostic[]) => Diagnostic[];
 
 /** The disable comments of one stylesheet. */
-export interface Disabled {
+interface Disabled {
   keep: Keep;
   /**
    * The problems of the comments themselves, including each rule a comment

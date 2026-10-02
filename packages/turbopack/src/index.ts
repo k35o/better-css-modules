@@ -1,14 +1,8 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  type Config,
-  configFile,
-  formatDiagnostic,
-  generate,
-  loadConfig,
-  startWatcher,
-} from "@better-css-modules/core";
+import { type Config, formatDiagnostic, generate, loadConfig } from "@better-css-modules/core";
+import { configFile, startWatcher } from "@better-css-modules/core/internal";
 import type { LoaderOptions } from "./loader.js";
 
 export interface Options extends Partial<Config> {}
