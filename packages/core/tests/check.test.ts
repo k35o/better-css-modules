@@ -474,14 +474,19 @@ describe("checkCss: colors built from other colors", () => {
 describe("checkCss: var() in shorthands that hold a color", () => {
   it("takes a var() for the color of a layer that has no other", () => {
     expect(check(".a { border: 1px solid var(--glow); }")).toEqual([
-      `tokens/color: --glow is not a color token; ${COLOR_HINT}`,
+      `tokens/color: --glow is taken for the color of this shorthand and is not a color token; ${COLOR_HINT}, or write the longhand`,
+    ]);
+    // Without shadow tokens, whose check takes the whole value.
+    const colors = declaring("--color-fg-base");
+    expect(check(".a { box-shadow: 0 1px 2px var(--glow); }", colors)).toEqual([
+      `tokens/color: --glow is taken for the color of this shorthand and is not a color token; ${COLOR_HINT}, or write the longhand`,
     ]);
     expect(check(".a { background: var(--glow); }")).toHaveLength(1);
     expect(check(".a { outline: 2px solid var(--radius-md); }")).toHaveLength(1);
     // Each background layer is judged on its own, so the image of the first
     // one is taken for a color; `background-image` says what it is.
     expect(check(".a { background: var(--hero) center / cover, var(--color-bg-base); }")).toEqual([
-      `tokens/color: --hero is not a color token; ${COLOR_HINT}`,
+      `tokens/color: --hero is taken for the color of this shorthand and is not a color token; ${COLOR_HINT}, or write the longhand`,
     ]);
   });
 
@@ -496,7 +501,14 @@ describe("checkCss: var() in shorthands that hold a color", () => {
   it("takes a var() of a gradient color stop for a color", () => {
     const css =
       ".a { background-image: radial-gradient(110% 50% at 50% -8%, var(--glow), transparent 60%); }";
-    expect(diagnose(css)).toMatchObject([{ rule: "tokens/color", line: 1, column: 61 }]);
+    expect(diagnose(css)).toMatchObject([
+      {
+        rule: "tokens/color",
+        line: 1,
+        column: 61,
+        message: `--glow is not a color token; ${COLOR_HINT}`,
+      },
+    ]);
   });
 
   it("does not take a var() of a gradient's direction for a color", () => {

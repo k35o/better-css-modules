@@ -152,10 +152,11 @@ interface Scope {
 }
 
 /**
- * How a var() among color components is read: each one is a color, the layer
- * has room for one color and a var() may be it, or none is known to be a color.
+ * How a var() among color components is read: each one is a color, a layer of
+ * a shorthand or a color stop of a gradient has room for one color and a var()
+ * may be it, or none is known to be a color.
  */
-type VarReading = "colors" | "one-color" | "unknown";
+type VarReading = "colors" | "shorthand-color" | "stop-color" | "unknown";
 
 /** Numbers are factors inside arithmetic on a token, and raw values anywhere else. */
 type Arithmetic = "none" | "raw" | "token";
@@ -496,11 +497,11 @@ function checkPart(part: ValuePart, nodes: CssTree.CssNode[], scope: Scope): voi
       checkColors(nodes, scope, "colors");
       break;
     case "layer-color":
-      for (const layer of layersOf(nodes)) checkColors(layer, scope, "one-color");
+      for (const layer of layersOf(nodes)) checkColors(layer, scope, "shorthand-color");
       break;
     case "shadow-color":
       for (const layer of layersOf(nodes)) {
-        if (!loneVar(layer)) checkColors(layer, scope, "one-color");
+        if (!loneVar(layer)) checkColors(layer, scope, "shorthand-color");
       }
       break;
     case "gradient-colors":
@@ -556,6 +557,7 @@ function checkQuantity(node: CssTree.CssNode, scope: Scope, arithmetic: Arithmet
 }
 
 function checkColors(nodes: CssTree.CssNode[], scope: Scope, vars: VarReading): void {
+  const oneColor = vars === "shorthand-color" || vars === "stop-color";
   let hasColor = false;
   const undecided: CssTree.FunctionNode[] = [];
   for (const node of nodes) {
@@ -567,7 +569,7 @@ function checkColors(nodes: CssTree.CssNode[], scope: Scope, vars: VarReading): 
     } else if (node.type === "Function") {
       const name = node.name.toLowerCase();
       if (name === "var") {
-        if (vars === "colors" || (vars === "one-color" && allowsReference(node, scope))) {
+        if (vars === "colors" || (oneColor && allowsReference(node, scope))) {
           checkToken(node, scope);
           checkColors(fallbackOf(node), scope, "colors");
           hasColor = true;
@@ -590,9 +592,9 @@ function checkColors(nodes: CssTree.CssNode[], scope: Scope, vars: VarReading): 
   }
   // Nothing else in the layer is its color, so a var() is taken for it. Which
   // of several it is cannot be told, so each one is.
-  const isColor = vars === "one-color" && !hasColor;
+  const isColor = oneColor && !hasColor;
   for (const node of undecided) {
-    if (isColor) checkToken(node, scope);
+    if (isColor) checkToken(node, scope, vars === "shorthand-color");
     checkColors(fallbackOf(node), scope, isColor ? "colors" : "unknown");
   }
 }
@@ -619,7 +621,7 @@ function checkGradient(node: CssTree.FunctionNode, scope: Scope): void {
           !scope.restriction.keywords.has(child.name.toLowerCase()) &&
           !isRawColorName(child, scope),
       );
-    checkColors(argument, scope, isSetup ? "unknown" : "one-color");
+    checkColors(argument, scope, isSetup ? "unknown" : "stop-color");
   });
 }
 
@@ -687,7 +689,7 @@ function checkTimes(nodes: CssTree.CssNode[], scope: Scope): void {
  * A name of the category the global CSS does not declare, and outside the
  * global CSS an internal name, are left to `checkReferences`.
  */
-function checkToken(node: CssTree.FunctionNode, scope: Scope): void {
+function checkToken(node: CssTree.FunctionNode, scope: Scope, inShorthand = false): void {
   const name = node.children.first;
   if (name?.type !== "Identifier") return;
   const { category, hint } = scope.restriction;
@@ -695,7 +697,14 @@ function checkToken(node: CssTree.FunctionNode, scope: Scope): void {
   if (own === category) return;
   const { tokens, global } = scope.context;
   if (own === null && !global && tokens.has(name.name)) return;
-  report(scope, node, node, `${name.name} is not a ${category} token; ${hint}`);
+  report(
+    scope,
+    node,
+    node,
+    inShorthand
+      ? `${name.name} is taken for the ${category} of this shorthand and is not a ${category} token; ${hint}, or write the longhand`
+      : `${name.name} is not a ${category} token; ${hint}`,
+  );
 }
 
 /** The components of the fallback of a `var()`, which css-tree keeps as raw text. */
