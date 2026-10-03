@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vite-plus/test";
+import { describe, it, expect, afterAll, afterEach, vi } from "vite-plus/test";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -25,6 +25,10 @@ async function project(files: Record<string, string>): Promise<string> {
   }
   return dir;
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 afterAll(async () => {
   await Promise.all(created.map((dir) => fs.rm(dir, { recursive: true, force: true })));
@@ -415,6 +419,42 @@ describe("regenerateDts", () => {
     });
     await expect(fs.access(dtsPath)).rejects.toThrow();
     await expect(fs.access(`${dtsPath}.map`)).rejects.toThrow();
+  });
+
+  it("reports a removal only when there was a .d.ts to remove", async () => {
+    const dir = await project({ "src/a.module.css": ".a {}" });
+    const cssFile = path.join(dir, "src", "a.module.css");
+    const output = resolveConfig({}, dir);
+    await regenerateDts(cssFile, output);
+
+    await fs.rm(cssFile);
+    expect((await regenerateDts(cssFile, output)).removed).toBe(dtsPathFor(cssFile, output));
+    expect(await regenerateDts(cssFile, output)).toEqual({
+      generated: null,
+      removed: null,
+      diagnostics: [],
+    });
+  });
+
+  it("takes a stylesheet that disappears while it is read for gone", async () => {
+    const dir = await project({ "src/a.module.css": ".a {}" });
+    const cssFile = path.join(dir, "src", "a.module.css");
+    const output = resolveConfig({}, dir);
+    const dtsPath = dtsPathFor(cssFile, output);
+    await regenerateDts(cssFile, output);
+
+    // Deleted after anything that looked for it, and before it was read.
+    vi.spyOn(fs, "readFile").mockRejectedValueOnce(
+      Object.assign(new Error(`ENOENT: no such file or directory, open '${cssFile}'`), {
+        code: "ENOENT",
+      }),
+    );
+    expect(await regenerateDts(cssFile, output)).toEqual({
+      generated: null,
+      removed: dtsPath,
+      diagnostics: [],
+    });
+    await expect(fs.access(dtsPath)).rejects.toThrow();
   });
 });
 

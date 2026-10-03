@@ -175,8 +175,23 @@ async function writeIfChanged(file: string, content: string): Promise<void> {
   if (current !== content) await fs.writeFile(file, content, "utf-8");
 }
 
-async function removeDts(dtsPath: string): Promise<void> {
-  await Promise.all([fs.rm(dtsPath, { force: true }), fs.rm(`${dtsPath}.map`, { force: true })]);
+/** Remove a .d.ts and its map, and tell whether there was a .d.ts. */
+async function removeDts(dtsPath: string): Promise<boolean> {
+  const [removed] = await Promise.all([
+    fs.rm(dtsPath).then(
+      () => true,
+      (error: unknown) => {
+        if (isMissing(error)) return false;
+        throw error;
+      },
+    ),
+    fs.rm(`${dtsPath}.map`, { force: true }),
+  ]);
+  return removed;
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 interface RegenerateResult {
@@ -196,16 +211,18 @@ export async function regenerateDts(
   cssFile: string,
   options: DtsOptions,
 ): Promise<RegenerateResult> {
-  const exists = await fs.access(cssFile).then(
-    () => true,
-    () => false,
-  );
-  if (!exists) {
+  // Reading is the test of whether the stylesheet is gone: checking first
+  // would race a deletion that lands between the check and the read.
+  const loaded = await loadCssModule(cssFile).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!loaded) {
     const dtsPath = dtsPathFor(cssFile, options);
-    await removeDts(dtsPath);
-    return { generated: null, removed: dtsPath, diagnostics: [] };
+    const removed = await removeDts(dtsPath);
+    return { generated: null, removed: removed ? dtsPath : null, diagnostics: [] };
   }
-  const { analysis, diagnostics } = await loadCssModule(cssFile);
+  const { analysis, diagnostics } = loaded;
   const generated = analysis && (await writeDts(analysis, options));
   return { generated, removed: null, diagnostics };
 }
