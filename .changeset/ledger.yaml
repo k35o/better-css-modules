@@ -2,7 +2,90 @@
   dir: packages/cli
   intents:
     - cli-bin-shim
+"@better-css-modules/cli@0.2.0":
+  dir: packages/cli
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 05-named-exports
+    - 06-check-usage
+    - 07-pure-modules
+    - 08-design-tokens
+    - 09-disable-comments
+    - 10-cascade-layers
 "@better-css-modules/core@0.1.3":
   dir: packages/core
   intents:
     - switch-release-automation
+"@better-css-modules/core@0.2.0":
+  dir: packages/core
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 05-named-exports
+    - 06-check-usage
+    - 07-pure-modules
+    - 08-design-tokens
+    - 09-disable-comments
+    - 10-cascade-layers
+    - 13-core-api
+"@better-css-modules/esbuild@0.2.0":
+  dir: packages/esbuild
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 10-cascade-layers
+    - 11-bundler-plugins
+"@better-css-modules/rollup@0.2.0":
+  dir: packages/rollup
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 10-cascade-layers
+    - 11-bundler-plugins
+"@better-css-modules/rspack@0.2.0":
+  dir: packages/rspack
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 05-named-exports
+    - 10-cascade-layers
+    - 11-bundler-plugins
+"@better-css-modules/turbopack@0.2.0":
+  dir: packages/turbopack
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 10-cascade-layers
+    - 12-turbopack
+"@better-css-modules/vite@0.2.0":
+  dir: packages/vite
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 10-cascade-layers
+    - 11-bundler-plugins
+"@better-css-modules/webpack@0.2.0":
+  dir: packages/webpack
+  intents:
+    - 01-esm-only-node-24
+    - 02-config-file-only
+    - 03-types-from-parsers
+    - 04-declaration-maps
+    - 05-named-exports
+    - 10-cascade-layers
+    - 11-bundler-plugins
