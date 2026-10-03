@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vite-plus/test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import postcss from "postcss";
-import { checkCss } from "../src/check.js";
+import { check as checkProject, checkCss } from "../src/check.js";
+import { type Config, ConfigError, resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
 import { type GlobalCss, globalCssFrom } from "../src/global.js";
 
@@ -34,6 +38,7 @@ const designSystem = globalCssOf(`
 }`);
 
 const COLOR_HINT = "use a --color-* token";
+const SPACING_HINT = "use var(--spacing), alone or multiplied in calc()";
 
 /** The diagnostics of token rules and disable comments; pure.test.ts covers the pure rules. */
 function diagnose(css: string, globalCss: GlobalCss = designSystem) {
@@ -72,7 +77,7 @@ describe("checkCss: raw values", () => {
     [
       "a length",
       "padding: 13px",
-      "tokens/spacing: 13px is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: 13px is a raw value for spacing; ${SPACING_HINT}`,
     ],
     [
       "a font size",
@@ -133,6 +138,11 @@ describe("checkCss: raw values", () => {
   it("leaves descriptors of @font-face and @page alone", () => {
     const css = "@font-face { font-weight: 400 700; }\n@page { margin: 1in; }";
     expect(check(css, declaring("--font-weight-bold", "--spacing"))).toEqual([]);
+  });
+
+  it("leaves descriptors in a margin box of @page alone", () => {
+    const css = "@page { @top-center { margin: 13px; color: red; } }";
+    expect(check(css)).toEqual([]);
   });
 });
 
@@ -205,13 +215,29 @@ describe("checkCss: raw values in shorthands", () => {
   });
 });
 
+describe("checkCss: what to write instead", () => {
+  it.each([
+    [["--spacing-sm", "--spacing-md"], "use a --spacing-* token"],
+    [["--spacing"], "use var(--spacing), alone or multiplied in calc()"],
+    [
+      ["--spacing", "--spacing-sm"],
+      "use a --spacing-* token, or var(--spacing), alone or multiplied in calc()",
+    ],
+  ])("names the kinds of token the global CSS declares: %j", (names, hint) => {
+    expect(check(".a { padding: 13px; gap: var(--color-x); }", declaring(...names))).toEqual([
+      `tokens/spacing: 13px is a raw value for spacing; ${hint}`,
+      `tokens/spacing: --color-x is not a spacing token; ${hint}`,
+    ]);
+  });
+});
+
 describe("checkCss: custom properties outside the category", () => {
   it("reports a token of another category", () => {
     expect(check(".a { color: var(--radius-md); }")).toEqual([
       `tokens/color: --radius-md is not a color token; ${COLOR_HINT}`,
     ]);
     expect(check(".a { gap: var(--color-fg-base); }")).toEqual([
-      "tokens/spacing: --color-fg-base is not a spacing token; use a --spacing-* token",
+      `tokens/spacing: --color-fg-base is not a spacing token; ${SPACING_HINT}`,
     ]);
   });
 
@@ -225,7 +251,7 @@ describe("checkCss: custom properties outside the category", () => {
   it("reports a name without the category prefix", () => {
     expect(check(".a { color: var(--nope); }")).toHaveLength(1);
     expect(check(".a { padding: calc(var(--space-2) * 2); }")).toEqual([
-      "tokens/spacing: --space-2 is not a spacing token; use a --spacing-* token",
+      `tokens/spacing: --space-2 is not a spacing token; ${SPACING_HINT}`,
     ]);
   });
 
@@ -242,7 +268,7 @@ describe("checkCss: custom properties outside the category", () => {
       { rule: "tokens/spacing", line: 1, column: 30, endColumn: 34 },
     ]);
     expect(check(".a { padding: env(safe-area-inset-left, 20px); }")).toEqual([
-      "tokens/spacing: 20px is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: 20px is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 
@@ -274,7 +300,7 @@ describe("checkCss: custom properties outside the category", () => {
 describe("checkCss: token names the global CSS does not declare", () => {
   it("reports a misspelt token with the declared name closest to it", () => {
     expect(check(".a { color: var(--color-fg-bsae); }")).toEqual([
-      "tokens/color: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
+      "tokens/unknown: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
     ]);
     expect(diagnose(".a { color: var(--color-fg-bsae); }")).toMatchObject([
       { line: 1, column: 13, endLine: 1, endColumn: 33 },
@@ -285,10 +311,16 @@ describe("checkCss: token names the global CSS does not declare", () => {
     const css =
       ".a { width: calc(var(--spacing-44) * 2); --local: var(--radius-mdd); height: var(--x, var(--color-nope)); }";
     expect(check(css)).toEqual([
-      "tokens/spacing: --spacing-44 is not defined in the global CSS",
-      "tokens/radius: --radius-mdd is not defined in the global CSS; did you mean --radius-md?",
-      "tokens/color: --color-nope is not defined in the global CSS",
+      "tokens/unknown: --spacing-44 is not defined in the global CSS",
+      "tokens/unknown: --radius-mdd is not defined in the global CSS; did you mean --radius-md?",
+      "tokens/unknown: --color-nope is not defined in the global CSS",
     ]);
+  });
+
+  it("keeps it apart from the category, so silencing a raw color leaves the misspelt token", () => {
+    const css =
+      ".a {\n  /* better-css-modules-disable-next-line tokens/color -- the border matches the logo */\n  border: 1px solid var(--color-brnad, #f00);\n}";
+    expect(check(css)).toEqual(["tokens/unknown: --color-brnad is not defined in the global CSS"]);
   });
 
   it("leaves token names of a category the global CSS declares nothing for alone", () => {
@@ -321,7 +353,7 @@ describe("checkCss: internal names", () => {
 
   it("reports declaring it", () => {
     const declared =
-      "tokens/internal: --gray-900 is internal to the global CSS and cannot be declared here; rename the custom property";
+      "tokens/declaration: --gray-900 is internal to the global CSS and cannot be declared here; rename the custom property";
     expect(check(".a { --gray-900: red; }")).toEqual([declared]);
   });
 
@@ -442,14 +474,19 @@ describe("checkCss: colors built from other colors", () => {
 describe("checkCss: var() in shorthands that hold a color", () => {
   it("takes a var() for the color of a layer that has no other", () => {
     expect(check(".a { border: 1px solid var(--glow); }")).toEqual([
-      `tokens/color: --glow is not a color token; ${COLOR_HINT}`,
+      `tokens/color: --glow is taken for the color of this shorthand and is not a color token; ${COLOR_HINT}, or write the longhand`,
+    ]);
+    // Without shadow tokens, whose check takes the whole value.
+    const colors = declaring("--color-fg-base");
+    expect(check(".a { box-shadow: 0 1px 2px var(--glow); }", colors)).toEqual([
+      `tokens/color: --glow is taken for the color of this shorthand and is not a color token; ${COLOR_HINT}, or write the longhand`,
     ]);
     expect(check(".a { background: var(--glow); }")).toHaveLength(1);
     expect(check(".a { outline: 2px solid var(--radius-md); }")).toHaveLength(1);
     // Each background layer is judged on its own, so the image of the first
     // one is taken for a color; `background-image` says what it is.
     expect(check(".a { background: var(--hero) center / cover, var(--color-bg-base); }")).toEqual([
-      `tokens/color: --hero is not a color token; ${COLOR_HINT}`,
+      `tokens/color: --hero is taken for the color of this shorthand and is not a color token; ${COLOR_HINT}, or write the longhand`,
     ]);
   });
 
@@ -464,7 +501,14 @@ describe("checkCss: var() in shorthands that hold a color", () => {
   it("takes a var() of a gradient color stop for a color", () => {
     const css =
       ".a { background-image: radial-gradient(110% 50% at 50% -8%, var(--glow), transparent 60%); }";
-    expect(diagnose(css)).toMatchObject([{ rule: "tokens/color", line: 1, column: 61 }]);
+    expect(diagnose(css)).toMatchObject([
+      {
+        rule: "tokens/color",
+        line: 1,
+        column: 61,
+        message: `--glow is not a color token; ${COLOR_HINT}`,
+      },
+    ]);
   });
 
   it("does not take a var() of a gradient's direction for a color", () => {
@@ -531,7 +575,7 @@ describe("checkCss: numbers", () => {
     const globalCss = declaring("--spacing", "--z-index-modal");
     expect(check(".a { z-index: calc(var(--z-index-modal) + 1); }", globalCss)).toEqual([]);
     expect(check(".a { padding: calc(var(--spacing) * 4 + 3px); }", globalCss)).toEqual([
-      "tokens/spacing: 3px is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: 3px is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 
@@ -545,8 +589,8 @@ describe("checkCss: numbers", () => {
 
   it("reports raw offsets and keeps the keywords around them", () => {
     expect(check(".a { inset: auto -10cqw -25cqh auto; }")).toEqual([
-      "tokens/spacing: -10cqw is a raw value for spacing; use a --spacing-* token",
-      "tokens/spacing: -25cqh is a raw value for spacing; use a --spacing-* token",
+      `tokens/spacing: -10cqw is a raw value for spacing; ${SPACING_HINT}`,
+      `tokens/spacing: -25cqh is a raw value for spacing; ${SPACING_HINT}`,
     ]);
   });
 
@@ -559,13 +603,13 @@ describe("checkCss: numbers", () => {
 // the color category, so token names are not the module's to declare.
 describe("checkCss: declaring a custom property under a token name", () => {
   const message = (name: string) =>
-    `tokens/color: ${name} is a color token name and cannot be declared here; rename the custom property`;
+    `tokens/declaration: ${name} is a color token name and cannot be declared here; rename the custom property`;
 
   it("reports the declaration at its name", () => {
     expect(diagnose(".a {\n  --color-mine: red;\n}")).toMatchObject([
       {
         file: FILE,
-        rule: "tokens/color",
+        rule: "tokens/declaration",
         line: 2,
         column: 3,
         endLine: 2,
@@ -581,7 +625,7 @@ describe("checkCss: declaring a custom property under a token name", () => {
       message("--color-bg-base"),
     ]);
     expect(check(":global(.dark) .a { --spacing: 0; }")).toEqual([
-      "tokens/spacing: --spacing is a spacing token name and cannot be declared here; rename the custom property",
+      "tokens/declaration: --spacing is a spacing token name and cannot be declared here; rename the custom property",
     ]);
   });
 
@@ -600,8 +644,28 @@ describe("checkCss: declaring a custom property under a token name", () => {
 
   it("can be silenced like any token rule", () => {
     const css =
-      ".inverted {\n  /* better-css-modules-disable-next-line tokens/color -- this panel swaps the theme */\n  --color-fg-base: var(--color-bg-base);\n}";
+      ".inverted {\n  /* better-css-modules-disable-next-line tokens/declaration -- this panel swaps the theme */\n  --color-fg-base: var(--color-bg-base);\n}";
     expect(check(css)).toEqual([]);
+  });
+});
+
+// A token check cannot see through an @value name, so pure/value reports the
+// @value instead.
+describe("checkCss: @value names, which the token checks cannot see through", () => {
+  const rules = (css: string, globalCss: GlobalCss) =>
+    checkCss(analyzeCss(css, FILE), globalCss).map((d) => `${d.line} ${d.rule}`);
+
+  it("reports the @value that stands for a raw color", () => {
+    expect(rules("@value brand: #f00;\n.a { color: brand; }", designSystem)).toEqual([
+      "1 pure/value",
+    ]);
+  });
+
+  it("reports the @value that stands for a media query", () => {
+    const globalCss = declaring("--breakpoint-md");
+    expect(rules("@value sm: (min-width: 123px);\n@media sm { .a {} }", globalCss)).toEqual([
+      "1 pure/value",
+    ]);
   });
 });
 
@@ -629,8 +693,8 @@ describe("checkCss: disable comments", () => {
     expect(check(both, globalCss)).toEqual([]);
   });
 
-  it("silences tokens/internal and tokens/undeclared", () => {
-    const css = `.a {\n  ${disable} tokens/internal, tokens/undeclared -- the legacy header */\n  width: var(--gray-900);\n}`;
+  it("silences tokens/internal", () => {
+    const css = `.a {\n  ${disable} tokens/internal -- the legacy header */\n  width: var(--gray-900);\n}`;
     expect(check(css)).toEqual([]);
   });
 
@@ -654,8 +718,19 @@ describe("checkCss: disable comments", () => {
       `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
     ]);
     expect(check(`.a {\n  ${disable} tokens/colour -- because */\n  color: #fff;\n}`)).toEqual([
-      'invalid-disable: unknown rule "tokens/colour" in a disable comment',
+      'invalid-disable: unknown rule "tokens/colour"',
       `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+    ]);
+  });
+
+  it.each([
+    ["syntax", "the bundlers cannot read the stylesheet either"],
+    ["invalid-composes", "the bundlers reject composes there"],
+    ["layer/composes", "the plugins stop the build at composes in a layer"],
+    ["invalid-disable", "fix or remove the disable comment instead"],
+  ])("refuses to disable %s and says why", (rule, reason) => {
+    expect(check(`${disable} ${rule} -- legacy */\n.a {}`)).toEqual([
+      `invalid-disable: ${rule} cannot be disabled: ${reason}`,
     ]);
   });
 
@@ -665,8 +740,391 @@ describe("checkCss: disable comments", () => {
     ).toHaveLength(1);
   });
 
-  it("has no file-wide form", () => {
-    const css = "/* better-css-modules-disable tokens/color -- legacy file */\n.a { color: #fff; }";
-    expect(check(css)).toHaveLength(1);
+  it("reports a comment that silences nothing: stale, apart from its line or naming another rule", () => {
+    const css = [
+      ".a {",
+      `  ${disable} tokens/color -- the old brand color */`,
+      "  color: var(--color-fg-base);",
+      `  ${disable} tokens/color -- the logo color */`,
+      "",
+      "  background-color: #fff;",
+      `  ${disable} tokens/radius -- the optical inset */`,
+      "  padding: 13px;",
+      "}",
+    ].join("\n");
+    const nothing = "tokens/color is disabled, but nothing on the next line reports it";
+    expect(diagnose(css).map((d) => `${d.line}:${d.column} ${d.rule}: ${d.message}`)).toEqual([
+      `2:3 invalid-disable: ${nothing}`,
+      `4:3 invalid-disable: ${nothing}`,
+      `6:21 tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+      "7:3 invalid-disable: tokens/radius is disabled, but nothing on the next line reports it",
+      `8:12 tokens/spacing: 13px is a raw value for spacing; ${SPACING_HINT}`,
+    ]);
+  });
+
+  it("reports each named rule that silences nothing", () => {
+    const globalCss = declaring("--font-size-md", "--color-fg-base");
+    const css = `.a {\n  ${disable} tokens/font-size, tokens/color -- optical alignment */\n  font: 700 17px serif;\n}`;
+    expect(check(css, globalCss)).toEqual([
+      "invalid-disable: tokens/color is disabled, but nothing on the next line reports it",
+    ]);
+  });
+
+  it("reports a comment for a category the global CSS no longer restricts", () => {
+    expect(
+      check(`.a {\n  ${disable} tokens/color -- legacy */\n  color: #fff;\n}`, globalCssFrom([])),
+    ).toEqual([
+      "invalid-disable: tokens/color is disabled, but nothing on the next line reports it",
+    ]);
+  });
+
+  it("reports a comment that looks like a directive but is neither form", () => {
+    const css = [
+      "/* better-css-modules-disable-line tokens/color -- legacy */",
+      ".a { color: #fff; }",
+      "/* better-css-modules-enable */",
+      "/* the better-css-modules-disable comments are listed in the README */",
+    ].join("\n");
+    expect(check(css)).toEqual([
+      'invalid-disable: unknown directive "better-css-modules-disable-line"; write better-css-modules-disable-next-line or better-css-modules-disable',
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+      'invalid-disable: unknown directive "better-css-modules-enable"; write better-css-modules-disable-next-line or better-css-modules-disable',
+    ]);
+  });
+});
+
+describe("checkCss: file-wide disable comments", () => {
+  const disable = "/* better-css-modules-disable";
+
+  it("silences the named rules everywhere in the file", () => {
+    const css = [
+      "/* The card of the legacy checkout. */",
+      `${disable} tokens/color, pure/id -- the legacy checkout is replaced next quarter */`,
+      ".a { color: #fff; }",
+      "#b { background-color: #000; }",
+      ".c { padding: 13px; }",
+    ].join("\n");
+    expect(diagnose(css).map((d) => `${d.line} ${d.rule}`)).toEqual(["5 tokens/spacing"]);
+  });
+
+  it("reports one after the first rule, at-rule or declaration and does not honour it", () => {
+    const after = `.a { color: #fff; }\n${disable} tokens/color -- legacy */\n.b { color: #000; }`;
+    const inside = `.a {\n  ${disable} tokens/color -- legacy */\n  color: #fff;\n}`;
+    const message =
+      "invalid-disable: a file-wide disable comment must come before the first rule, at-rule or declaration";
+    expect(check(after)).toEqual([
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+      message,
+      `tokens/color: #000 is a raw value for color; ${COLOR_HINT}`,
+    ]);
+    expect(check(inside)).toEqual([
+      message,
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+    ]);
+  });
+
+  it("reports a rule that nothing in the file reports", () => {
+    expect(check(`${disable} tokens/color -- legacy */\n.a { padding: 13px; }`)).toEqual([
+      "invalid-disable: tokens/color is disabled, but nothing reports it for this file",
+      `tokens/spacing: 13px is a raw value for spacing; ${SPACING_HINT}`,
+    ]);
+  });
+
+  it("needs a reason and the rules like the next-line form", () => {
+    expect(check(`${disable} tokens/color */\n.a { color: #fff; }`)).toEqual([
+      'invalid-disable: a disable comment needs a reason: add " -- <why>" after the rule names',
+      `tokens/color: #fff is a raw value for color; ${COLOR_HINT}`,
+    ]);
+    expect(check(`${disable} syntax -- legacy */\n.a {}`)).toEqual([
+      "invalid-disable: syntax cannot be disabled: the bundlers cannot read the stylesheet either",
+    ]);
+  });
+});
+
+describe("checkCss: the layer the plugins put the module in", () => {
+  const layer = { name: "components", order: ["base", "components"] };
+  const check = (css: string) =>
+    checkCss(analyzeCss(css, FILE), globalCssFrom([]), layer)
+      .filter((d) => !d.rule.startsWith("pure/"))
+      .map((d) => `${d.line}:${d.column} ${d.rule}`);
+
+  it("reports @layer, which would nest in the layer the module is put in", () => {
+    expect(check("@layer a, b;\n@media print {\n  @layer c { .a { color: red; } }\n}")).toEqual([
+      "1:1 layer/nested",
+      "3:3 layer/nested",
+    ]);
+  });
+
+  it("reports composes", () => {
+    expect(check(".a { color: red; }\n.b { composes: a; }")).toEqual(["2:6 layer/composes"]);
+  });
+
+  it("silences layer/nested but not layer/composes", () => {
+    const css = [
+      "/* better-css-modules-disable-next-line layer/nested -- a sublayer of components */",
+      "@layer x { .a { color: red; } }",
+      ".b {",
+      "  /* better-css-modules-disable-next-line layer/composes -- legacy */",
+      "  composes: a;",
+      "}",
+    ].join("\n");
+    expect(check(css)).toEqual(["4:3 invalid-disable", "5:3 layer/composes"]);
+  });
+
+  it("reports nothing about layers without one", () => {
+    const css = "@layer a;\n.a { color: red; }\n.b { composes: a; }";
+    const rules = checkCss(analyzeCss(css, FILE), globalCssFrom([])).map((d) => d.rule);
+    expect(rules.filter((rule) => rule.startsWith("layer/"))).toEqual([]);
+  });
+});
+
+describe("checkCss: ranges", () => {
+  /** The text each single-line diagnostic covers, from its column to just before its end column. */
+  const covered = (css: string, layer?: { name: string; order: string[] }) => {
+    const lines = css.split("\n");
+    return checkCss(analyzeCss(css, FILE), designSystem, layer).map((d) => {
+      expect(d.endLine).toBe(d.line);
+      return `${d.rule} ${lines[d.line - 1].slice(d.column - 1, (d.endColumn ?? 0) - 1)}`;
+    });
+  };
+
+  it("ends every range just after its last character", () => {
+    const css = [
+      "/* better-css-modules-disable-next-line pure/id -- nothing below */",
+      "",
+      "#main { color: #fff !important; --color-x: 0; }",
+      ".a .b { composes: c; }",
+      "@font-face { font-family: x; }",
+      "@keyframes :global(spin) {}",
+      ".c { color: var(--color-fg-bsae); }",
+      "div {}",
+      ".d p {}",
+    ].join("\n");
+    expect(covered(css)).toEqual([
+      "invalid-disable /* better-css-modules-disable-next-line pure/id -- nothing below */",
+      "pure/id #main",
+      "tokens/color #fff",
+      "pure/important !important",
+      "tokens/declaration --color-x",
+      "invalid-composes composes: c;",
+      "pure/at-rule @font-face",
+      "pure/global :global(spin)",
+      "tokens/unknown var(--color-fg-bsae)",
+      "pure/selector div",
+      "pure/subject p",
+    ]);
+    expect(covered("@layer x {}\n.a {\n  composes: b;\n}", { name: "x", order: ["x"] })).toEqual([
+      "layer/nested @layer",
+      "layer/composes composes",
+    ]);
+  });
+});
+
+describe("checkCss: composes", () => {
+  const css = ".a {}\n.a .b { composes: a; }\n.c:hover {\n  composes: a;\n}\n.d { composes: a; }";
+  const rules = (layer?: { name: string; order: string[] }) =>
+    checkCss(analyzeCss(css, FILE), globalCssFrom([]), layer)
+      .filter((d) => !d.rule.startsWith("pure/"))
+      .map((d) => `${d.line}:${d.column}-${d.endLine}:${d.endColumn} ${d.rule}`);
+
+  it("reports composes in a rule that is not a single local class", () => {
+    expect(rules()).toEqual(["2:9-2:21 invalid-composes", "4:3-4:15 invalid-composes"]);
+  });
+
+  it("reports only layer/composes when the module goes in a layer", () => {
+    expect(rules({ name: "components", order: ["components"] })).toEqual([
+      "2:9-2:17 layer/composes",
+      "4:3-4:11 layer/composes",
+      "6:6-6:14 layer/composes",
+    ]);
+  });
+});
+
+describe("check", () => {
+  const created: string[] = [];
+  afterAll(async () => {
+    await Promise.all(created.map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  });
+
+  /** A project at its real path, since diagnostics come back at real paths. */
+  async function project(files: Record<string, string>): Promise<string> {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "bcm-check-")));
+    created.push(dir);
+    for (const [name, content] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true });
+      await fs.writeFile(path.join(dir, name), content, "utf-8");
+    }
+    return dir;
+  }
+
+  const checkIn = (dir: string, config: Config = {}) =>
+    checkProject(resolveConfig({ globalCss: ["./src/global.css"], ...config }, dir));
+  const run = async (dir: string, config: Config = {}) =>
+    (await checkIn(dir, config)).diagnostics.map(
+      (d) => `${path.relative(dir, d.file)}:${d.line}:${d.column} ${d.rule}`,
+    );
+
+  const card = {
+    "src/global.css":
+      "@layer components;\n:root {\n  --color-fg-base: #000;\n}\n.dark {\n  --color-fg-loud: red;\n}\n",
+    "src/card.module.css": ".used {\n  color: #fff;\n}\n.ghost {}\n.a .b {\n  composes: used;\n}\n",
+    "src/card.ts": 'import styles from "./card.module.css";\nexport const card = styles.used;\n',
+  };
+
+  it("reports every problem of the modules, their usage and the global CSS, sorted", async () => {
+    const dir = await project({ ...card, "src/broken.module.css": ".a {\n" });
+    expect(await run(dir)).toEqual([
+      "src/broken.module.css:1:1 syntax",
+      "src/card.module.css:2:10 tokens/color",
+      "src/card.module.css:4:1 usage/unused-class",
+      "src/card.module.css:5:1 usage/unused-class",
+      "src/card.module.css:5:4 usage/unused-class",
+      "src/card.module.css:6:3 invalid-composes",
+      "src/global.css:6:3 tokens/declaration",
+    ]);
+  });
+
+  describe("disable comments for the usage rules", () => {
+    const next = "/* better-css-modules-disable-next-line";
+    const file = "/* better-css-modules-disable";
+    const usedCard = {
+      "src/global.css": "",
+      "src/card.ts": 'import styles from "./card.module.css";\nexport const card = styles.used;\n',
+    };
+
+    it("silences usage/unused-class above the rule of the class's first occurrence", async () => {
+      const dir = await project({
+        ...usedCard,
+        "src/card.module.css": [
+          ".used {}",
+          `${next} usage/unused-class -- the CMS adds these classes */`,
+          ".cms,",
+          ".cms-wide {}",
+          ".used .ghost {}",
+          `${next} usage/unused-class -- a later occurrence */`,
+          ".ghost {}",
+        ].join("\n"),
+      });
+      expect(await run(dir)).toEqual([
+        "src/card.module.css:5:7 usage/unused-class",
+        "src/card.module.css:6:1 invalid-disable",
+      ]);
+    });
+
+    it("silences usage/unused-class and usage/unused-module file-wide", async () => {
+      const dir = await project({
+        ...usedCard,
+        "src/card.module.css": `${file} usage/unused-class -- the CMS adds these classes */\n.used {}\n.cms {}\n`,
+        "src/print.module.css": `${file} usage/unused-module -- loaded by the print preview */\n.page {}\n`,
+      });
+      expect(await run(dir)).toEqual([]);
+    });
+
+    it("leaves usage/unused-module to the file-wide form", async () => {
+      const dir = await project({
+        ...usedCard,
+        "src/card.module.css": ".used {}\n",
+        "src/print.module.css": `${next} usage/unused-module -- loaded by the print preview */\n.page {}\n`,
+      });
+      expect((await checkIn(dir)).diagnostics).toMatchObject([
+        { line: 1, column: 1, rule: "usage/unused-module" },
+        {
+          line: 1,
+          column: 1,
+          rule: "invalid-disable",
+          message:
+            "usage/unused-module can only be disabled file-wide: write better-css-modules-disable at the top of the file",
+        },
+      ]);
+    });
+
+    it("silences usage/unanalyzable in the source from the module, counting every class used", async () => {
+      const files = {
+        ...usedCard,
+        "src/card.ts":
+          'import styles from "./card.module.css";\nexport const card = (tone: string) => styles[tone];\n',
+      };
+      const silenced = await project({
+        ...files,
+        "src/card.module.css": `${file} usage/unanalyzable -- the tone comes from the API */\n.loud {}\n.quiet {}\n`,
+      });
+      expect(await run(silenced)).toEqual([]);
+      const nextLine = await project({
+        ...files,
+        "src/card.module.css": `${next} usage/unanalyzable -- the tone comes from the API */\n.loud {}\n`,
+      });
+      expect((await checkIn(nextLine)).diagnostics).toMatchObject([
+        {
+          file: path.join(nextLine, "src/card.module.css"),
+          rule: "invalid-disable",
+          message:
+            "usage/unanalyzable can only be disabled file-wide: write better-css-modules-disable at the top of the file",
+        },
+        {
+          file: path.join(nextLine, "src/card.ts"),
+          line: 2,
+          column: 39,
+          rule: "usage/unanalyzable",
+        },
+      ]);
+    });
+  });
+
+  it("still counts a module an @value imports from as imported when pure/value is disabled", async () => {
+    const dir = await project({
+      ...card,
+      "src/global.css": "",
+      "src/card.module.css": [
+        "/* better-css-modules-disable-next-line pure/value -- shared with the Vite-only widget */",
+        "@value brand from './colors.module.css';",
+        ".used {}",
+      ].join("\n"),
+      "src/colors.module.css":
+        "/* better-css-modules-disable pure/value -- shared with the Vite-only widget */\n@value brand: red;\n",
+    });
+    expect(await run(dir)).toEqual([]);
+  });
+
+  it("counts the modules and names the token categories it restricts", async () => {
+    const dir = await project({
+      ...card,
+      "src/global.css":
+        ":root {\n  --spacing: 0.25rem;\n  --color-fg-base: #000;\n  --gray: #111;\n}\n",
+      "src/other.module.css": ".a {}\n",
+    });
+    expect(await checkIn(dir)).toMatchObject({ modules: 2, tokens: ["color", "spacing"] });
+    expect(await checkIn(dir, { globalCss: [] })).toMatchObject({ modules: 2, tokens: [] });
+  });
+
+  it("checks the modules against the layer the config names", async () => {
+    const dir = await project({
+      ...card,
+      "src/global.css": "@layer components;\n",
+      "src/card.module.css": "@layer x {\n  .used {}\n}\n",
+    });
+    expect(await run(dir, { layer: "components" })).toEqual([
+      "src/card.module.css:1:1 layer/nested",
+    ]);
+  });
+
+  it("refuses a layer the global CSS does not declare", async () => {
+    const dir = await project(card);
+    await expect(run(dir, { layer: "ui" })).rejects.toBeInstanceOf(ConfigError);
+  });
+
+  it("refuses global CSS it cannot read", async () => {
+    const dir = await project({ ...card, "src/global.css": '@import "./missing.css";\n' });
+    await expect(run(dir)).rejects.toBeInstanceOf(ConfigError);
+  });
+
+  it("refuses an include that matches no file", async () => {
+    const dir = await project(card);
+    const checking = run(dir, { include: ["app/**/*.module.css", "!app/legacy/**"] });
+    await expect(checking).rejects.toThrow(
+      new ConfigError(
+        `include matches no files in the project root ${dir}: app/**/*.module.css, !app/legacy/**`,
+      ),
+    );
+    await expect(checking).rejects.toBeInstanceOf(ConfigError);
   });
 });

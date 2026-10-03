@@ -19,6 +19,7 @@ export interface SourcePosition {
 
 export interface SourceRange {
   start: SourcePosition;
+  /** Just after the last character. */
   end: SourcePosition;
 }
 
@@ -26,36 +27,33 @@ export interface SourceRange {
 export interface ClassOccurrence {
   name: string;
   range: SourceRange;
+  /** The rule, or the @scope at-rule, whose selector holds it. */
+  node: Rule | AtRule;
 }
 
 /**
  * A locally scoped identifier other than a class. Bundlers rename these too and
- * export the renamed value under the original name.
+ * export the renamed value under the original name. An `animation` is a
+ * reference to a keyframes name from an animation declaration; the others
+ * declare the name.
  */
-export interface ScopedIdentifier {
+interface ScopedIdentifier {
   name: string;
-  kind: "id" | "keyframes" | "view-transition-class";
+  kind: "id" | "keyframes" | "animation" | "view-transition-class";
   range: SourceRange;
 }
 
-export type ComposesSource =
-  | { kind: "local" }
-  | { kind: "global" }
-  | { kind: "file"; specifier: string };
+type ComposesSource = { kind: "local" } | { kind: "global" } | { kind: "file"; specifier: string };
 
-export interface ComposesDeclaration {
-  /** The local class whose rule holds the `composes` declaration. */
-  className: string;
+interface ComposesDeclaration {
+  /**
+   * The local class whose rule holds the `composes` declaration, or null when
+   * the selector is not a single local class, where bundlers reject `composes`.
+   */
+  className: string | null;
   /** Composed class names. */
   names: string[];
   from: ComposesSource;
-  range: SourceRange;
-}
-
-export interface ValueDeclaration {
-  name: string;
-  /** Specifier of `@value ... from '...'`, or `null` for a value defined in this file. */
-  from: string | null;
   range: SourceRange;
 }
 
@@ -70,24 +68,25 @@ export interface CssModuleAnalysis {
   root: Root;
   /** Every locally scoped class selector, in source order. */
   classes: ClassOccurrence[];
-  /** Unique local class names, sorted. */
-  classNames: string[];
   /** Locally scoped ids, keyframes and view-transition classes, in source order. */
   identifiers: ScopedIdentifier[];
   /** Keys of the module's default export: class names plus scoped identifiers, sorted. */
   exportNames: string[];
   composes: ComposesDeclaration[];
-  values: ValueDeclaration[];
-  /** Problems found while parsing; the analysis is still usable. */
+  /** Specifiers of the files `@value ... from` reads values from. */
+  valueImports: string[];
+  /** Syntax problems in selectors and at-rule preludes; the analysis is still usable. */
   diagnostics: Diagnostic[];
 }
 
 interface Collector {
   file: string;
+  /** The rule or at-rule whose selectors are being visited. */
+  node: Rule | AtRule | null;
   classes: ClassOccurrence[];
   identifiers: ScopedIdentifier[];
   composes: ComposesDeclaration[];
-  values: ValueDeclaration[];
+  valueImports: string[];
   diagnostics: Diagnostic[];
 }
 
@@ -131,37 +130,33 @@ const ANIMATION_KEYWORDS = new Set([
 ]);
 
 /**
- * Analyze the source of a CSS Modules file.
- *
- * Structure (rules, nesting, at-rules) comes from postcss; selectors, at-rule
- * preludes and values are parsed with css-tree. Throws postcss's
- * `CssSyntaxError` when the stylesheet itself cannot be parsed.
+ * Analyze the source of a CSS Modules file. Throws postcss's `CssSyntaxError`
+ * when the stylesheet itself cannot be parsed.
  */
 export function analyzeCss(source: string, file: string): CssModuleAnalysis {
   const root = postcss.parse(source, { from: file });
   const collector: Collector = {
     file,
+    node: null,
     classes: [],
     identifiers: [],
     composes: [],
-    values: [],
+    valueImports: [],
     diagnostics: [],
   };
   walkContainer(root, true, collector);
-  const classNames = unique(collector.classes.map((occurrence) => occurrence.name));
   const exportNames = unique([
-    ...classNames,
+    ...collector.classes.map((occurrence) => occurrence.name),
     ...collector.identifiers.map((identifier) => identifier.name),
   ]);
   return {
     file,
     root,
     classes: collector.classes,
-    classNames,
     identifiers: collector.identifiers,
     exportNames,
     composes: collector.composes,
-    values: collector.values,
+    valueImports: collector.valueImports,
     diagnostics: collector.diagnostics,
   };
 }
@@ -188,7 +183,10 @@ function visitRule(rule: Rule, local: boolean, collector: Collector): void {
   let blockLocal = local;
   let singleClass: string | null = null;
   if (trimmed === ":global" || trimmed === ":local") blockLocal = trimmed === ":local";
-  else singleClass = collectSelectorList(selector, startOf(rule), local, collector);
+  else {
+    collector.node = rule;
+    singleClass = collectSelectorList(selector, startOf(rule), local, collector);
+  }
 
   rule.each((child) => {
     if (child.type === "decl" && child.prop.toLowerCase() === "composes") {
@@ -200,7 +198,7 @@ function visitRule(rule: Rule, local: boolean, collector: Collector): void {
 
 function visitAtRule(atRule: AtRule, local: boolean, collector: Collector): void {
   const name = atRule.name.toLowerCase();
-  if (name === "value") collectValue(atRule, collector);
+  if (name === "value") collectValueImport(atRule, collector);
   else if (name === "scope") collectScopePrelude(atRule, local, collector);
   else if (isKeyframes(atRule) && local) collectKeyframesName(atRule, collector);
   if (atRule.nodes) walkContainer(atRule, local, collector);
@@ -271,7 +269,11 @@ function visitSelector(
   selector.children.forEach((node) => {
     if (node.type === "ClassSelector") {
       if (local && node.loc) {
-        collector.classes.push({ name: ident.decode(node.name), range: rangeOf(node.loc) });
+        collector.classes.push({
+          name: ident.decode(node.name),
+          range: rangeOf(node.loc),
+          node: collector.node!,
+        });
       }
       return;
     }
@@ -369,6 +371,7 @@ function collectScopePrelude(atRule: AtRule, local: boolean, collector: Collecto
     collector.diagnostics.push(syntaxDiagnostic(collector.file, error, base));
     return;
   }
+  collector.node = atRule;
   walk(prelude, {
     visit: "SelectorList",
     enter(node) {
@@ -384,7 +387,7 @@ function collectKeyframesName(atRule: AtRule, collector: Collector): void {
   if (name === "" || name.startsWith(":")) return;
   const start = paramsStart(atRule);
   collector.identifiers.push({
-    name,
+    name: ident.decode(name),
     kind: "keyframes",
     range: { start, end: { line: start.line, column: start.column + atRule.params.length } },
   });
@@ -416,28 +419,16 @@ function visitDeclaration(declaration: Declaration, collector: Collector): void 
       // Arguments of var() and other functions are never animation names.
       if (node.type === "Function") return walk.skip;
       if (node.type === "Identifier" && isName(node)) {
-        collector.identifiers.push({ name: node.name, kind: "keyframes", range });
+        collector.identifiers.push({ name: ident.decode(node.name), kind: "animation", range });
       }
     },
   });
 }
 
-function collectValue(atRule: AtRule, collector: Collector): void {
+function collectValueImport(atRule: AtRule, collector: Collector): void {
   const params = (atRule.raws.params?.raw ?? atRule.params).trim();
-  const range = rangeOfNode(atRule);
-  const imported = /^(.+?)\s+from\s+(?:"([^"]*)"|'([^']*)')$/s.exec(params);
-  if (imported) {
-    const specifier = imported[2] ?? imported[3] ?? "";
-    for (const entry of imported[1].split(",")) {
-      // `@value a as b from '...'` binds `b`.
-      const alias = /^(.+?)\s+as\s+(.+)$/.exec(entry.trim());
-      const name = alias ? alias[2] : entry.trim();
-      if (name) collector.values.push({ name, from: specifier, range });
-    }
-    return;
-  }
-  const defined = /^([\w-]+)\s*:?/.exec(params);
-  if (defined) collector.values.push({ name: defined[1], from: null, range });
+  const imported = /^.+?\s+from\s+(?:"([^"]*)"|'([^']*)')$/s.exec(params);
+  if (imported) collector.valueImports.push(imported[1] ?? imported[2] ?? "");
 }
 
 function collectComposes(
@@ -446,18 +437,6 @@ function collectComposes(
   collector: Collector,
 ): void {
   const range = rangeOfNode(declaration);
-  if (className === null) {
-    collector.diagnostics.push({
-      file: collector.file,
-      line: range.start.line,
-      column: range.start.column,
-      endLine: range.end.line,
-      endColumn: range.end.column,
-      rule: "invalid-composes",
-      message: "composes is only allowed in a rule whose selector is a single local class",
-    });
-    return;
-  }
   const value = declaration.value.trim();
   const imported = /^(.+?)\s+from\s+(.+)$/s.exec(value);
   if (!imported) {
@@ -520,7 +499,8 @@ export function valueStart(declaration: Declaration): (SourcePosition & { offset
 function rangeOfNode(node: Node): SourceRange {
   const start = startOf(node);
   const end = node.source?.end;
-  return { start, end: end ? { line: end.line, column: end.column } : start };
+  // postcss ends a node on its last character; a range ends after it.
+  return { start, end: end ? { line: end.line, column: end.column + 1 } : start };
 }
 
 function rangeOf(loc: CssTree.CssLocation): SourceRange {

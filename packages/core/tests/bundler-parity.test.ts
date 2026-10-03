@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vite-plus/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -99,6 +99,7 @@ describe("pure/selector matches lightningcss's pure mode", () => {
     "::view-transition-old(.a) {}",
     ":global(.x) {}",
     ":global(.x) .a {}",
+    ":global(:local(.a)) {}",
     ".a :global(.x) {}",
     ":export { a: b; }",
     ".a { a {} }",

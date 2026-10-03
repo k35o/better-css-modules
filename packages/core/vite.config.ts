@@ -9,11 +9,18 @@ export default defineConfig({
           input: [{ auto: true }, "!dist/**", "!node_modules/**"],
         },
       },
+      test: {
+        command: "vp test",
+        // A test typechecks the built declarations.
+        dependsOn: ["build"],
+        cache: false,
+      },
     },
   },
   pack: {
     entry: {
       index: "src/index.ts",
+      internal: "src/internal.ts",
     },
     dts: true,
     format: ["esm"],

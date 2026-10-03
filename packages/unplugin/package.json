@@ -9,9 +9,6 @@
     "url": "git+https://github.com/k35o/better-css-modules.git",
     "directory": "packages/unplugin"
   },
-  "files": [
-    "dist"
-  ],
   "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
@@ -30,6 +27,7 @@
   },
   "devDependencies": {
     "@rspack/core": "2.2.6",
+    "@rspack/core-v1": "npm:@rspack/core@1.7.12",
     "@types/node": "24.12.0",
     "css-loader": "7.1.5",
     "esbuild": "0.28.2",
@@ -41,6 +39,6 @@
     "webpack": "5.111.1"
   },
   "engines": {
-    "node": ">=24.14.1"
+    "node": ">=24"
   }
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import { CssSyntaxError } from "postcss";
 import { analyzeCss } from "../src/css.js";
 import { cssCases } from "./fixtures/css-cases.js";
@@ -6,16 +6,20 @@ import { adversarialCss } from "./fixtures/adversarial-css.js";
 
 const FILE = "/project/src/x.module.css";
 
+/** The unique local class names, sorted. */
+const classNamesOf = (analysis: ReturnType<typeof analyzeCss>) =>
+  [...new Set(analysis.classes.map((occurrence) => occurrence.name))].sort();
+
 describe("analyzeCss: export keys and local class names", () => {
   it.each(cssCases)("$name", ({ css, expected, classes }) => {
     const analysis = analyzeCss(css, FILE);
     expect(analysis.exportNames).toEqual(expected);
-    expect(analysis.classNames).toEqual(classes ?? expected);
+    expect(classNamesOf(analysis)).toEqual(classes ?? expected);
   });
 
   it.each(adversarialCss)("accepts adversarial input: $name", ({ css, expected }) => {
     const analysis = analyzeCss(css, FILE);
-    expect(analysis.classNames).toEqual(expected);
+    expect(classNamesOf(analysis)).toEqual(expected);
     expect(analysis.diagnostics).toEqual([]);
   });
 });
@@ -75,10 +79,17 @@ describe("analyzeCss: composes", () => {
     ]);
   });
 
-  it("reports composes in a rule that is not a single class", () => {
-    const analysis = analyzeCss(".a .b { composes: c; }", FILE);
-    expect(analysis.composes).toEqual([]);
-    expect(analysis.diagnostics).toMatchObject([{ rule: "invalid-composes", line: 1, column: 9 }]);
+  it("records composes in a rule that is not a single class without a class name", () => {
+    const analysis = analyzeCss(".a .b { composes: c from './c.module.css'; }", FILE);
+    expect(analysis.composes).toMatchObject([
+      {
+        className: null,
+        names: ["c"],
+        from: { kind: "file", specifier: "./c.module.css" },
+        range: { start: { line: 1, column: 9 } },
+      },
+    ]);
+    expect(analysis.diagnostics).toEqual([]);
   });
 
   it("accepts :local(.a) as the composing class and decodes composed names", () => {
@@ -95,29 +106,25 @@ describe("analyzeCss: scoped identifiers", () => {
     expect(analyzeCss(css, FILE).identifiers).toMatchObject([
       { name: "hero", kind: "id", range: { start: { line: 1, column: 1 } } },
       { name: "fade", kind: "keyframes", range: { start: { line: 3, column: 3 } } },
-      { name: "fade", kind: "keyframes", range: { start: { line: 4, column: 6 } } },
+      { name: "fade", kind: "animation", range: { start: { line: 4, column: 6 } } },
       { name: "card", kind: "view-transition-class", range: { start: { line: 5, column: 23 } } },
     ]);
   });
 });
 
 describe("analyzeCss: @value", () => {
-  it("records defined and imported values without exporting them as classes", () => {
-    const css = `@value primary: #0c77f8;\n@value small, large as big from './bp.module.css';\n.v { color: primary; }`;
+  it("records the files values come from without exporting values as classes", () => {
+    const css = `@value primary: #0c77f8;\n@value small, large as big from './bp.module.css';\n@value gap from "./space.module.css";\n.v { color: primary; }`;
     const analysis = analyzeCss(css, FILE);
-    expect(analysis.classNames).toEqual(["v"]);
-    expect(analysis.values).toMatchObject([
-      { name: "primary", from: null, range: { start: { line: 1, column: 1 } } },
-      { name: "small", from: "./bp.module.css" },
-      { name: "big", from: "./bp.module.css" },
-    ]);
+    expect(classNamesOf(analysis)).toEqual(["v"]);
+    expect(analysis.valueImports).toEqual(["./bp.module.css", "./space.module.css"]);
   });
 });
 
 describe("analyzeCss: syntax problems", () => {
   it("reports an unparsable selector and keeps analyzing the rest", () => {
     const analysis = analyzeCss(".a, %%% { color: red; }\n.b { color: blue; }", FILE);
-    expect(analysis.classNames).toEqual(["b"]);
+    expect(classNamesOf(analysis)).toEqual(["b"]);
     expect(analysis.diagnostics).toMatchObject([{ rule: "syntax", line: 1, column: 5 }]);
   });
 

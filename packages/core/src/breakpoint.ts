@@ -5,8 +5,6 @@ import { generate, lexer, parse, walk } from "./csstree.js";
 import type { Diagnostic } from "./diagnostic.js";
 import type { Token } from "./global.js";
 
-const RULE = "tokens/breakpoint";
-
 /** Media features that compare the width of the viewport. */
 const WIDTH_FEATURES = new Set(["width", "min-width", "max-width"]);
 
@@ -30,11 +28,9 @@ export interface Breakpoint extends Length {
 export function breakpointsOf(tokens: Map<string, Token>): Breakpoint[] {
   const breakpoints: Breakpoint[] = [];
   for (const token of tokens.values()) {
-    const [node] = token.value;
-    const length = token.value.length === 1 ? lengthOf(node) : null;
-    if (token.category === "breakpoint" && length) {
-      breakpoints.push({ name: token.name, text: generate(node), ...length });
-    }
+    if (token.category !== "breakpoint") continue;
+    const length = lengthOfToken(token);
+    if (length) breakpoints.push({ name: token.name, text: token.value, ...length });
   }
   return breakpoints;
 }
@@ -70,7 +66,7 @@ export function checkMediaQuery(
           column: start.column,
           endLine: end.line,
           endColumn: end.column,
-          rule: RULE,
+          rule: "tokens/breakpoint",
           message,
         });
       }
@@ -84,8 +80,7 @@ export function checkMediaQuery(
  * no media query can be written with it.
  */
 export function checkBreakpointToken(token: Token): Diagnostic[] {
-  const [node] = token.value;
-  if (token.category !== "breakpoint" || (token.value.length === 1 && lengthOf(node))) return [];
+  if (token.category !== "breakpoint" || lengthOfToken(token)) return [];
   const range = token.node.type === "decl" ? valueRange(token.node) : nameRange(token.node);
   if (!range) return [];
   return [
@@ -95,7 +90,7 @@ export function checkBreakpointToken(token: Token): Diagnostic[] {
       column: range.start.column,
       endLine: range.end.line,
       endColumn: range.end.column,
-      rule: RULE,
+      rule: "tokens/breakpoint",
       message: `${token.name} must be one length such as 48rem; media queries compare widths with its value`,
     },
   ];
@@ -137,6 +132,18 @@ function problemWith(
       ? `the breakpoints are ${breakpoints.map(({ name, text }) => `${text} (${name})`).join(", ")}`
       : "no --breakpoint-* token is one length";
   return `${raw.replace(/\s+/g, " ")} is not a breakpoint; ${hint}`;
+}
+
+/** The length a token's value is, when it is one. */
+function lengthOfToken(token: Token): Length | null {
+  let value: CssTree.CssNode;
+  try {
+    value = parse(token.value, { context: "value" });
+  } catch {
+    return null;
+  }
+  const nodes = value.type === "Value" ? value.children.toArray() : [];
+  return nodes.length === 1 ? lengthOf(nodes[0]) : null;
 }
 
 /** A length written as one number and unit, or zero. */

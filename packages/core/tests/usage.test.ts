@@ -1,13 +1,21 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll } from "vite-plus/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { defineConfig } from "../src/config.js";
-import type { Diagnostic } from "../src/diagnostic.js";
+import { resolveConfig } from "../src/config.js";
+import { type Diagnostic, sortDiagnostics } from "../src/diagnostic.js";
+import { findCssModules, loadCssModules } from "../src/project.js";
 import { analyzeUsage } from "../src/usage.js";
 import { tsCases } from "./fixtures/ts-cases.js";
 
-const config = defineConfig({ include: ["**/*.module.css"] });
+/** The usage diagnostics of the project in `dir`, with the modules loaded from their real paths. */
+async function usageIn(dir: string): Promise<Diagnostic[]> {
+  const config = resolveConfig({ include: ["**/*.module.css"] }, dir);
+  const files = await Promise.all((await findCssModules(config)).map((file) => fs.realpath(file)));
+  const { modules } = await loadCssModules(files);
+  const problems = await analyzeUsage(modules, config);
+  return sortDiagnostics(problems.map(({ diagnostic }) => diagnostic));
+}
 const created: string[] = [];
 
 // The temp dir is a symlink on macOS and is passed as such; diagnostics come
@@ -31,21 +39,25 @@ function summarize(real: string, diagnostics: Diagnostic[]) {
   const rel = (file: string) => path.relative(real, file);
   return {
     unused: diagnostics
-      .filter((d) => d.rule === "unused-class")
+      .filter((d) => d.rule === "usage/unused-class")
       .map((d) => `${rel(d.file)}:${/^\.(.+) is never used$/.exec(d.message)?.[1]}`),
-    orphans: diagnostics.filter((d) => d.rule === "unused-module").map((d) => rel(d.file)),
+    orphans: diagnostics.filter((d) => d.rule === "usage/unused-module").map((d) => rel(d.file)),
     unanalyzable: diagnostics
-      .filter((d) => d.rule === "unanalyzable-usage")
+      .filter((d) => d.rule === "usage/unanalyzable")
       .map((d) => `${rel(d.file)}:${d.line}:${d.column}`),
+    // Messages name files relative to the cwd, outside the project.
+    reasons: diagnostics
+      .filter((d) => d.rule === "usage/unanalyzable")
+      .map((d) => d.message.replaceAll(`${path.relative(process.cwd(), real)}/`, "")),
     other: diagnostics.filter(
-      (d) => !["unused-class", "unused-module", "unanalyzable-usage"].includes(d.rule),
+      (d) => !["usage/unused-class", "usage/unused-module", "usage/unanalyzable"].includes(d.rule),
     ),
   };
 }
 
 async function analyze(files: Record<string, string>) {
   const { dir, real } = await project(files);
-  return summarize(real, (await analyzeUsage(config, dir)).diagnostics);
+  return summarize(real, await usageIn(dir));
 }
 
 describe("analyzeUsage", () => {
@@ -55,6 +67,9 @@ describe("analyzeUsage", () => {
     expect(summary.orphans).toEqual(orphans ?? []);
     if (unanalyzable) {
       expect(summary.unanalyzable).not.toHaveLength(0);
+      for (const reason of summary.reasons) {
+        expect(reason).toMatch(/^.+, so usage of \S+\.module\.css cannot be determined$/);
+      }
       expect(summary.unused).toEqual([]);
     } else {
       expect(summary.unanalyzable).toEqual([]);
@@ -68,14 +83,14 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nexport const A = () => <div className={styles.used} />;",
     });
-    const [diagnostic] = (await analyzeUsage(config, dir)).diagnostics;
+    const [diagnostic] = await usageIn(dir);
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.module.css"),
       line: 2,
       column: 1,
       endLine: 2,
       endColumn: 6,
-      rule: "unused-class",
+      rule: "usage/unused-class",
     });
   });
 
@@ -85,12 +100,13 @@ describe("analyzeUsage", () => {
       "a.tsx":
         "import styles from './a.module.css';\nconst 見出し = 'a';\nexport const A = () => <div className={styles[見出し]} />;",
     });
-    const [diagnostic] = (await analyzeUsage(config, dir)).diagnostics;
+    const [diagnostic] = await usageIn(dir);
     expect(diagnostic).toMatchObject({
       file: path.join(real, "a.tsx"),
       line: 3,
       column: 40,
-      rule: "unanalyzable-usage",
+      rule: "usage/unanalyzable",
+      message: `a class is accessed dynamically here, so usage of ${path.relative(process.cwd(), path.join(real, "a.module.css"))} cannot be determined`,
     });
   });
 
@@ -147,27 +163,18 @@ describe("analyzeUsage", () => {
     });
     expect(summary.orphans).toEqual([]);
     expect(summary.unanalyzable).toEqual(["a.ts:2:27"]);
-  });
-
-  it("surfaces CSS syntax problems alongside usage", async () => {
-    const { dir } = await project({
-      "a.module.css": ".a { color: red;",
-      "a.tsx":
-        "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
-    });
-    expect((await analyzeUsage(config, dir)).diagnostics).toMatchObject([
-      { rule: "syntax", line: 1, column: 1 },
+    expect(summary.reasons).toEqual([
+      "the module is imported dynamically here, so usage of a.module.css cannot be determined",
     ]);
   });
 
-  it("returns the analyses of the stylesheets that parse, at their real paths", async () => {
-    const { dir, real } = await project({
+  it("names `s.default` when the default member of a namespace import escapes", async () => {
+    const summary = await analyze({
       "a.module.css": ".a {}",
-      "b.module.css": ".b { color: red;",
-      "a.tsx":
-        "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
+      "a.ts": "import * as s from './a.module.css';\nexport const all = s.default;",
     });
-    const { modules } = await analyzeUsage(config, dir);
-    expect(modules.map((analysis) => analysis.file)).toEqual([path.join(real, "a.module.css")]);
+    expect(summary.reasons).toEqual([
+      "s.default escapes as a value here, so usage of a.module.css cannot be determined",
+    ]);
   });
 });

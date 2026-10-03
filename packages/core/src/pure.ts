@@ -3,19 +3,14 @@ import type * as CssTree from "css-tree";
 import { paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, parse } from "./csstree.js";
 import type { Diagnostic } from "./diagnostic.js";
+import type { RuleId } from "./rules.js";
 
-/** The rules that keep a CSS Module pure: scoped to its own classes and overridable from outside. */
-export const PURE_RULES = new Set([
-  "pure/selector",
-  "pure/subject",
-  "pure/global",
-  "pure/id",
-  "pure/important",
-  "pure/at-rule",
-]);
-
-/** At-rules that act on the whole document, but only while the module holding them is loaded. */
-const GLOBAL_AT_RULES = new Set([
+/**
+ * At-rules that define something for the whole document, which takes effect
+ * only while the module holding them is loaded. What they hold are
+ * descriptors, not properties of an element.
+ */
+export const GLOBAL_AT_RULES = new Set([
   "font-face",
   "property",
   "import",
@@ -101,6 +96,10 @@ function visitAtRule(atRule: AtRule, context: Context, checker: Checker): void {
     checker.report(atRule, checkGlobalAtRule(atRule, checker.file));
     return;
   }
+  if (name === "value") {
+    checker.report(atRule, checkValue(atRule, checker.file));
+    return;
+  }
   if (name.endsWith("keyframes")) {
     // Keyframe selectors (`from`, `50%`) are not selectors in the CSS Modules sense.
     checker.report(atRule, checkKeyframesName(atRule, checker.file));
@@ -134,7 +133,7 @@ function visitScope(atRule: AtRule, context: Context, checker: Checker): Context
   const root = scope?.root?.type === "SelectorList" ? scope.root : null;
   const scan: Scan = { local: false, globals: [], ids: [] };
   for (const list of [root, scope?.limit]) {
-    if (list?.type === "SelectorList") scanList(list, context.local, text, scan);
+    if (list?.type === "SelectorList") scanList(list, context.local, false, text, scan);
   }
   checker.report(atRule, [
     ...scan.globals.map((found) => globalDiagnostic(found, checker.file)),
@@ -154,7 +153,7 @@ function checkSelectorList(
   list.children.forEach((selector) => {
     if (selector.type !== "Selector") return;
     const scan: Scan = { local: false, globals: [], ids: [] };
-    scanSelector(selector, context.local, text, scan);
+    scanSelector(selector, context.local, false, text, scan);
     if (!context.nested && !scan.local) {
       // Scoped but not nested: a top-level @scope rooted at a local class.
       const hint = context.scoped
@@ -182,13 +181,30 @@ function checkSelectorList(
   return diagnostics;
 }
 
-function scanList(list: CssTree.SelectorList, local: boolean, text: string, scan: Scan): void {
+/**
+ * Scan for local classes, :global and ids. `inGlobal` is set inside the
+ * argument of `:global()`, which stays global whatever `:local` it holds:
+ * bundlers emit it as written, and no key is generated for it.
+ */
+function scanList(
+  list: CssTree.SelectorList,
+  local: boolean,
+  inGlobal: boolean,
+  text: string,
+  scan: Scan,
+): void {
   list.children.forEach((selector) => {
-    if (selector.type === "Selector") scanSelector(selector, local, text, scan);
+    if (selector.type === "Selector") scanSelector(selector, local, inGlobal, text, scan);
   });
 }
 
-function scanSelector(selector: CssTree.Selector, local: boolean, text: string, scan: Scan): void {
+function scanSelector(
+  selector: CssTree.Selector,
+  local: boolean,
+  inGlobal: boolean,
+  text: string,
+  scan: Scan,
+): void {
   // Bare `:global` / `:local` switch the mode for the rest of the selector.
   let mode = local;
   selector.children.forEach((node) => {
@@ -200,21 +216,24 @@ function scanSelector(selector: CssTree.Selector, local: boolean, text: string, 
     } else if (node.type === "PseudoClassSelector") {
       const name = node.name.toLowerCase();
       if (name !== "global" && name !== "local") {
-        scanArguments(node.children, mode, text, scan);
+        scanArguments(node.children, mode, inGlobal, text, scan);
         return;
       }
       if (name === "global") scan.globals.push({ node, text });
+      const switched = name === "local" && !inGlobal;
       if (node.children === null) {
-        mode = name === "local";
+        mode = switched;
         return;
       }
       const argument = argumentOf(node);
-      if (argument) scanList(argument.list, name === "local", argument.text, scan);
+      if (argument) {
+        scanList(argument.list, switched, inGlobal || name === "global", argument.text, scan);
+      }
     } else if (node.type === "PseudoElementSelector") {
       // A view-transition class names a pseudo-element, not an element; bundlers
       // do not count it.
       if (node.name.toLowerCase().startsWith("view-transition-")) return;
-      scanArguments(node.children, mode, text, scan);
+      scanArguments(node.children, mode, inGlobal, text, scan);
     }
   });
 }
@@ -222,13 +241,16 @@ function scanSelector(selector: CssTree.Selector, local: boolean, text: string, 
 function scanArguments(
   children: CssTree.List<CssTree.CssNode> | null,
   local: boolean,
+  inGlobal: boolean,
   text: string,
   scan: Scan,
 ): void {
   children?.forEach((child) => {
-    if (child.type === "SelectorList") scanList(child, local, text, scan);
-    else if (child.type === "Selector") scanSelector(child, local, text, scan);
-    else if (child.type === "Nth" && child.selector) scanList(child.selector, local, text, scan);
+    if (child.type === "SelectorList") scanList(child, local, inGlobal, text, scan);
+    else if (child.type === "Selector") scanSelector(child, local, inGlobal, text, scan);
+    else if (child.type === "Nth" && child.selector) {
+      scanList(child.selector, local, inGlobal, text, scan);
+    }
   });
 }
 
@@ -327,7 +349,7 @@ function subjectDiagnostic(parts: SubjectPart[], text: string, file: string): Di
     endLine: last?.end.line,
     endColumn: last?.end.column,
     rule: "pure/subject",
-    message: `${written} is not a local class; style the element through a class of its own, or space children with gap on the parent`,
+    message: `${written} is not a local class; give the element a class of its own, or style markup the component does not write inside @scope`,
   };
 }
 
@@ -337,7 +359,7 @@ function globalDiagnostic(found: Located, file: string): Diagnostic {
     file,
     "pure/global",
     (written) =>
-      `${written} reaches outside this module; switch modes by overriding tokens instead`,
+      `${written} reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope`,
   );
 }
 
@@ -354,7 +376,7 @@ function idDiagnostic(found: Located, file: string): Diagnostic {
 function diagnosticAt(
   { node, text }: Located,
   file: string,
-  rule: string,
+  rule: RuleId,
   message: (written: string) => string,
 ): Diagnostic {
   const loc = node.loc;
@@ -386,6 +408,23 @@ function checkGlobalAtRule(atRule: AtRule, file: string): Diagnostic[] {
   ];
 }
 
+function checkValue(atRule: AtRule, file: string): Diagnostic[] {
+  const start = atRule.source?.start;
+  if (!start) return [];
+  return [
+    {
+      file,
+      line: start.line,
+      column: start.column,
+      endLine: start.line,
+      endColumn: start.column + 1 + atRule.name.length,
+      rule: "pure/value",
+      message:
+        "@value is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks; use a custom property",
+    },
+  ];
+}
+
 function checkKeyframesName(atRule: AtRule, file: string): Diagnostic[] {
   const name = atRule.params;
   if (!name.toLowerCase().startsWith(":global")) return [];
@@ -398,7 +437,7 @@ function checkKeyframesName(atRule: AtRule, file: string): Diagnostic[] {
       endLine: start.line,
       endColumn: start.column + name.length,
       rule: "pure/global",
-      message: `${name} reaches outside this module; switch modes by overriding tokens instead`,
+      message: `${name} reaches outside this module; shared keyframes belong in the global CSS`,
     },
   ];
 }

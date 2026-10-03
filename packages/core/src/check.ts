@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { AtRule, Declaration, Node, Root } from "postcss";
 import type * as CssTree from "css-tree";
 import {
@@ -6,11 +7,23 @@ import {
   checkBreakpointToken,
   checkMediaQuery,
 } from "./breakpoint.js";
+import { ConfigError, type ResolvedConfig } from "./config.js";
 import { type CssModuleAnalysis, paramsStart, type SourcePosition, valueStart } from "./css.js";
 import { find, lexer, parse, property, walk } from "./csstree.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
-import { declaresToken, type GlobalCss, type GlobalCssFile, type Token } from "./global.js";
-import { checkPure, PURE_RULES } from "./pure.js";
+import { type Keep, readDisableComments } from "./disable.js";
+import {
+  declaresToken,
+  type GlobalCss,
+  type GlobalCssFile,
+  isForeign,
+  loadGlobalCss,
+  type Token,
+} from "./global.js";
+import { checkLayer, type Layer, resolveLayer } from "./layer.js";
+import { findCssModules, loadCssModules } from "./project.js";
+import { checkPure, GLOBAL_AT_RULES } from "./pure.js";
+import type { RuleId } from "./rules.js";
 import {
   categoryOf,
   tokenCategories,
@@ -18,25 +31,9 @@ import {
   type TokenCategoryDefinition,
   type ValuePart,
 } from "./tokens.js";
-
-const DISABLE_NEXT_LINE = "better-css-modules-disable-next-line";
-
-const RULE_PREFIX = "tokens/";
-const INTERNAL = "tokens/internal";
-const UNDECLARED = "tokens/undeclared";
+import { analyzeUsage, type UsageProblem } from "./usage.js";
 
 const CSS_WIDE_KEYWORDS = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
-
-/** At-rules whose declarations are descriptors rather than properties of an element. */
-const DESCRIPTOR_AT_RULES = new Set([
-  "font-face",
-  "page",
-  "property",
-  "counter-style",
-  "font-palette-values",
-  "view-transition",
-  "color-profile",
-]);
 
 const MATH_FUNCTIONS = new Set([
   "calc",
@@ -141,6 +138,8 @@ interface Context {
   breakpoints: Breakpoint[];
   /** The stylesheet when it belongs to the global CSS, which declares tokens and may use any. */
   global: GlobalCssFile | null;
+  /** The layer the bundler plugins put a module in. */
+  layer: Layer | undefined;
 }
 
 /** A value under check for one category. */
@@ -153,29 +152,110 @@ interface Scope {
 }
 
 /**
- * How a var() among color components is read: each one is a color, the layer
- * has room for one color and a var() may be it, or none is known to be a color.
+ * How a var() among color components is read: each one is a color, a layer of
+ * a shorthand or a color stop of a gradient has room for one color and a var()
+ * may be it, or none is known to be a color.
  */
-type VarReading = "colors" | "one-color" | "unknown";
+type VarReading = "colors" | "shorthand-color" | "stop-color" | "unknown";
 
 /** Numbers are factors inside arithmetic on a token, and raw values anywhere else. */
 type Arithmetic = "none" | "raw" | "token";
+
+export interface CheckResult {
+  /** The problems found, sorted. */
+  diagnostics: Diagnostic[];
+  /** How many CSS Modules files were checked. */
+  modules: number;
+  /** The token categories the global CSS declares, which are restricted. */
+  tokens: TokenCategory[];
+}
+
+/**
+ * Check the project: every CSS Modules file the config includes, how the
+ * sources use them, and the project's own global CSS. Throws ConfigError when
+ * include matches no file, the global CSS cannot be read, or it does not
+ * declare the layer.
+ */
+export async function check(config: ResolvedConfig): Promise<CheckResult> {
+  const files = await findCssModules(config);
+  if (files.length === 0) {
+    throw new ConfigError(
+      `include matches no files in the project root ${config.root}: ${config.include.join(", ")}`,
+    );
+  }
+  const globalCss = await loadGlobalCss(config);
+  const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
+  // Resolved imports come back as real paths, so the usage analysis needs the modules at theirs.
+  const { modules, diagnostics } = await loadCssModules(files.map((file) => fs.realpathSync(file)));
+  const usage = await analyzeUsage(modules, config);
+  const found = [
+    ...diagnostics,
+    ...modules.flatMap((analysis) =>
+      checkCss(
+        analysis,
+        globalCss,
+        layer,
+        usage.filter(({ module }) => module === analysis.file),
+      ),
+    ),
+    ...checkGlobalCss(globalCss),
+  ];
+  const declared = new Set([...globalCss.tokens.values()].map(({ category }) => category));
+  return {
+    diagnostics: sortDiagnostics(found),
+    modules: files.length,
+    tokens: (Object.keys(tokenCategories) as TokenCategory[]).filter((category) =>
+      declared.has(category),
+    ),
+  };
+}
 
 /**
  * Check a CSS Modules file against the pure rules and the tokens the global CSS
  * declares.
  *
  * The pure rules always apply: every selector holds a local class, and so does
- * its subject outside an @scope rooted at one; `:global`, ids, `!important` and
- * global-only at-rules are reported. Each category the global CSS declares a
+ * its subject outside an @scope rooted at one; `:global`, ids, `!important`,
+ * global-only at-rules and `@value` are reported. Each category the global CSS declares a
  * token for is restricted: in its properties only its tokens, its keywords and
  * arithmetic on its tokens pass. Anywhere in the file a token name the global
  * CSS does not declare is reported, and so is a name it declares without a
  * category prefix, which is internal to it. A module cannot declare either kind
- * of name. Pure: reads nothing but its arguments.
+ * of name. `composes` outside a rule of a single local class is reported,
+ * which bundlers reject. With a layer, what wrapping the module in it would
+ * break is reported too. The usage problems found about the module are
+ * passed in, so that its disable comments apply to them as well. Pure: reads
+ * nothing but its arguments.
  */
-export function checkCss(analysis: CssModuleAnalysis, globalCss: GlobalCss): Diagnostic[] {
-  return checkRoot(analysis.root, contextOf(analysis.file, globalCss, null));
+export function checkCss(
+  analysis: CssModuleAnalysis,
+  globalCss: GlobalCss,
+  layer?: Layer,
+  usage: UsageProblem[] = [],
+): Diagnostic[] {
+  const disabled = readDisableComments(analysis.root, analysis.file);
+  const context = contextOf(analysis.file, globalCss, null, layer);
+  const diagnostics = sortDiagnostics([
+    ...checkRoot(analysis.root, context, disabled.keep),
+    ...usage.flatMap(({ node, diagnostic }) => disabled.keep(node, [diagnostic])),
+    // Only now can a comment be told to silence nothing.
+    ...disabled.problems(),
+  ]);
+  // In a layer, layer/composes already reports every composes.
+  if (layer) return diagnostics;
+  const invalid = analysis.composes.filter(({ className }) => className === null);
+  return sortDiagnostics([
+    ...diagnostics,
+    ...invalid.map(({ range }): Diagnostic => ({
+      file: analysis.file,
+      line: range.start.line,
+      column: range.start.column,
+      endLine: range.end.line,
+      endColumn: range.end.column,
+      rule: "invalid-composes",
+      message: "composes is only allowed in a rule whose selector is a single local class",
+    })),
+  ]);
 }
 
 /**
@@ -187,11 +267,20 @@ export function checkGlobalCss(globalCss: GlobalCss): Diagnostic[] {
   return sortDiagnostics(
     globalCss.files
       .filter(({ checked }) => checked)
-      .flatMap((file) => checkRoot(file.root, contextOf(file.file, globalCss, file))),
+      .flatMap((file) => {
+        const disabled = readDisableComments(file.root, file.file);
+        const context = contextOf(file.file, globalCss, file);
+        return [...checkRoot(file.root, context, disabled.keep), ...disabled.problems()];
+      }),
   );
 }
 
-function contextOf(file: string, globalCss: GlobalCss, global: GlobalCssFile | null): Context {
+function contextOf(
+  file: string,
+  globalCss: GlobalCss,
+  global: GlobalCssFile | null,
+  layer?: Layer,
+): Context {
   const restrictions = new Map<TokenCategory, Restriction>();
   for (const { category } of globalCss.tokens.values()) {
     if (!category || restrictions.has(category)) continue;
@@ -200,22 +289,34 @@ function contextOf(file: string, globalCss: GlobalCss, global: GlobalCssFile | n
       category,
       keywords: new Set(definition.keywords),
       percentages: definition.percentages ?? false,
-      hint: `use a --${category}-* token`,
+      hint: hintFor(category, globalCss.tokens),
     });
   }
   const breakpoints = breakpointsOf(globalCss.tokens);
-  return { file, tokens: globalCss.tokens, restrictions, breakpoints, global };
+  return { file, tokens: globalCss.tokens, restrictions, breakpoints, global, layer };
 }
 
-function checkRoot(root: Root, context: Context): Diagnostic[] {
+/** What to write instead of a raw value: the kinds of token the global CSS declares for the category. */
+function hintFor(category: TokenCategory, tokens: Map<string, Token>): string {
+  const names = [...tokens.values()].filter((token) => token.category === category);
+  const hints = [];
+  if (names.some(({ name }) => name !== `--${category}`)) hints.push(`a --${category}-* token`);
+  if (names.some(({ name }) => name === `--${category}`)) {
+    hints.push(`var(--${category}), alone or multiplied in calc()`);
+  }
+  return `use ${hints.join(", or ")}`;
+}
+
+function checkRoot(root: Root, context: Context, disabled: Keep): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  const disabled = collectDisabled(root, context.file, diagnostics);
   const keep = (node: Node, found: Diagnostic[]) => {
-    const rules = disabled.get(node.source?.start?.line ?? 0);
-    diagnostics.push(...found.filter((diagnostic) => !rules?.has(diagnostic.rule)));
+    // The global CSS skips another tool's at-rules, such as Tailwind's @theme.
+    if (context.global && isForeign(node)) return;
+    diagnostics.push(...disabled(node, found));
   };
   // The global CSS styles the page; only a module is held to the pure rules.
   if (!context.global) checkPure(root, context.file, keep);
+  if (context.layer) checkLayer(root, context.file, context.layer, keep);
   if (context.tokens.size > 0 || context.global) {
     root.walkDecls((declaration) => keep(declaration, checkDeclaration(declaration, context)));
   }
@@ -238,73 +339,8 @@ function checkRoot(root: Root, context: Context): Diagnostic[] {
   return sortDiagnostics(diagnostics);
 }
 
-/**
- * Read the disable comments of the file: the line each one silences and the
- * rules it silences there. A malformed comment silences nothing and is reported.
- */
-function collectDisabled(
-  root: Root,
-  file: string,
-  diagnostics: Diagnostic[],
-): Map<number, Set<string>> {
-  const disabled = new Map<number, Set<string>>();
-  root.walkComments((comment) => {
-    const start = comment.source?.start;
-    const end = comment.source?.end;
-    if (!start || !end || !comment.text.startsWith(DISABLE_NEXT_LINE)) return;
-    const body = comment.text.slice(DISABLE_NEXT_LINE.length);
-    const separator = /(?:^|\s)--(?:\s|$)/.exec(body);
-    const reason = separator ? body.slice(separator.index + separator[0].length).trim() : "";
-    const rules = (separator ? body.slice(0, separator.index) : body)
-      .split(/[\s,]+/)
-      .filter(Boolean);
-    const problems =
-      reason === ""
-        ? ['a disable comment needs a reason: add " -- <why>" after the rule names']
-        : rules.length === 0
-          ? ["a disable comment must name the rules it disables, such as tokens/color"]
-          : rules.flatMap(problemsSilencing);
-    for (const message of problems) {
-      diagnostics.push({
-        file,
-        line: start.line,
-        column: start.column,
-        endLine: end.line,
-        // postcss ends a node on its last character; diagnostics end after it.
-        endColumn: end.column + 1,
-        rule: "invalid-disable",
-        message,
-      });
-    }
-    if (problems.length > 0) return;
-    const line = end.line + 1;
-    disabled.set(line, new Set([...(disabled.get(line) ?? []), ...rules]));
-  });
-  return disabled;
-}
-
-/** What is wrong with naming a rule in a disable comment, if anything. */
-function problemsSilencing(rule: string): string[] {
-  // Turbopack builds some of these selectors (`:root`, `html`), so the build
-  // does not stop them; this rule is the one place that does.
-  if (rule === "pure/selector") {
-    return [
-      "pure/selector cannot be disabled: a selector without a local class styles the page, which is the global CSS's job",
-    ];
-  }
-  const isToken =
-    rule === INTERNAL ||
-    rule === UNDECLARED ||
-    (rule.startsWith(RULE_PREFIX) &&
-      Object.hasOwn(tokenCategories, rule.slice(RULE_PREFIX.length)));
-  return isToken || PURE_RULES.has(rule) ? [] : [`unknown rule "${rule}" in a disable comment`];
-}
-
 function checkDeclaration(declaration: Declaration, context: Context): Diagnostic[] {
-  const parent = declaration.parent;
-  if (parent?.type === "atrule" && DESCRIPTOR_AT_RULES.has((parent as AtRule).name.toLowerCase())) {
-    return [];
-  }
+  if (isDescriptor(declaration)) return [];
   const diagnostics: Diagnostic[] = [];
   const { name, basename, custom } = property(declaration.prop);
   const start = declaration.source?.start;
@@ -333,6 +369,16 @@ function checkDeclaration(declaration: Declaration, context: Context): Diagnosti
   return diagnostics;
 }
 
+/** In an at-rule such as @font-face or a margin box of @page, at any depth. */
+function isDescriptor(declaration: Declaration): boolean {
+  for (let node: Node | undefined = declaration.parent; node; node = node.parent) {
+    if (node.type === "atrule" && GLOBAL_AT_RULES.has((node as AtRule).name.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * The value of a custom property is free, but its name is not. A module that
  * declared a token name could feed any raw value through it, and one that
@@ -345,31 +391,31 @@ function checkDeclaredName(
   node: Declaration | AtRule,
   context: Context,
 ): Diagnostic[] {
-  const report = (rule: string, message: string): Diagnostic[] => [
+  const report = (message: string): Diagnostic[] => [
     {
       file: context.file,
       line: start.line,
       column: start.column,
       endLine: start.line,
       endColumn: start.column + name.length,
-      rule,
+      rule: "tokens/declaration",
       message,
     },
   ];
   if (context.global) {
     if (context.tokens.has(name) || declaresToken(node, context.global.conditional)) return [];
-    return report(UNDECLARED, `${name} is not declared at :root; a mode can only override a token`);
+    return report(
+      `${name} is not declared at :root; a mode can only override a token, so declare the token in a :root rule`,
+    );
   }
   const category = categoryOf(name);
   if (category && context.restrictions.has(category)) {
     return report(
-      `${RULE_PREFIX}${category}`,
       `${name} is a ${category} token name and cannot be declared here; rename the custom property`,
     );
   }
   if (!category && context.tokens.has(name)) {
     return report(
-      INTERNAL,
       `${name} is internal to the global CSS and cannot be declared here; rename the custom property`,
     );
   }
@@ -395,12 +441,10 @@ function checkReferences(
         if (category && context.restrictions.has(category) && !context.tokens.has(name)) {
           const suggestion = closestToken(name, category, context.tokens);
           const message = `${name} is not defined in the global CSS${suggestion ? `; did you mean ${suggestion}?` : ""}`;
-          diagnostics.push(
-            ...diagnosticAt(context.file, child, child, `${RULE_PREFIX}${category}`, message),
-          );
+          diagnostics.push(...diagnosticAt(context.file, child, child, "tokens/unknown", message));
         } else if (!category && !context.global && context.tokens.has(name)) {
           const message = `${name} is internal to the global CSS; use a token with a category prefix`;
-          diagnostics.push(...diagnosticAt(context.file, child, child, INTERNAL, message));
+          diagnostics.push(...diagnosticAt(context.file, child, child, "tokens/internal", message));
         }
       }
       checkReferences(fallbackOf(child), context, diagnostics);
@@ -453,11 +497,11 @@ function checkPart(part: ValuePart, nodes: CssTree.CssNode[], scope: Scope): voi
       checkColors(nodes, scope, "colors");
       break;
     case "layer-color":
-      for (const layer of layersOf(nodes)) checkColors(layer, scope, "one-color");
+      for (const layer of layersOf(nodes)) checkColors(layer, scope, "shorthand-color");
       break;
     case "shadow-color":
       for (const layer of layersOf(nodes)) {
-        if (!loneVar(layer)) checkColors(layer, scope, "one-color");
+        if (!loneVar(layer)) checkColors(layer, scope, "shorthand-color");
       }
       break;
     case "gradient-colors":
@@ -513,6 +557,7 @@ function checkQuantity(node: CssTree.CssNode, scope: Scope, arithmetic: Arithmet
 }
 
 function checkColors(nodes: CssTree.CssNode[], scope: Scope, vars: VarReading): void {
+  const oneColor = vars === "shorthand-color" || vars === "stop-color";
   let hasColor = false;
   const undecided: CssTree.FunctionNode[] = [];
   for (const node of nodes) {
@@ -524,7 +569,7 @@ function checkColors(nodes: CssTree.CssNode[], scope: Scope, vars: VarReading): 
     } else if (node.type === "Function") {
       const name = node.name.toLowerCase();
       if (name === "var") {
-        if (vars === "colors" || (vars === "one-color" && allowsReference(node, scope))) {
+        if (vars === "colors" || (oneColor && allowsReference(node, scope))) {
           checkToken(node, scope);
           checkColors(fallbackOf(node), scope, "colors");
           hasColor = true;
@@ -547,9 +592,9 @@ function checkColors(nodes: CssTree.CssNode[], scope: Scope, vars: VarReading): 
   }
   // Nothing else in the layer is its color, so a var() is taken for it. Which
   // of several it is cannot be told, so each one is.
-  const isColor = vars === "one-color" && !hasColor;
+  const isColor = oneColor && !hasColor;
   for (const node of undecided) {
-    if (isColor) checkToken(node, scope);
+    if (isColor) checkToken(node, scope, vars === "shorthand-color");
     checkColors(fallbackOf(node), scope, isColor ? "colors" : "unknown");
   }
 }
@@ -576,7 +621,7 @@ function checkGradient(node: CssTree.FunctionNode, scope: Scope): void {
           !scope.restriction.keywords.has(child.name.toLowerCase()) &&
           !isRawColorName(child, scope),
       );
-    checkColors(argument, scope, isSetup ? "unknown" : "one-color");
+    checkColors(argument, scope, isSetup ? "unknown" : "stop-color");
   });
 }
 
@@ -644,7 +689,7 @@ function checkTimes(nodes: CssTree.CssNode[], scope: Scope): void {
  * A name of the category the global CSS does not declare, and outside the
  * global CSS an internal name, are left to `checkReferences`.
  */
-function checkToken(node: CssTree.FunctionNode, scope: Scope): void {
+function checkToken(node: CssTree.FunctionNode, scope: Scope, inShorthand = false): void {
   const name = node.children.first;
   if (name?.type !== "Identifier") return;
   const { category, hint } = scope.restriction;
@@ -652,7 +697,14 @@ function checkToken(node: CssTree.FunctionNode, scope: Scope): void {
   if (own === category) return;
   const { tokens, global } = scope.context;
   if (own === null && !global && tokens.has(name.name)) return;
-  report(scope, node, node, `${name.name} is not a ${category} token; ${hint}`);
+  report(
+    scope,
+    node,
+    node,
+    inShorthand
+      ? `${name.name} is taken for the ${category} of this shorthand and is not a ${category} token; ${hint}, or write the longhand`
+      : `${name.name} is not a ${category} token; ${hint}`,
+  );
 }
 
 /** The components of the fallback of a `var()`, which css-tree keeps as raw text. */
@@ -681,7 +733,7 @@ function report(
   last: CssTree.CssNode,
   message: string,
 ): void {
-  const rule = `${RULE_PREFIX}${scope.restriction.category}`;
+  const rule = `tokens/${scope.restriction.category}` as const;
   scope.diagnostics.push(...diagnosticAt(scope.context.file, first, last, rule, message));
 }
 
@@ -689,7 +741,7 @@ function diagnosticAt(
   file: string,
   first: CssTree.CssNode,
   last: CssTree.CssNode,
-  rule: string,
+  rule: RuleId,
   message: string,
 ): Diagnostic[] {
   if (!first.loc || !last.loc) return [];

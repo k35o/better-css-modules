@@ -1,16 +1,19 @@
 .container {
   max-width: 800px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: var(--spacing-8);
   font-family: system-ui, sans-serif;
 }
 
 .title {
   font-size: 2rem;
-  color: #333;
+  color: var(--color-fg);
 }
 
 .description {
-  color: #666;
+  padding: var(--spacing-4);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-subtle);
+  color: var(--color-fg-muted);
   line-height: 1.6;
 }

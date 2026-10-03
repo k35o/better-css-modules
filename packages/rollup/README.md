@@ -1,12 +1,14 @@
 # @better-css-modules/rollup
 
-Rollup plugin for better-css-modules. Automatically generates `.d.ts` type definitions for CSS Modules, and wraps each module in the cascade layer the config names.
+Rollup plugin for better-css-modules. It generates the `.d.ts` files for CSS Modules when a build starts, and puts every module in the cascade layer the config names.
 
 ## Install
 
 ```bash
-pnpm add -D @better-css-modules/rollup
+pnpm add -D @better-css-modules/rollup @better-css-modules/core @better-css-modules/cli
 ```
+
+The config file imports `defineConfig` from `@better-css-modules/core`, and the CLI runs `check`. The plugin needs Rollup 4.
 
 ## Usage
 
@@ -19,24 +21,9 @@ export default {
 };
 ```
 
-## Options
+## Configuration
 
-```ts
-betterCssModules({
-  include: ["src/**/*.module.css"],
-  exclude: [],
-  outDir: "__generated__",
-  silent: false,
-});
-```
-
-| Option    | Type       | Default                   | Description                                                                                 |
-| --------- | ---------- | ------------------------- | ------------------------------------------------------------------------------------------- |
-| `include` | `string[]` | `["src/**/*.module.css"]` | Glob patterns for target CSS Modules files                                                  |
-| `exclude` | `string[]` | `[]`                      | Glob patterns to exclude                                                                    |
-| `outDir`  | `string`   | `"__generated__"`         | Output directory for generated `.d.ts` files                                                |
-| `silent`  | `boolean`  | `false`                   | Suppress console output                                                                     |
-| `layer`   | `string`   | unset                     | Cascade layer to wrap every module in; see [Cascade layers](../../README.md#cascade-layers) |
+The plugin takes one option, the config file to use, relative to the working directory: `betterCssModules({ config: "apps/web/better-css-modules.config.ts" })`. By default it reads the `better-css-modules.config.*` in the working directory, the same file the CLI reads. The directory of the config file is the project root, and `include`, `outDir` and the search for sources stay inside it, so put the config in a directory that holds the stylesheets and the sources. See the project README for the [Quick Start](https://github.com/k35o/better-css-modules#quick-start), which sets up `tsconfig.json`, the [configuration](https://github.com/k35o/better-css-modules#configuration) and [cascade layers](https://github.com/k35o/better-css-modules#cascade-layers).
 
 ## License
 

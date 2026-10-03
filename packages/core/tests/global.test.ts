@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import postcss from "postcss";
 import { checkGlobalCss } from "../src/check.js";
-import { defineConfig } from "../src/config.js";
-import { generate } from "../src/csstree.js";
+import { ConfigError, resolveConfig } from "../src/config.js";
 import { type GlobalCss, globalCssFrom, loadGlobalCss } from "../src/global.js";
+import { resolveLayer } from "../src/layer.js";
 
 const GLOBAL = "/project/src/global.css";
 
@@ -15,14 +15,9 @@ function read(css: string, { checked = true, conditional = false } = {}): Global
   return globalCssFrom([{ file: GLOBAL, root, checked, conditional, listed: true, imports: [] }]);
 }
 
-/** The value of each token, as css-tree writes it back. */
+/** The value of each token. */
 function values(globalCss: GlobalCss): Record<string, string> {
-  return Object.fromEntries(
-    [...globalCss.tokens.values()].map((token) => [
-      token.name,
-      token.value.map((node) => generate(node)).join(" "),
-    ]),
-  );
+  return Object.fromEntries([...globalCss.tokens.values()].map(({ name, value }) => [name, value]));
 }
 
 describe("globalCssFrom: what declares a token", () => {
@@ -42,6 +37,15 @@ describe("globalCssFrom: what declares a token", () => {
     ]);
   });
 
+  it("takes a rule for :root and :host like one for :root, as Tailwind compiles a theme", () => {
+    const globalCss = read(`
+      :root, :host { --color-a: #000; }
+      @layer theme { :HOST, :Root { --color-b: #000; } }
+      :root, :root, :host { --color-c: #000; }
+    `);
+    expect([...globalCss.tokens.keys()]).toEqual(["--color-a", "--color-b", "--color-c"]);
+  });
+
   it("does not take declarations in modes", () => {
     const globalCss = read(`
       .dark { --color-a: #000; }
@@ -49,10 +53,22 @@ describe("globalCssFrom: what declares a token", () => {
       :root:where(:not(.dark)) { --color-c: #000; }
       html { --color-d: #000; }
       :root, .theme { --color-e: #000; }
+      :host { --color-j: #000; }
+      :where(:root), :host { --color-k: #000; }
       @media (prefers-contrast: more) { :root { --color-f: #000; } }
       @supports (color: oklch(0 0 0)) { :root { --color-g: #000; } }
       :root { .dark & { --color-h: #000; } }
       @media print { @property --color-i { syntax: "*"; inherits: true; } }
+    `);
+    expect(globalCss.tokens.size).toBe(0);
+  });
+
+  it("takes nothing from at-rules css-tree does not know", () => {
+    const globalCss = read(`
+      @theme { --color-a: #000; }
+      @layer theme { @theme default { --color-b: #000; } }
+      @utility card { --color-c: #000; }
+      @theme { @property --color-d { syntax: "*"; inherits: true; } }
     `);
     expect(globalCss.tokens.size).toBe(0);
   });
@@ -83,11 +99,8 @@ describe("globalCssFrom: values", () => {
     `);
     expect(values(globalCss)).toMatchObject({
       "--breakpoint-md": "48rem",
-      "--color-fg-base": "light-dark(#111,oklch(1 0 0))",
+      "--color-fg-base": "light-dark(#111, oklch(1 0 0))",
     });
-    expect(globalCss.tokens.get("--breakpoint-md")?.value).toMatchObject([
-      { type: "Dimension", value: "48", unit: "rem" },
-    ]);
   });
 
   it("leaves a var() it cannot replace as written", () => {
@@ -141,10 +154,11 @@ describe("checkGlobalCss", () => {
         column: 3,
         endLine: 4,
         endColumn: 18,
-        rule: "tokens/undeclared",
-        message: "--color-fg-loud is not declared at :root; a mode can only override a token",
+        rule: "tokens/declaration",
+        message:
+          "--color-fg-loud is not declared at :root; a mode can only override a token, so declare the token in a :root rule",
       },
-      expect.objectContaining({ line: 6, column: 45, rule: "tokens/undeclared" }),
+      expect.objectContaining({ line: 6, column: 45, rule: "tokens/declaration" }),
     ]);
   });
 
@@ -158,6 +172,8 @@ describe("checkGlobalCss", () => {
         root: postcss.parse(tokens, { from: GLOBAL }),
         checked: true,
         conditional: false,
+        listed: true,
+        imports: [],
       },
       {
         file: "/project/src/contrast.css",
@@ -169,7 +185,7 @@ describe("checkGlobalCss", () => {
       },
     ]);
     expect(checkGlobalCss(globalCss).map(({ message }) => message)).toEqual([
-      "--color-new is not declared at :root; a mode can only override a token",
+      "--color-new is not declared at :root; a mode can only override a token, so declare the token in a :root rule",
     ]);
   });
 
@@ -192,9 +208,46 @@ describe("checkGlobalCss", () => {
 
   it("honours disable comments", () => {
     const globalCss = read(
-      `${tokens}\n.dark {\n  /* better-css-modules-disable-next-line tokens/undeclared -- set by the theme script */\n  --color-fg-flash: red;\n}`,
+      `${tokens}\n.dark {\n  /* better-css-modules-disable-next-line tokens/declaration -- set by the theme script */\n  --color-fg-flash: red;\n}`,
     );
     expect(checkGlobalCss(globalCss)).toEqual([]);
+  });
+
+  it("honours file-wide disable comments", () => {
+    const globalCss = read(
+      `/* better-css-modules-disable tokens/declaration -- the theme script sets these */\n${tokens}\n.dark { --color-fg-flash: red; }\n.contrast { --color-fg-loud: red; }`,
+    );
+    expect(checkGlobalCss(globalCss)).toEqual([]);
+  });
+
+  it("reports a disable comment that silences nothing", () => {
+    const globalCss = read(
+      `${tokens}\n.dark {\n  /* better-css-modules-disable-next-line tokens/declaration -- set by the theme script */\n  --color-fg-base: #fff;\n}`,
+    );
+    expect(checkGlobalCss(globalCss)).toMatchObject([
+      {
+        line: 3,
+        rule: "invalid-disable",
+        message: "tokens/declaration is disabled, but nothing on the next line reports it",
+      },
+    ]);
+  });
+
+  it("skips at-rules css-tree does not know, and what is in them", () => {
+    const globalCss = read(`${tokens}
+@theme { --color-brand: #f00; }
+@utility card { color: #000; }
+@custom-variant dark (&:where(.dark, .dark *));
+@source "../lib";
+@plugin "./plugin.js";
+@config "./tailwind.config.js";
+@reference "./theme.css";
+@tailwind utilities;
+.card { @variant dark { color: #000; } }
+body { color: #000; }`);
+    expect(checkGlobalCss(globalCss)).toMatchObject([
+      { line: 11, message: "#000 is a raw value for color; use a --color-* token" },
+    ]);
   });
 
   it("leaves a package's stylesheets alone", () => {
@@ -205,6 +258,9 @@ describe("checkGlobalCss", () => {
   });
 });
 
+/** A file of the fixture, named relative to the cwd. */
+type Rel = (name: string) => string;
+
 describe("loadGlobalCss", () => {
   /** Write files into a fresh directory and load the global CSS the config lists from it. */
   async function fixture(files: Record<string, string>, globalCss: string[], include?: string[]) {
@@ -214,8 +270,8 @@ describe("loadGlobalCss", () => {
       await fs.mkdir(path.dirname(path.join(cwd, name)), { recursive: true });
       await fs.writeFile(path.join(cwd, name), content, "utf-8");
     }
-    const config = defineConfig({ globalCss, ...(include ? { include } : {}) });
-    return { cwd, load: () => loadGlobalCss(config, cwd) };
+    const config = resolveConfig({ globalCss, include }, cwd);
+    return { cwd, load: () => loadGlobalCss(config) };
   }
 
   const designSystem = {
@@ -314,85 +370,125 @@ describe("loadGlobalCss", () => {
     expect([...(await load()).tokens.keys()]).toEqual(["--color-a"]);
   });
 
-  it("accepts the at-rules nested in @page and @font-feature-values", async () => {
-    const { load } = await fixture(
-      {
-        "global.css":
-          '@page { @top-center { content: "x"; } }\n@font-feature-values Font { @styleset { nice: 2; } }',
-      },
-      ["./global.css"],
-    );
-    expect((await load()).files).toHaveLength(1);
-  });
-
   it.each([
     [
       "an entry it cannot resolve",
       { "a.css": "" },
       ["src/a.css"],
-      '[better-css-modules] cannot resolve "src/a.css" listed in globalCss',
+      () => 'cannot resolve "src/a.css" listed in globalCss',
     ],
     [
       "an import it cannot resolve",
       { "a.css": '@import "./missing.css";' },
       ["./a.css"],
-      '[better-css-modules] a.css:1:1: cannot resolve "./missing.css"',
+      (rel: Rel) => `${rel("a.css")}:1:1: cannot resolve "./missing.css"`,
     ],
     [
       "an import of a URL",
       { "a.css": '@import url("https://example.com/a.css");' },
       ["./a.css"],
-      "[better-css-modules] a.css:1:1: global CSS cannot import https://example.com/a.css",
+      (rel: Rel) => `${rel("a.css")}:1:1: global CSS cannot import https://example.com/a.css`,
     ],
     [
       "stylesheets that import each other",
       { "a.css": '@import "./b.css";', "b.css": '@import "./a.css";' },
       ["./a.css"],
-      "[better-css-modules] a.css → b.css → a.css import each other",
-    ],
-    [
-      "an at-rule that is not standard CSS",
-      { "a.css": ":root { --color-a: #000; }\n@theme {\n  --color-b: #000;\n}" },
-      ["./a.css"],
-      "[better-css-modules] a.css:2:1: @theme is not standard CSS; global CSS must be standard CSS",
+      (rel: Rel) => `${rel("a.css")} → ${rel("b.css")} → ${rel("a.css")} import each other`,
     ],
     [
       "a stylesheet it cannot parse",
       { "a.css": ":root { --color-a: #000;" },
       ["./a.css"],
-      "[better-css-modules] a.css:1:1: Unclosed block",
+      (rel: Rel) => `${rel("a.css")}:1:1: Unclosed block`,
     ],
-  ])("refuses %s", async (_name, files, globalCss, message) => {
-    const { load } = await fixture(files, globalCss);
-    await expect(load()).rejects.toThrow(message);
+    [
+      "an import it cannot read",
+      { "a.css": "@import ./b.css;" },
+      ["./a.css"],
+      (rel: Rel) => `${rel("a.css")}:1:1: cannot read @import ./b.css`,
+    ],
+  ])("refuses %s, naming files relative to the cwd", async (_name, files, globalCss, message) => {
+    const { cwd, load } = await fixture(files, globalCss);
+    const rel = (name: string) => path.relative(process.cwd(), path.join(cwd, name));
+    await expect(load()).rejects.toThrow(new ConfigError(message(rel)));
   });
 
   it("refuses a stylesheet that is also a CSS module", async () => {
-    const { load } = await fixture(
+    const { cwd, load } = await fixture(
       { "src/a.module.css": ":root {}" },
       ["./src/a.module.css"],
       ["src/**/*.module.css"],
     );
+    const file = path.relative(process.cwd(), path.join(cwd, "src/a.module.css"));
     await expect(load()).rejects.toThrow(
-      "[better-css-modules] src/a.module.css is both a CSS module (include) and global CSS (globalCss)",
+      new ConfigError(`${file} is both a CSS module (include) and global CSS (globalCss)`),
     );
   });
 
-  it('follows @import "tailwindcss" and refuses what it finds there', async () => {
+  it("reads an @import whose prelude carries functions it does not know", async () => {
     const { load } = await fixture(
       {
+        "global.css":
+          '@import "./base.css" layer(base) source(none);\n@import "./theme.css" theme(static) prefix(tw);',
+        "base.css": ":root { --color-a: #000; }",
+        "theme.css": ":root { --color-b: #000; }",
+      },
+      ["./global.css"],
+    );
+    const globalCss = await load();
+    expect(
+      globalCss.files.at(-1)?.imports.map(({ layer, conditional }) => [layer, conditional]),
+    ).toEqual([
+      ["base", false],
+      [null, false],
+    ]);
+    expect(globalCss.layers).toEqual(["base"]);
+    expect([...globalCss.tokens.keys()]).toEqual(["--color-a", "--color-b"]);
+  });
+
+  it.each([
+    ["important", false],
+    ["layer(base) important", false],
+    ["screen", true],
+    ["print", true],
+    ["not print", true],
+    ["(width >= 40rem)", true],
+    ["screen and (width >= 40rem)", true],
+    ["important, print", true],
+  ])("reads an @import followed by %s as conditional: %s", async (condition, conditional) => {
+    const { load } = await fixture(
+      {
+        "global.css": `@import "./base.css" ${condition};`,
+        "base.css": ":root { --color-a: #000; }",
+      },
+      ["./global.css"],
+    );
+    const globalCss = await load();
+    expect(globalCss.files.at(-1)?.imports.map((imported) => imported.conditional)).toEqual([
+      conditional,
+    ]);
+    expect([...globalCss.tokens.keys()]).toEqual(conditional ? [] : ["--color-a"]);
+  });
+
+  it('reads Tailwind\'s entry through @import "tailwindcss", skipping its at-rules', async () => {
+    const { load } = await fixture(
+      {
+        // The shape of tailwindcss 4's index.css.
         "node_modules/tailwindcss/package.json": JSON.stringify({
           name: "tailwindcss",
           exports: { ".": { style: "./index.css", import: "./dist/lib.mjs" } },
         }),
         "node_modules/tailwindcss/index.css":
-          "@layer theme {\n  @theme default { --color-red-500: red; }\n}",
-        "globals.css": '@import "tailwindcss";',
+          "@layer theme, base, components, utilities;\n@layer theme {\n  @theme default { --color-red-500: red; }\n}\n@layer base { html { color: red; } }\n@layer utilities {\n  @tailwind utilities;\n}",
+        "src/globals.css":
+          '@import "tailwindcss" source("../src");\n@theme { --color-x: red; }\n@utility card { padding: 13px; }\n@custom-variant dark (&:where(.dark, .dark *));\n:root { --spacing: 0.25rem; }',
       },
-      ["./globals.css"],
+      ["./src/globals.css"],
     );
-    await expect(load()).rejects.toThrow(
-      "node_modules/tailwindcss/index.css:2:3: @theme is not standard CSS",
-    );
+    const globalCss = await load();
+    expect(globalCss.layers).toEqual(["theme", "base", "components", "utilities"]);
+    expect([...globalCss.tokens.keys()]).toEqual(["--spacing"]);
+    expect(resolveLayer("components", globalCss).order).toEqual(globalCss.layers);
+    expect(checkGlobalCss(globalCss)).toEqual([]);
   });
 });

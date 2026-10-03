@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import postcss from "postcss";
 import { checkCss, checkGlobalCss } from "../src/check.js";
 import { analyzeCss } from "../src/css.js";
@@ -9,7 +9,9 @@ const GLOBAL = "/project/src/global.css";
 
 function globalCssOf(css: string, { checked = true } = {}): GlobalCss {
   const root = postcss.parse(css, { from: GLOBAL });
-  return globalCssFrom([{ file: GLOBAL, root, checked, conditional: false }]);
+  return globalCssFrom([
+    { file: GLOBAL, root, checked, conditional: false, listed: true, imports: [] },
+  ]);
 }
 
 const designSystem = globalCssOf(`
@@ -136,7 +138,7 @@ describe("checkCss: widths in @media", () => {
 
   it("reports a module that declares a breakpoint token name", () => {
     expect(check(".a { --breakpoint-mine: 30rem; }")).toEqual([
-      "tokens/breakpoint: --breakpoint-mine is a breakpoint token name and cannot be declared here; rename the custom property",
+      "tokens/declaration: --breakpoint-mine is a breakpoint token name and cannot be declared here; rename the custom property",
     ]);
   });
 });

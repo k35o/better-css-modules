@@ -1,6 +1,13 @@
 {
   "name": "@better-css-modules/cli",
   "version": "0.1.3",
+  "description": "The generate and check commands of better-css-modules",
+  "keywords": [
+    "css-modules",
+    "design-tokens",
+    "dts",
+    "typescript"
+  ],
   "license": "MIT",
   "author": "k8o",
   "repository": {
@@ -27,6 +34,6 @@
     "@types/node": "24.12.0"
   },
   "engines": {
-    "node": ">=24.14.1"
+    "node": ">=24"
   }
 }

@@ -1,14 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vite-plus/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { transform } from "lightningcss";
 import postcss, { CssSyntaxError } from "postcss";
 import postcssModules from "postcss-modules";
-import { defineConfig } from "../src/config.js";
-import { analyzeCss } from "../src/css.js";
+import { ConfigError, resolveConfig } from "../src/config.js";
 import { type GlobalCss, loadGlobalCss } from "../src/global.js";
-import { checkLayer, declaredLayers, resolveLayer, wrapInLayer } from "../src/layer.js";
+import { createLayerWrapper, resolveLayer, wrapInLayer } from "../src/layer.js";
 import { cssCases } from "./fixtures/css-cases.js";
 
 const FILE = "/project/src/a.module.css";
@@ -75,6 +74,25 @@ describe("wrapInLayer", () => {
       '@import url("./print.css") layer(components) supports(display: grid) print',
       '@import url("./a(1).css") layer(components)',
       "@layer components { .a }",
+    ]);
+  });
+
+  it("inserts the layer after a URL with an escaped parenthesis", () => {
+    expect(wrap("@import url(a\\).css);")).toEqual([
+      "@layer base, components, utilities",
+      "@import url(a\\).css) layer(components)",
+      "@layer components {  }",
+    ]);
+  });
+
+  it("reads past functions css-tree does not know, such as Tailwind's source()", () => {
+    expect(
+      wrap("@import 'a.css' source(none);\n@import 'b.css' layer(base) theme(static);"),
+    ).toEqual([
+      "@layer base, components, utilities",
+      "@import 'a.css' layer(components) source(none)",
+      "@import 'b.css' layer(base) theme(static)",
+      "@layer components {  }",
     ]);
   });
 
@@ -169,7 +187,7 @@ async function globalCssOf(files: Record<string, string>, listed: string[]): Pro
   for (const [name, content] of Object.entries(files)) {
     await fs.writeFile(path.join(dir, name), content);
   }
-  return loadGlobalCss(defineConfig({ globalCss: listed.map((name) => `./${name}`) }), dir);
+  return loadGlobalCss(resolveConfig({ globalCss: listed.map((name) => `./${name}`) }, dir));
 }
 
 const projects: string[] = [];
@@ -178,7 +196,7 @@ afterAll(async () => {
   await Promise.all(projects.map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("declaredLayers", () => {
+describe("loadGlobalCss: layers", () => {
   it("lists the layers of @layer statements and blocks by first mention", async () => {
     const globalCss = await globalCssOf(
       {
@@ -187,33 +205,23 @@ describe("declaredLayers", () => {
       },
       ["global.css", "app.css"],
     );
-    expect(declaredLayers(globalCss)).toEqual([
-      "reset",
-      "base",
-      "theme",
-      "components",
-      "utilities",
-    ]);
+    expect(globalCss.layers).toEqual(["reset", "base", "theme", "components", "utilities"]);
   });
 
   it("reads an import where it stands, and a layer() import as the layer it names", async () => {
     const globalCss = await globalCssOf(
       {
         "global.css":
-          '@layer reset;\n@import "./theme.css";\n@import "./base.css" layer(base);\n@layer components { }',
+          '@layer reset;\n@import "./theme.css";\n@import "./base.css" layer(base);\n@import "./anonymous.css" layer;\n@layer components { }',
         "theme.css": "@layer theme, utilities;",
         // Inside base, so base.inner.
         "base.css": "@layer inner;",
+        // Inside an anonymous layer, which nothing can name.
+        "anonymous.css": "@layer hidden;",
       },
       ["global.css"],
     );
-    expect(declaredLayers(globalCss)).toEqual([
-      "reset",
-      "theme",
-      "utilities",
-      "base",
-      "components",
-    ]);
+    expect(globalCss.layers).toEqual(["reset", "theme", "utilities", "base", "components"]);
   });
 
   it("takes nothing from a conditional import or from below the top level", async () => {
@@ -225,7 +233,7 @@ describe("declaredLayers", () => {
       },
       ["global.css"],
     );
-    expect(declaredLayers(globalCss)).toEqual(["base"]);
+    expect(globalCss.layers).toEqual(["base"]);
   });
 });
 
@@ -244,30 +252,129 @@ describe("resolveLayer", () => {
     const globalCss = await globalCssOf({ "global.css": "@layer base, components;" }, [
       "global.css",
     ]);
+    expect(() => resolveLayer("ui", globalCss)).toThrow(ConfigError);
     expect(() => resolveLayer("ui", globalCss)).toThrow(
-      '[better-css-modules] layer "ui" is not declared by the global CSS; declare it there in order, such as @layer base, components, ui;',
+      'layer "ui" is not declared by the global CSS; declare it there in order, such as @layer base, components, ui;',
     );
   });
 
   it("asks for global CSS when there is none", async () => {
-    expect(() => resolveLayer("ui", { files: [], tokens: new Map() })).toThrow(
-      '[better-css-modules] layer "ui" needs global CSS that declares it; list one in globalCss with @layer ui;',
+    expect(() => resolveLayer("ui", { files: [], tokens: new Map(), layers: [] })).toThrow(
+      'layer "ui" needs global CSS that declares it; list one in globalCss with @layer ui;',
     );
   });
 });
 
-describe("checkLayer", () => {
-  const check = (css: string) =>
-    checkLayer(analyzeCss(css, FILE), "components").map((d) => `${d.line}:${d.column} ${d.rule}`);
-
-  it("reports @layer, which would nest in the layer the module is put in", () => {
-    expect(check("@layer a, b;\n@media print {\n  @layer c { .a { color: red; } }\n}")).toEqual([
-      "1:1 layer/nested",
-      "3:3 layer/nested",
-    ]);
+describe("createLayerWrapper", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it("reports composes", () => {
-    expect(check(".a { color: red; }\n.b { composes: a; }")).toEqual(["2:6 layer/composes"]);
+  /** A project with the given files, whose config wraps into "components" by `./global.css`. */
+  async function projectWith(files: Record<string, string>, config: object = {}) {
+    const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "bcm-wrapper-")));
+    projects.push(dir);
+    for (const [name, content] of Object.entries(files)) {
+      await fs.writeFile(path.join(dir, name), content);
+    }
+    const wrap = createLayerWrapper(
+      resolveConfig({ globalCss: ["./global.css"], layer: "components", ...config }, dir),
+    );
+    /** Wrap `file`, by default an included module: the layer statement it gets, and what it depends on. */
+    const wrapModule = (file = path.join(dir, "src/a.module.css")) => {
+      const dependencies: string[] = [];
+      const order = wrap(".a { color: red; }", file, (dependency) => {
+        dependencies.push(dependency);
+      }).then((wrapped) => wrapped && outline(wrapped.code)[0]);
+      return { order, dependencies };
+    };
+    return { dir, wrapModule };
+  }
+
+  it("wraps an included module after making it depend on every file of the global CSS", async () => {
+    const { dir, wrapModule } = await projectWith({
+      "global.css": '@import "./theme.css";\n@layer base, components;',
+      "theme.css": "@layer theme;",
+    });
+    const { order, dependencies } = wrapModule();
+    expect(await order).toBe("@layer theme, base, components");
+    expect(dependencies).toEqual([path.join(dir, "global.css"), path.join(dir, "theme.css")]);
+  });
+
+  // Turbopack runs the loader of a module that failed again only once a file it depends on changes.
+  it("depends on the files of the global CSS it read before failing to read one", async () => {
+    const { dir, wrapModule } = await projectWith({
+      "global.css": '@import "./theme.css";\n@layer base, components;',
+      "theme.css": ".x {",
+    });
+    const { order, dependencies } = wrapModule();
+    await expect(order).rejects.toThrow("Unclosed block");
+    expect(dependencies).toEqual([path.join(dir, "global.css"), path.join(dir, "theme.css")]);
+  });
+
+  it("leaves a module as written when the config names no layer", async () => {
+    const { wrapModule } = await projectWith(
+      { "global.css": "@layer base, components;" },
+      { layer: undefined },
+    );
+    const { order, dependencies } = wrapModule();
+    expect(await order).toBeNull();
+    expect(dependencies).toEqual([]);
+  });
+
+  it("leaves a file the config does not include as written", async () => {
+    const { dir, wrapModule } = await projectWith({ "global.css": "@layer base, components;" });
+    const { order, dependencies } = wrapModule(path.join(dir, "other.module.css"));
+    expect(await order).toBeNull();
+    expect(dependencies).toEqual([]);
+  });
+
+  it("depends on the global CSS before refusing a layer it does not declare", async () => {
+    const { dir, wrapModule } = await projectWith({ "global.css": "@layer base;" });
+    const { order, dependencies } = wrapModule();
+    await expect(order).rejects.toThrow('layer "components" is not declared by the global CSS');
+    expect(dependencies).toEqual([path.join(dir, "global.css")]);
+  });
+
+  it("reads the global CSS again only once one of its files has changed", async () => {
+    const { dir, wrapModule } = await projectWith({
+      "global.css": '@import "./theme.css";\n@layer components;',
+      "theme.css": "@layer base;",
+    });
+    const theme = path.join(dir, "theme.css");
+    const touch = (time: number) => fs.utimes(theme, time, time);
+    await touch(1_000_000);
+    expect(await wrapModule().order).toBe("@layer base, components");
+
+    // Under the same modification time, the wrapper keeps what it read.
+    await fs.writeFile(theme, "@layer reset;");
+    await touch(1_000_000);
+    expect(await wrapModule().order).toBe("@layer base, components");
+
+    await touch(1_000_001);
+    expect(await wrapModule().order).toBe("@layer reset, components");
+  });
+
+  it("reads the global CSS again when a file is saved just after it was read", async () => {
+    const { dir, wrapModule } = await projectWith({ "global.css": "@layer base, components;" });
+    const file = path.join(dir, "global.css");
+    await fs.utimes(file, 1_000_000, 1_000_000);
+    const readFile = fs.readFile;
+    vi.spyOn(fs, "readFile").mockImplementationOnce(async (...args) => {
+      const content = await readFile(...args);
+      await fs.writeFile(file, "@layer reset, base, components;");
+      await fs.utimes(file, 1_000_001, 1_000_001);
+      return content;
+    });
+    expect(await wrapModule().order).toBe("@layer base, components");
+    expect(await wrapModule().order).toBe("@layer reset, base, components");
+  });
+
+  it("reads the global CSS again after a read that failed", async () => {
+    const { dir, wrapModule } = await projectWith({ "global.css": '@import "./missing.css";' });
+    await expect(wrapModule().order).rejects.toThrow("missing.css");
+
+    await fs.writeFile(path.join(dir, "global.css"), "@layer base, components;");
+    expect(await wrapModule().order).toBe("@layer base, components");
   });
 });

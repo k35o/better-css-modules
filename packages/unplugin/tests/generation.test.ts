@@ -1,10 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  vi,
+  type MockInstance,
+} from "vite-plus/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { UnpluginContextMeta, UnpluginOptions } from "unplugin";
 import { createBuilder } from "vite";
-import { unplugin } from "../src/index.js";
+import { type Options, unplugin } from "../src/index.js";
 
 const created: string[] = [];
 const originalCwd = process.cwd();
@@ -27,22 +36,26 @@ async function writeFiles(dir: string, files: Record<string, string>): Promise<v
   }
 }
 
-function pluginFor(framework: UnpluginContextMeta["framework"]): UnpluginOptions {
-  return unplugin.raw(undefined, { framework } as UnpluginContextMeta) as UnpluginOptions;
+function pluginFor(
+  framework: UnpluginContextMeta["framework"],
+  options?: Options,
+): UnpluginOptions {
+  return unplugin.raw(options, { framework } as UnpluginContextMeta) as UnpluginOptions;
 }
 
 // The hooks do not read their bundler context.
 const buildStart = (plugin: UnpluginOptions) => plugin.buildStart!.call({} as never);
-const watchChange = (plugin: UnpluginOptions, id: string) =>
-  plugin.watchChange!.call({} as never, id, { event: "update" });
+const watchChange = (plugin: UnpluginOptions, id: string, event: "update" | "delete" = "update") =>
+  plugin.watchChange!.call({} as never, id, { event });
 
 const dtsOf = (dir: string, cssFile: string) =>
   fs.readFile(path.join(dir, "__generated__", `${cssFile}.d.ts`), "utf-8");
 
-let log: ReturnType<typeof vi.spyOn>;
+let log: MockInstance<typeof console.log>;
 const generations = () =>
-  log.mock.calls.filter(([message]) => String(message).startsWith("[better-css-modules] generated"))
-    .length;
+  log.mock.calls.filter(([message]) =>
+    /^\[better-css-modules\] generated \d+/.test(String(message)),
+  ).length;
 
 beforeEach(() => {
   log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -110,18 +123,74 @@ describe("generating the types", () => {
     expect(await dtsOf(dir, "src/b.module.css")).toContain("readonly bar: string;");
   });
 
+  it("tries again at the next build start after a generation failed under Vite", async () => {
+    const dir = await enterProject({
+      "src/a.module.css": ".foo { color: red; }",
+      // Where the outDir should be, so that writing into it fails.
+      __generated__: "",
+    });
+    await expect(buildStart(pluginFor("vite"))).rejects.toThrow("ENOTDIR");
+
+    await fs.rm(path.join(dir, "__generated__"));
+    await buildStart(pluginFor("vite"));
+    expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly foo: string;");
+  });
+
+  it("brings the types in line with each change Vite reports", async () => {
+    const dir = await enterProject({ "src/a.module.css": ".foo { color: red; }" });
+    const css = path.join(dir, "src/a.module.css");
+    const dts = path.join("__generated__", "src", "a.module.css.d.ts");
+    const plugin = pluginFor("vite");
+    await buildStart(plugin);
+
+    await writeFiles(dir, { "src/a.module.css": ".bar { color: red; }" });
+    await watchChange(plugin, css);
+    expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly bar: string;");
+    expect(log).toHaveBeenLastCalledWith(`[better-css-modules] generated: ${dts}`);
+
+    await fs.rm(css);
+    await watchChange(plugin, css, "delete");
+    await expect(dtsOf(dir, "src/a.module.css")).rejects.toThrow();
+    expect(log).toHaveBeenLastCalledWith(`[better-css-modules] removed: ${dts}`);
+  });
+
+  // Their watch modes run buildStart before every rebuild.
   it.each(["webpack", "rspack", "rollup", "esbuild"] as const)(
-    "generates on every build start under %s",
+    "generates everything on every build start under %s, and nothing on a change",
     async (framework) => {
-      const dir = await enterProject({ "src/a.module.css": ".foo { color: red; }" });
+      const dir = await enterProject({
+        "src/a.module.css": ".foo { color: red; }",
+        "src/b.module.css": ".bar { color: red; }",
+      });
       const plugin = pluginFor(framework);
       await buildStart(plugin);
 
       await writeFiles(dir, { "src/a.module.css": ".foo { color: red; }\n.baz { color: green; }" });
-      await buildStart(plugin);
+      await fs.rm(path.join(dir, "src/b.module.css"));
+      await watchChange(plugin, path.join(dir, "src/a.module.css"));
+      await watchChange(plugin, path.join(dir, "src/b.module.css"), "delete");
+      expect(generations()).toBe(1);
+      expect(await dtsOf(dir, "src/a.module.css")).not.toContain("baz");
+      expect(await dtsOf(dir, "src/b.module.css")).toContain("readonly bar: string;");
 
+      await buildStart(plugin);
       expect(generations()).toBe(2);
       expect(await dtsOf(dir, "src/a.module.css")).toContain("readonly baz: string;");
+      await expect(dtsOf(dir, "src/b.module.css")).rejects.toThrow();
     },
   );
+
+  it("reads the config file it is given, resolving against that file's directory", async () => {
+    const dir = await enterProject({
+      "app/better-css-modules.config.mjs": 'export default { include: ["styles/*.module.css"] };\n',
+      "app/styles/a.module.css": ".foo { color: red; }",
+      "styles/b.module.css": ".bar { color: red; }",
+    });
+    await buildStart(pluginFor("rollup", { config: "app/better-css-modules.config.mjs" }));
+
+    expect(await dtsOf(path.join(dir, "app"), "styles/a.module.css")).toContain(
+      "readonly foo: string;",
+    );
+    expect(await fs.readdir(dir)).toEqual(["app", "styles"]);
+  });
 });

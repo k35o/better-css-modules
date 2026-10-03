@@ -1,15 +1,18 @@
-import { describe, it, expect } from "vitest";
-import postcss from "postcss";
+import { describe, it, expect } from "vite-plus/test";
+import postcss, { type AtRule, type Node, type Rule } from "postcss";
 import { checkCss, checkGlobalCss } from "../src/check.js";
-import { analyzeCss } from "../src/css.js";
+import { analyzeCss, type SourcePosition } from "../src/css.js";
+import { parse } from "../src/csstree.js";
 import { globalCssFrom } from "../src/global.js";
+import { cssCases } from "./fixtures/css-cases.js";
 
 const FILE = "/project/src/a.module.css";
 
 const SELECTOR_HINT = "every selector of a CSS Module needs one";
 const SUBJECT_HINT =
-  "style the element through a class of its own, or space children with gap on the parent";
-const GLOBAL_HINT = "switch modes by overriding tokens instead";
+  "give the element a class of its own, or style markup the component does not write inside @scope";
+const GLOBAL_HINT =
+  "a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope";
 const AT_RULE_HINT =
   "is global and takes effect only while this module is loaded; move it to the global CSS";
 
@@ -66,6 +69,11 @@ describe("checkCss: selectors without a local class (pure/selector)", () => {
     expect(rules(":global(.x) {}")).toEqual(["pure/selector", "pure/global"]);
     expect(rules(":global .x {}")).toEqual(["pure/selector", "pure/global"]);
     expect(rules("::view-transition-old(.a) {}")).toEqual(["pure/selector"]);
+  });
+
+  it("keeps the argument of :global() global, even through :local()", () => {
+    expect(rules(":global(:local(.a)) {}")).toEqual(["pure/selector", "pure/global"]);
+    expect(rules(":global(.x :is(:local(.a))) {}")).toEqual(["pure/selector", "pure/global"]);
   });
 
   it("does not count the root of a top-level @scope, as bundlers do not", () => {
@@ -203,7 +211,8 @@ describe("checkCss: :global (pure/global)", () => {
         rule: "pure/global",
         column: 12,
         endColumn: 25,
-        message: `:global(spin) reaches outside this module; ${GLOBAL_HINT}`,
+        message:
+          ":global(spin) reaches outside this module; shared keyframes belong in the global CSS",
       },
     ]);
   });
@@ -299,6 +308,25 @@ describe("checkCss: global-only at-rules (pure/at-rule)", () => {
   });
 });
 
+describe("checkCss: @value (pure/value)", () => {
+  const message =
+    "@value is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks; use a custom property";
+
+  it("reports every @value, defined or imported, at its name", () => {
+    const css = "@value brand: #f00;\n.a {\n  @value gap from './sizes.module.css';\n}";
+    expect(diagnose(css)).toMatchObject([
+      { rule: "pure/value", line: 1, column: 1, endColumn: 7, message },
+      { rule: "pure/value", line: 3, column: 3, endColumn: 9, message },
+    ]);
+  });
+
+  it("can be disabled", () => {
+    const css =
+      "/* better-css-modules-disable-next-line pure/value -- shared with the Vite-only widget */\n@value brand: #f00;";
+    expect(check(css)).toEqual([]);
+  });
+});
+
 describe("checkCss: disable comments for pure rules", () => {
   const disable = "/* better-css-modules-disable-next-line";
 
@@ -321,16 +349,15 @@ describe("checkCss: disable comments for pure rules", () => {
     expect(rules(css)).toEqual(["pure/important"]);
   });
 
-  it("refuses to silence pure/selector", () => {
-    expect(check(`${disable} pure/selector -- reset */\nbody {}`)).toEqual([
-      "invalid-disable: pure/selector cannot be disabled: a selector without a local class styles the page, which is the global CSS's job",
-      `pure/selector: body has no local class; ${SELECTOR_HINT}`,
-    ]);
+  it("silences pure/selector", () => {
+    expect(
+      check(`${disable} pure/selector -- the print layout hides the page chrome */\nbody {}`),
+    ).toEqual([]);
   });
 
   it("reports an unknown pure rule", () => {
     expect(check(`${disable} pure/ids -- legacy */\n#a {}`)).toEqual([
-      'invalid-disable: unknown rule "pure/ids" in a disable comment',
+      'invalid-disable: unknown rule "pure/ids"',
       "pure/id: #a is an id; its specificity defeats overrides from outside the component, so use a class",
     ]);
   });
@@ -350,7 +377,56 @@ describe("checkGlobalCss: the global CSS", () => {
       "#app :global(.x) {}",
     ].join("\n");
     const root = postcss.parse(css, { from: file });
-    const globalCss = globalCssFrom([{ file, root, checked: true, conditional: false }]);
+    const globalCss = globalCssFrom([
+      { file, root, checked: true, conditional: false, listed: true, imports: [] },
+    ]);
     expect(checkGlobalCss(globalCss).filter((d) => d.rule.startsWith("pure/"))).toEqual([]);
   });
 });
+
+// The generated keys and pure/selector decide what is local in two separate
+// walks; they must agree on every selector of a top-level rule.
+describe("pure/selector agrees with the local classes and ids of the generated keys", () => {
+  it.each([
+    ...cssCases.map(({ name, css }) => ({ name, css })),
+    { name: "local inside global", css: ":global(:local(.a)) {} .b, :global(.c) a {}" },
+  ])("$name", ({ css }) => {
+    const analysis = analyzeCss(css, FILE);
+    const locals = [
+      ...analysis.classes,
+      ...analysis.identifiers.filter(({ kind }) => kind === "id"),
+    ].map(({ range }) => range.start);
+    const withoutLocal: string[] = [];
+    analysis.root.walkRules((rule) => {
+      if (isNested(rule)) return;
+      const start = rule.source?.start ?? { line: 1, column: 1 };
+      const text = rule.raws.selector?.raw ?? rule.selector;
+      const list = parse(text, { context: "selectorList", positions: true, ...start });
+      if (list.type !== "SelectorList") return;
+      list.children.forEach(({ loc }) => {
+        if (!loc) return;
+        const holds = locals.some((at) => !isBefore(at, loc.start) && isBefore(at, loc.end));
+        if (!holds) withoutLocal.push(`${loc.start.line}:${loc.start.column}`);
+      });
+    });
+    const reported = diagnose(css)
+      .filter(({ rule }) => rule === "pure/selector")
+      .map(({ line, column }) => `${line}:${column}`);
+    expect(reported).toEqual(withoutLocal);
+  });
+});
+
+/** Inside a style rule, which stands for the local class, or a keyframes block. */
+function isNested(rule: Rule): boolean {
+  for (let parent: Node["parent"] = rule.parent; parent; parent = parent.parent) {
+    if (parent.type === "rule") return true;
+    if (parent.type === "atrule" && /keyframes$/i.test((parent as AtRule).name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isBefore(a: SourcePosition, b: SourcePosition): boolean {
+  return a.line < b.line || (a.line === b.line && a.column < b.column);
+}

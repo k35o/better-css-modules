@@ -1,7 +1,10 @@
-import postcss, { type AtRule, type ChildNode } from "postcss";
-import type { CssModuleAnalysis } from "./css.js";
+import { statSync } from "node:fs";
+import postcss, { type AtRule, type ChildNode, type Node, type Root } from "postcss";
+import { ConfigError, type ResolvedConfig } from "./config.js";
 import type { Diagnostic } from "./diagnostic.js";
-import type { GlobalCss, GlobalCssFile } from "./global.js";
+import { type GlobalCss, loadGlobalCss, readImport } from "./global.js";
+import { createMatcher, type ModuleOptions } from "./project.js";
+import type { RuleId } from "./rules.js";
 
 /** The cascade layer the bundler plugins put every CSS Modules file in. */
 export interface Layer {
@@ -10,7 +13,7 @@ export interface Layer {
   order: string[];
 }
 
-export interface WrapResult {
+interface WrapResult {
   code: string;
   /** Source map, as JSON. */
   map: string;
@@ -19,51 +22,15 @@ export interface WrapResult {
 const COMPOSES_MESSAGE =
   "composes does not work inside a cascade layer: lightningcss rejects it, and postcss-modules leaves the rules composed from another file outside the layer; join the class names in JavaScript";
 
-/**
- * The layers the global CSS declares at the top level of the cascade, in the
- * order it takes them: by first mention, reading the listed stylesheets in
- * turn and each import where it stands. `@layer` statements and blocks
- * declare them, and so does `@import ... layer(name)`; the layers inside a
- * stylesheet imported into a layer nest in it. A conditional import may not
- * apply, so it declares nothing.
- */
-export function declaredLayers({ files }: GlobalCss): string[] {
-  const byFile = new Map(files.map((sheet) => [sheet.file, sheet]));
-  const names = new Set<string>();
-  const read = new Set<string>();
-  const visit = (sheet: GlobalCssFile) => {
-    if (read.has(sheet.file)) return;
-    read.add(sheet.file);
-    const imports = new Map(sheet.imports.map((imported) => [imported.rule, imported]));
-    sheet.root.each((node) => {
-      if (isAtRule(node, "layer")) {
-        for (const name of node.params.split(",")) {
-          // A block without a name is an anonymous layer, which nothing can name.
-          if (name.trim() !== "") names.add(name.trim());
-        }
-        return;
-      }
-      const imported = isAtRule(node, "import") ? imports.get(node) : undefined;
-      if (!imported || imported.conditional) return;
-      const into = layerOfImport(imported.rule);
-      const target = byFile.get(imported.file);
-      if (into === null && target) visit(target);
-      else if (into) names.add(into);
-    });
-  };
-  for (const sheet of files) if (sheet.listed) visit(sheet);
-  return [...names];
-}
-
 /** The layer named `name`, which the global CSS must declare. */
 export function resolveLayer(name: string, globalCss: GlobalCss): Layer {
-  const order = declaredLayers(globalCss);
+  const order = globalCss.layers;
   if (!order.includes(name)) {
     const statement = `@layer ${[...order, name].join(", ")};`;
-    throw new Error(
+    throw new ConfigError(
       globalCss.files.length > 0
-        ? `[better-css-modules] layer "${name}" is not declared by the global CSS; declare it there in order, such as ${statement}`
-        : `[better-css-modules] layer "${name}" needs global CSS that declares it; list one in globalCss with ${statement}`,
+        ? `layer "${name}" is not declared by the global CSS; declare it there in order, such as ${statement}`
+        : `layer "${name}" needs global CSS that declares it; list one in globalCss with ${statement}`,
     );
   }
   return { name, order };
@@ -110,59 +77,103 @@ export function wrapInLayer(source: string, file: string, layer: Layer): WrapRes
   return { code: result.css, map: result.map.toString() };
 }
 
+/** What wrapping modules in the layer reads of the config. */
+export type LayerConfig = ModuleOptions & Pick<ResolvedConfig, "globalCss" | "layer">;
+
+/**
+ * What the bundler plugins run on each stylesheet: it wraps the CSS Modules
+ * files the config includes in the layer it names, and resolves to null for
+ * any other file, or for every file when the config names no layer.
+ *
+ * `depend` receives each file of the global CSS it read, also when reading
+ * one failed, before the layer is resolved, so that the bundler wraps the
+ * module again once the file is fixed or the layer declared. The global CSS
+ * is read again only after one of its files has changed, and a read that
+ * failed is tried again on the next call.
+ */
+export function createLayerWrapper(
+  config: LayerConfig,
+): (source: string, file: string, depend: (file: string) => void) => Promise<WrapResult | null> {
+  const matches = createMatcher(config);
+  /** A read of the global CSS, with the modification time of each file it read. */
+  type Read = { css: Promise<GlobalCss>; stamps: Map<string, number | null> };
+  let last: Read | undefined;
+
+  const read = (): Read => {
+    const stamps = new Map<string, number | null>();
+    // Stamped before reading, so that a file saved while it is read counts as changed.
+    const css = loadGlobalCss(config, (file) => stamps.set(file, modified(file)));
+    return { css, stamps };
+  };
+  const unchanged = ({ css, stamps }: Read) =>
+    css.then(
+      () => [...stamps].every(([file, stamp]) => modified(file) === stamp),
+      () => false,
+    );
+  const current = async (): Promise<Read> => {
+    const before = last;
+    if (before && (await unchanged(before))) return before;
+    // Calls that waited on the same stale read share the one that replaces it.
+    if (last === undefined || last === before) last = read();
+    return last;
+  };
+
+  return async (source, file, depend) => {
+    if (config.layer === undefined || !matches(file)) return null;
+    const { css, stamps } = await current();
+    const globalCss = await css.finally(() => {
+      for (const dependency of stamps.keys()) depend(dependency);
+    });
+    return wrapInLayer(source, file, resolveLayer(config.layer, globalCss));
+  };
+}
+
+function modified(file: string): number | null {
+  return statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? null;
+}
+
 /** `@import url` becomes `@import url layer(name)`, unless it names a layer of its own. */
 function importIntoLayer(rule: AtRule, name: string): void {
-  const parts = splitImport(rule);
-  if (parts && layerOfImport(rule) === null)
-    rule.params = `${parts.url} layer(${name})${parts.rest}`;
-}
-
-/** The layer an `@import` imports into: its name, "" for an anonymous one, or null for none. */
-function layerOfImport(rule: AtRule): string | null {
-  const rest = splitImport(rule)?.rest ?? "";
-  const layer = /^\s*layer(?:\(\s*([^)]*?)\s*\)|\b)/i.exec(rest);
-  return layer ? (layer[1] ?? "") : null;
-}
-
-const STRING = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`;
-const IMPORT_URL = new RegExp(String.raw`^\s*(?:url\(\s*(?:${STRING}|[^)]*)\s*\)|${STRING})`, "i");
-
-/** The URL an `@import` starts with, and what follows it. */
-function splitImport(rule: AtRule): { url: string; rest: string } | null {
-  const url = IMPORT_URL.exec(rule.params);
-  return url ? { url: url[0], rest: rule.params.slice(url[0].length) } : null;
+  const prelude = readImport(rule.params);
+  if (prelude?.layer !== null) return;
+  const { params } = rule;
+  rule.params = `${params.slice(0, prelude.urlEnd)} layer(${name})${params.slice(prelude.urlEnd)}`;
 }
 
 /**
  * Report what breaks when the plugins wrap the module in `layer`: an `@layer`
  * of its own, which would nest, and `composes`.
  */
-export function checkLayer(analysis: CssModuleAnalysis, layer: string): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-  const report = (node: ChildNode, keyword: string, rule: string, message: string) => {
+export function checkLayer(
+  root: Root,
+  file: string,
+  layer: Layer,
+  report: (node: Node, found: Diagnostic[]) => void,
+): void {
+  const at = (node: ChildNode, keyword: string, rule: RuleId, message: string) => {
     const start = node.source?.start ?? { line: 1, column: 1 };
-    diagnostics.push({
-      file: analysis.file,
+    const diagnostic: Diagnostic = {
+      file,
       line: start.line,
       column: start.column,
       endLine: start.line,
       endColumn: start.column + keyword.length,
       rule,
       message,
-    });
+    };
+    report(node, [diagnostic]);
   };
-  analysis.root.walkAtRules(/^layer$/i, (atRule) => {
-    report(
+  root.walkAtRules(/^layer$/i, (atRule) => {
+    at(
       atRule,
       `@${atRule.name}`,
       "layer/nested",
-      `the plugins already put this module in the "${layer}" layer, so this @layer nests inside it; leave the layer to the plugins`,
+      `the plugins already put this module in the "${layer.name}" layer, so this @layer nests inside it; leave the layer to the plugins`,
     );
   });
-  analysis.root.walkDecls(/^composes$/i, (declaration) => {
-    report(declaration, declaration.prop, "layer/composes", COMPOSES_MESSAGE);
+  root.walkDecls(/^composes$/i, (declaration) => {
+    at(declaration, declaration.prop, "layer/composes", COMPOSES_MESSAGE);
   });
-  return diagnostics;
 }
 
 function isAtRule(node: ChildNode, name: string): node is AtRule {

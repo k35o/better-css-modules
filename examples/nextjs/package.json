@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "typecheck": "next typegen && better-css-modules generate && tsc --noEmit"
+    "check": "better-css-modules check",
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "next": "16.3.1",
@@ -15,10 +16,13 @@
   },
   "devDependencies": {
     "@better-css-modules/cli": "workspace:*",
+    "@better-css-modules/core": "workspace:*",
     "@better-css-modules/turbopack": "workspace:*",
     "@types/node": "24.12.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "typescript": "7.0.2"
+    "postcss": "8.5.8",
+    "typescript": "7.0.2",
+    "vite-plus": "catalog:"
   }
 }

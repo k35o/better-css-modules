@@ -1,21 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import fg from "fast-glob";
 import { SourceMapGenerator } from "source-map-js";
-import type { Config } from "./config.js";
-import type { CssModuleAnalysis, SourcePosition } from "./css.js";
-import type { Diagnostic } from "./diagnostic.js";
-import { loadCssModule, loadCssModules, syntaxDiagnosticFrom } from "./project.js";
+import { isOutside, type ResolvedConfig } from "./config.js";
+import type { CssModuleAnalysis, SourcePosition, SourceRange } from "./css.js";
+import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
+import { findCssModules, loadCssModule, loadCssModules } from "./project.js";
 
-export interface OutputOptions {
-  /** Project root; generated files mirror paths relative to it. */
-  cwd: string;
-  outDir: string;
-}
+/** Generated files mirror paths relative to the root. */
+type OutputOptions = Pick<ResolvedConfig, "root" | "outDir">;
 
-export interface DtsOptions extends OutputOptions {
-  /** Declare the keys as named exports instead of properties of a default export. */
-  namedExports: boolean;
-}
+type DtsOptions = Pick<ResolvedConfig, "root" | "outDir" | "namedExports">;
 
 function quoteUnlessIdentifier(name: string): string {
   return /^[a-zA-Z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
@@ -23,7 +18,7 @@ function quoteUnlessIdentifier(name: string): string {
 
 /**
  * One line of a generated `.d.ts`, with the columns that lead back to the
- * stylesheet: to the first occurrence of a key, or to the top of the file.
+ * stylesheet: to where a key is declared, or to the top of the file.
  */
 interface DtsLine {
   text: string;
@@ -73,13 +68,27 @@ function namedExportLines(keys: string[]): DtsLine[] {
   ];
 }
 
-/** Where each key first appears in the stylesheet. */
+/**
+ * Where each key is first declared in the stylesheet, or, for a keyframes name
+ * no @keyframes declares, where an animation first refers to it.
+ */
 function firstOccurrences({
   classes,
   identifiers,
 }: Pick<CssModuleAnalysis, "classes" | "identifiers">): Map<string, SourcePosition> {
+  const declarations = earliest([
+    ...classes,
+    ...identifiers.filter(({ kind }) => kind !== "animation"),
+  ]);
+  const references = earliest(identifiers.filter(({ kind }) => kind === "animation"));
+  return new Map([...references, ...declarations]);
+}
+
+function earliest(
+  occurrences: { name: string; range: SourceRange }[],
+): Map<string, SourcePosition> {
   const first = new Map<string, SourcePosition>();
-  for (const { name, range } of [...classes, ...identifiers]) {
+  for (const { name, range } of occurrences) {
     const seen = first.get(name);
     const earlier =
       !seen ||
@@ -90,7 +99,7 @@ function firstOccurrences({
   return first;
 }
 
-export interface GeneratedDts {
+interface GeneratedDts {
   /** The `.d.ts` source, ending with the comment that points to its map. */
   dts: string;
   /** The declaration map, which leads go-to-definition from a key to the stylesheet. */
@@ -100,7 +109,7 @@ export interface GeneratedDts {
 /**
  * Generate the `.d.ts` of a module, with its keys as properties of the default
  * export or as named exports, and the declaration map that ties each key to
- * where it first appears in the stylesheet.
+ * where the stylesheet first declares it.
  */
 export function generateDts(
   analysis: Pick<CssModuleAnalysis, "file" | "exportNames" | "classes" | "identifiers">,
@@ -128,27 +137,29 @@ export function generateDts(
     }
   });
   const text = lines.map((line) => `${line.text}\n`).join("");
-  return {
-    dts: `${text}//# sourceMappingURL=${path.basename(dtsPath)}.map\n`,
-    map: map.toString(),
-  };
+  return { dts: `${text}${mapComment(dtsPath)}`, map: map.toString() };
+}
+
+/** The last line of every `.d.ts` the tool writes. */
+function mapComment(dtsPath: string): string {
+  return `//# sourceMappingURL=${path.basename(dtsPath)}.map\n`;
 }
 
 /**
- * Where the `.d.ts` for a CSS Modules file goes. Files outside `cwd` are refused
- * instead of escaping `outDir`, because `rootDirs` could not map them anyway.
+ * Where the `.d.ts` for a CSS Modules file goes. Files outside the root are
+ * refused instead of escaping `outDir`, because `rootDirs` could not map them anyway.
  */
-export function dtsPathFor(cssFile: string, { cwd, outDir }: OutputOptions): string {
-  const relative = path.relative(cwd, cssFile);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+export function dtsPathFor(cssFile: string, { root, outDir }: OutputOptions): string {
+  const relative = path.relative(root, cssFile);
+  if (isOutside(relative)) {
     throw new Error(
-      `${cssFile} is outside the project root ${cwd}; generated .d.ts files mirror paths relative to the root`,
+      `${cssFile} is outside the project root ${root}; generated .d.ts files mirror paths relative to the root`,
     );
   }
-  return path.join(cwd, outDir, `${relative}.d.ts`);
+  return path.join(root, outDir, `${relative}.d.ts`);
 }
 
-export async function writeDts(analysis: CssModuleAnalysis, options: DtsOptions): Promise<string> {
+async function writeDts(analysis: CssModuleAnalysis, options: DtsOptions): Promise<string> {
   const dtsPath = dtsPathFor(analysis.file, options);
   const { dts, map } = generateDts(analysis, dtsPath, options);
   await fs.mkdir(path.dirname(dtsPath), { recursive: true });
@@ -164,53 +175,106 @@ async function writeIfChanged(file: string, content: string): Promise<void> {
   if (current !== content) await fs.writeFile(file, content, "utf-8");
 }
 
-export async function removeDts(cssFile: string, options: OutputOptions): Promise<string> {
-  const dtsPath = dtsPathFor(cssFile, options);
-  await Promise.all([fs.rm(dtsPath, { force: true }), fs.rm(`${dtsPath}.map`, { force: true })]);
-  return dtsPath;
+/** Remove a .d.ts and its map, and tell whether there was a .d.ts. */
+async function removeDts(dtsPath: string): Promise<boolean> {
+  const [removed] = await Promise.all([
+    fs.rm(dtsPath).then(
+      () => true,
+      (error: unknown) => {
+        if (isMissing(error)) return false;
+        throw error;
+      },
+    ),
+    fs.rm(`${dtsPath}.map`, { force: true }),
+  ]);
+  return removed;
 }
 
-export interface RegenerateResult {
-  /** Path of the `.d.ts`, or null when the stylesheet could not be parsed. */
-  dtsPath: string | null;
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+interface RegenerateResult {
+  /** Path of the `.d.ts` written, or null when there is none to write. */
+  generated: string | null;
+  /** Path of the `.d.ts` removed because its stylesheet is gone, or null. */
+  removed: string | null;
   diagnostics: Diagnostic[];
 }
 
 /**
- * Regenerate the `.d.ts` of one file after it changed. A stylesheet that does
- * not parse (typically mid-edit) yields a diagnostic and leaves the previous
- * `.d.ts` in place.
+ * Bring the `.d.ts` of one file in line with it after it was added, changed
+ * or deleted. A stylesheet that does not parse (typically mid-edit) yields a
+ * diagnostic and leaves the previous `.d.ts` in place.
  */
 export async function regenerateDts(
   cssFile: string,
   options: DtsOptions,
 ): Promise<RegenerateResult> {
-  let analysis: CssModuleAnalysis;
-  try {
-    analysis = await loadCssModule(cssFile);
-  } catch (error) {
-    const diagnostic = syntaxDiagnosticFrom(error, cssFile);
-    if (!diagnostic) throw error;
-    return { dtsPath: null, diagnostics: [diagnostic] };
+  // Reading is the test of whether the stylesheet is gone: checking first
+  // would race a deletion that lands between the check and the read.
+  const loaded = await loadCssModule(cssFile).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!loaded) {
+    const dtsPath = dtsPathFor(cssFile, options);
+    const removed = await removeDts(dtsPath);
+    return { generated: null, removed: removed ? dtsPath : null, diagnostics: [] };
   }
-  return { dtsPath: await writeDts(analysis, options), diagnostics: analysis.diagnostics };
+  const { analysis, diagnostics } = loaded;
+  const generated = analysis && (await writeDts(analysis, options));
+  return { generated, removed: null, diagnostics };
 }
 
 export interface GenerateResult {
   /** Paths of the `.d.ts` files, written or already up to date. */
-  written: string[];
+  files: string[];
+  /** Paths of the `.d.ts` files removed because no included stylesheet produces them any more. */
+  removed: string[];
+  /** The syntax problems of the stylesheets, sorted. */
   diagnostics: Diagnostic[];
 }
 
 /**
- * Generate `.d.ts` files for every CSS Modules file the config includes.
+ * Generate `.d.ts` files for every CSS Modules file the config includes, and
+ * remove the ones it wrote for stylesheets it no longer includes.
  */
-export async function generateAll(
-  config: Config,
-  cwd: string = process.cwd(),
-): Promise<GenerateResult> {
-  const { modules, diagnostics } = await loadCssModules(config, cwd);
-  const output = { cwd, outDir: config.outDir, namedExports: config.namedExports };
-  const written = await Promise.all(modules.map((analysis) => writeDts(analysis, output)));
-  return { written, diagnostics: [...diagnostics, ...modules.flatMap((m) => m.diagnostics)] };
+export async function generate(config: ResolvedConfig): Promise<GenerateResult> {
+  const found = await findCssModules(config);
+  const { modules, diagnostics } = await loadCssModules(found);
+  const files = await Promise.all(modules.map((analysis) => writeDts(analysis, config)));
+  // A stylesheet that does not parse keeps its previous .d.ts.
+  const produced = new Set(found.map((file) => dtsPathFor(file, config)));
+  const stale = (await outputsIn(config)).filter((dtsPath) => !produced.has(dtsPath));
+  const written = await Promise.all(stale.map(wroteDts));
+  const removed = stale.filter((_, index) => written[index]);
+  await Promise.all(removed.map(removeDts));
+  return { files, removed, diagnostics: sortDiagnostics(diagnostics) };
+}
+
+/**
+ * Whether the tool wrote a `.d.ts`, or left its map behind. With outDir at
+ * the root, a `.d.ts` next to an excluded stylesheet may be hand-written.
+ */
+async function wroteDts(dtsPath: string): Promise<boolean> {
+  const dts = await fs.readFile(dtsPath, "utf-8").catch(() => null);
+  return dts === null || dts.endsWith(mapComment(dtsPath));
+}
+
+/**
+ * The `.d.ts` paths in outDir that this config could have produced, whether
+ * the `.d.ts` or only its map is there. Only names an include pattern gives
+ * are taken, because outDir may hold other files, or be the root itself.
+ */
+async function outputsIn(config: ResolvedConfig): Promise<string[]> {
+  const patterns = config.include
+    .filter((pattern) => !pattern.startsWith("!"))
+    .flatMap((pattern) => [`${pattern}.d.ts`, `${pattern}.d.ts.map`]);
+  const outputs = await fg(patterns, {
+    cwd: path.join(config.root, config.outDir),
+    ignore: ["**/node_modules/**"],
+    absolute: true,
+  });
+  return [...new Set(outputs.map((file) => path.resolve(file.replace(/\.map$/, ""))))].sort();
 }

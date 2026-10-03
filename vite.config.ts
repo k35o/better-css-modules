@@ -7,6 +7,6 @@ export default defineConfig({
     ignorePatterns: ["**/CHANGELOG.md", ".changeset"],
   },
   staged: {
-    "*.{js,ts,tsx,md}": "vp check --fix",
+    "*.{js,mjs,cjs,ts,mts,tsx,css,json,yaml,yml,md}": "vp check --fix",
   },
 });

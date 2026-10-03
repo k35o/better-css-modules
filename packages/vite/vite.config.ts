@@ -5,6 +5,9 @@ export default defineConfig({
     tasks: {
       build: {
         command: "vp pack",
+        // The bundle takes in the private unplugin package from its dist, so
+        // a build that runs before unplugin's would import it instead.
+        dependsOn: [{ task: "build", from: "devDependencies" }],
         cache: {
           input: [{ auto: true }, "!dist/**", "!node_modules/**"],
         },

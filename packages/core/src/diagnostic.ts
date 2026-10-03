@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { RuleId } from "./rules.js";
 
 export interface Diagnostic {
   /** Absolute path of the file the diagnostic points at. */
@@ -7,10 +8,11 @@ export interface Diagnostic {
   line: number;
   /** 1-based column. */
   column: number;
+  /** 1-based line of the end of the range. */
   endLine?: number;
+  /** 1-based column just after the last character of the range, as in SARIF. */
   endColumn?: number;
-  /** Rule identifier such as `unused-class`. */
-  rule: string;
+  rule: RuleId;
   message: string;
 }
 

@@ -1,0 +1,16 @@
+@layer reset, components, utilities;
+
+@layer reset {
+  body {
+    margin: 0;
+  }
+}
+
+:root {
+  --color-fg: #333;
+  --color-fg-muted: #666;
+  --color-bg-subtle: #f4f4f5;
+  --spacing-4: 1rem;
+  --spacing-8: 2rem;
+  --radius-md: 0.5rem;
+}

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import {
   type Diagnostic,
   formatDiagnostic,
@@ -12,14 +12,14 @@ const diagnostic: Diagnostic = {
   column: 5,
   endLine: 3,
   endColumn: 7,
-  rule: "unused-class",
+  rule: "usage/unused-class",
   message: ".x is never used",
 };
 
 describe("formatDiagnostic", () => {
   it("prints path:line:col with the path relative to cwd", () => {
     expect(formatDiagnostic(diagnostic, "/project")).toBe(
-      "src/a.module.css:3:5 error unused-class: .x is never used",
+      "src/a.module.css:3:5 error usage/unused-class: .x is never used",
     );
   });
 });
@@ -27,7 +27,7 @@ describe("formatDiagnostic", () => {
 describe("formatGitHubAnnotation", () => {
   it("emits an error workflow command with the range and rule", () => {
     expect(formatGitHubAnnotation(diagnostic, "/project")).toBe(
-      "::error file=src/a.module.css,line=3,col=5,endLine=3,endColumn=7,title=unused-class::.x is never used",
+      "::error file=src/a.module.css,line=3,col=5,endLine=3,endColumn=7,title=usage/unused-class::.x is never used",
     );
   });
 
@@ -42,7 +42,9 @@ describe("formatGitHubAnnotation", () => {
       },
       "/project",
     );
-    expect(annotated).toBe("::error file=a%2Cb.css,line=3,col=5,title=unused-class::x%0Ay%25");
+    expect(annotated).toBe(
+      "::error file=a%2Cb.css,line=3,col=5,title=usage/unused-class::x%0Ay%25",
+    );
   });
 });
 

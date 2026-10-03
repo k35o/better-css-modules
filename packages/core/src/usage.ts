@@ -2,15 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import { parseSync, type ParseResult } from "oxc-parser";
+import type { Node } from "postcss";
 import { ResolverFactory } from "oxc-resolver";
 import { isReferenceIdentifier, ScopeTracker, walk } from "oxc-walker";
-import type { Config } from "./config.js";
-import type { CssModuleAnalysis, SourcePosition } from "./css.js";
-import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
-import { defaultIgnore, findCssModules, loadCssModuleFiles } from "./project.js";
+import type { ResolvedConfig } from "./config.js";
+import type { ClassOccurrence, CssModuleAnalysis, SourcePosition } from "./css.js";
+import type { Diagnostic } from "./diagnostic.js";
+import { defaultIgnore } from "./project.js";
 
 const SOURCE_GLOBS = ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"];
-const IGNORED_DIRS = [".git", "dist", ".next"];
+// Build outputs, which can hold megabytes of bundled JS. Only at the root:
+// below it, a directory of one of these names is as likely a route or a
+// component folder. Dot directories such as .next need no entry: fast-glob
+// does not enter them.
+const IGNORED_DIRS = ["dist", "build", "out", "coverage", "storybook-static"];
 
 /** Expression wrappers that do not change what is referenced. */
 const TS_WRAPPERS = new Set([
@@ -41,6 +46,19 @@ interface ModuleUsage {
   opaque: Opaque[];
   /** Files that import the module, including CSS files referring to it. */
   importers: Set<string>;
+}
+
+interface Binding {
+  css: string;
+  namespace: boolean;
+}
+
+/** A usage problem and the CSS Modules file it is about, whose disable comments apply to it. */
+export interface UsageProblem {
+  module: string;
+  /** The node a next-line disable comment must precede, or null when only a file-wide one applies. */
+  node: Node | null;
+  diagnostic: Diagnostic;
 }
 
 interface SourceFile {
@@ -85,29 +103,20 @@ interface ObjectPatternNode extends AstNode {
   properties: AstNode[];
 }
 
-export interface UsageResult {
-  diagnostics: Diagnostic[];
-  /** The analysis of every included CSS file that parses, at its real path. */
-  modules: CssModuleAnalysis[];
-}
-
 /**
- * Find CSS Modules classes that no source file uses.
+ * Find CSS Modules classes and modules that no source file uses.
  *
  * Usage is aggregated per CSS file across the whole project and reported at
  * the CSS side; places where usage cannot be determined statically (dynamic
  * access, the module object escaping as a value) are reported at the source
- * side instead of guessing. The CSS analyses come back too, so that checks of
- * their own run without parsing the files again.
+ * side instead of guessing. The modules must be loaded from their real paths,
+ * which is how resolved imports come back.
  */
 export async function analyzeUsage(
-  config: Config,
-  cwd: string = process.cwd(),
-): Promise<UsageResult> {
-  // Resolved imports come back as real paths, so every path here is canonical.
-  const root = fs.realpathSync(cwd);
-  const cssFiles = (await findCssModules(config, root)).map((file) => fs.realpathSync(file));
-  const { modules, diagnostics } = await loadCssModuleFiles(cssFiles);
+  modules: CssModuleAnalysis[],
+  config: ResolvedConfig,
+): Promise<UsageProblem[]> {
+  const root = fs.realpathSync(config.root);
   const byPath = new Map(modules.map((analysis) => [analysis.file, analysis]));
   const usage = new Map<string, ModuleUsage>(
     modules.map((analysis) => [
@@ -125,7 +134,8 @@ export async function analyzeUsage(
     });
     return { file, source, result };
   });
-  const rel = (file: string) => relative(root, file);
+  // Relative to the cwd like the locations of diagnostics, since --config can root the project elsewhere.
+  const rel = (file: string) => relative(process.cwd(), file);
   const markOpaque = (css: string, opaque: Opaque) => {
     const target = usage.get(css)!;
     if (!target.opaque.some((o) => o.file === opaque.file && o.offset === opaque.offset)) {
@@ -151,7 +161,7 @@ export async function analyzeUsage(
           markOpaque(css, {
             file,
             offset: entry.start,
-            message: `${rel(css)} is re-exported wholesale, so its usage cannot be determined`,
+            message: `the module is re-exported wholesale here, so usage of ${rel(css)} cannot be determined`,
           });
         }
       }
@@ -173,7 +183,7 @@ export async function analyzeUsage(
           markOpaque(css, {
             file,
             offset: entry.start,
-            message: `${rel(css)} is re-exported through another module, so its usage cannot be determined`,
+            message: `the module is re-exported here through another module, so usage of ${rel(css)} cannot be determined`,
           });
         }
       }
@@ -181,8 +191,8 @@ export async function analyzeUsage(
   }
 
   for (const { file, source, result } of files) {
-    // local identifier -> CSS module whose default (or namespace) export it holds
-    const bindings = new Map<string, string>();
+    // local identifier -> CSS module whose default export or namespace object it holds
+    const bindings = new Map<string, Binding>();
     const imported = new Set<string>();
     for (const staticImport of result.module.staticImports) {
       // `import type styles from` never loads the stylesheet.
@@ -198,7 +208,10 @@ export async function analyzeUsage(
           if (entry.importName.kind === "Name" && entry.importName.name !== "default") {
             usage.get(resolved)!.used.add(entry.importName.name ?? "");
           } else {
-            bindings.set(entry.localName.value, resolved);
+            bindings.set(entry.localName.value, {
+              css: resolved,
+              namespace: entry.importName.kind === "NamespaceObject",
+            });
           }
         }
         continue;
@@ -213,7 +226,7 @@ export async function analyzeUsage(
             markOpaque(css, {
               file,
               offset: staticImport.start,
-              message: `${rel(css)} is reached through a namespace import, so its usage cannot be determined`,
+              message: `the module is reached here through a namespace import, so usage of ${rel(css)} cannot be determined`,
             });
           }
           continue;
@@ -223,7 +236,7 @@ export async function analyzeUsage(
         if (!css) continue;
         usage.get(css)!.importers.add(file);
         imported.add(css);
-        bindings.set(entry.localName.value, css);
+        bindings.set(entry.localName.value, { css, namespace: false });
       }
     }
     for (const dynamicImport of result.module.dynamicImports) {
@@ -236,7 +249,7 @@ export async function analyzeUsage(
       markOpaque(css, {
         file,
         offset: dynamicImport.start,
-        message: `${rel(css)} is imported dynamically, so its usage cannot be determined`,
+        message: `the module is imported dynamically here, so usage of ${rel(css)} cannot be determined`,
       });
     }
     if (result.errors.length > 0) {
@@ -254,20 +267,21 @@ export async function analyzeUsage(
 
   linkCssReferences(modules, byPath, usage, resolvers);
 
-  const found: Diagnostic[] = [
-    ...diagnostics,
-    ...modules.flatMap((analysis) => analysis.diagnostics),
-  ];
+  const found: UsageProblem[] = [];
   const sourcesByPath = new Map(files.map((entry) => [entry.file, entry.source]));
   for (const analysis of modules) {
     const moduleUsage = usage.get(analysis.file)!;
     if (moduleUsage.importers.size === 0) {
       found.push({
-        file: analysis.file,
-        line: 1,
-        column: 1,
-        rule: "unused-module",
-        message: `${rel(analysis.file)} is never imported`,
+        module: analysis.file,
+        node: null,
+        diagnostic: {
+          file: analysis.file,
+          line: 1,
+          column: 1,
+          rule: "usage/unused-module",
+          message: `${rel(analysis.file)} is never imported`,
+        },
       });
       continue;
     }
@@ -275,35 +289,46 @@ export async function analyzeUsage(
       for (const opaque of moduleUsage.opaque) {
         const position = positionAt(sourcesByPath.get(opaque.file) ?? "", opaque.offset);
         found.push({
-          file: opaque.file,
-          ...position,
-          rule: "unanalyzable-usage",
-          message: opaque.message,
+          module: analysis.file,
+          node: null,
+          diagnostic: {
+            file: opaque.file,
+            ...position,
+            rule: "usage/unanalyzable",
+            message: opaque.message,
+          },
         });
       }
       continue;
     }
-    for (const name of analysis.classNames) {
+    const firstOccurrences = new Map<string, ClassOccurrence>();
+    for (const occurrence of analysis.classes) {
+      if (!firstOccurrences.has(occurrence.name)) firstOccurrences.set(occurrence.name, occurrence);
+    }
+    for (const [name, first] of firstOccurrences) {
       if (isUsed(moduleUsage, name)) continue;
-      const first = analysis.classes.find((occurrence) => occurrence.name === name)!;
       found.push({
-        file: analysis.file,
-        line: first.range.start.line,
-        column: first.range.start.column,
-        endLine: first.range.end.line,
-        endColumn: first.range.end.column,
-        rule: "unused-class",
-        message: `.${name} is never used`,
+        module: analysis.file,
+        node: first.node,
+        diagnostic: {
+          file: analysis.file,
+          line: first.range.start.line,
+          column: first.range.start.column,
+          endLine: first.range.end.line,
+          endColumn: first.range.end.column,
+          rule: "usage/unused-class",
+          message: `.${name} is never used`,
+        },
       });
     }
   }
-  return { diagnostics: sortDiagnostics(found), modules };
+  return found;
 }
 
 function collectReferences(
   file: string,
   result: ParseResult,
-  bindings: Map<string, string>,
+  bindings: Map<string, Binding>,
   usage: Map<string, ModuleUsage>,
   markOpaque: (css: string, opaque: Opaque) => void,
   rel: (file: string) => string,
@@ -320,48 +345,52 @@ function collectReferences(
       ancestors.push(node);
       if (node.type !== "Identifier" || !rawParent) return;
       const name = (node as IdentifierNode).name;
-      const css = bindings.get(name);
-      if (!css) return;
+      const binding = bindings.get(name);
+      if (!binding) return;
       if (!isReferenceIdentifier(rawNode, rawParent, { mode: "value" })) return;
       const declaration = scopeTracker.getDeclaration(name);
       if (declaration && declaration.type !== "Import") return;
+      if (rawParent.type === "TSTypeQuery") return;
 
-      // Look through `styles as T`, `styles!` and the like to the real consumer.
-      let child: AstNode = node;
-      let index = ancestors.length - 2;
-      while (
-        index >= 0 &&
-        TS_WRAPPERS.has(ancestors[index].type) &&
-        (ancestors[index] as WrapperNode).expression === child
-      ) {
-        child = ancestors[index];
-        index--;
+      const { css } = binding;
+      let namespace = binding.namespace;
+      let subject = name;
+      let at = throughWrappers(ancestors, ancestors.length - 1);
+      let parent = ancestors[at - 1];
+      // `s.default` holds what a default import of the module would.
+      if (namespace && isObjectOf(parent, ancestors[at]) && staticKeyOf(parent) === "default") {
+        namespace = false;
+        subject = `${name}.default`;
+        at = throughWrappers(ancestors, at - 1);
+        parent = ancestors[at - 1];
       }
-      const parent = ancestors[index];
+      const child = ancestors[at];
       const target = usage.get(css)!;
 
-      if (parent.type === "MemberExpression" && (parent as MemberExpressionNode).object === child) {
-        const { property, computed } = parent as MemberExpressionNode;
-        if (!computed && property.type === "Identifier") {
-          target.used.add((property as IdentifierNode).name);
+      if (isObjectOf(parent, child)) {
+        const key = staticKeyOf(parent);
+        if (key !== null) {
+          target.used.add(key);
           return;
         }
-        if (property.type === "Literal" && typeof (property as LiteralNode).value === "string") {
-          target.used.add((property as LiteralNode).value as string);
-          return;
-        }
+        const { property } = parent;
         if (property.type === "TemplateLiteral") {
           const { quasis, expressions } = property as TemplateLiteralNode;
           const head = quasis[0]?.value.cooked ?? "";
           const tail = quasis.at(-1)?.value.cooked ?? "";
-          if (expressions.length === 0) target.used.add(head);
-          else target.patterns.push({ head, tail });
-          return;
+          if (expressions.length === 0) {
+            target.used.add(head);
+            return;
+          }
+          if (head !== "" || tail !== "") {
+            target.patterns.push({ head, tail });
+            return;
+          }
         }
         markOpaque(css, {
           file,
           offset: parent.start,
-          message: `dynamic access to ${rel(css)} hides which classes are used`,
+          message: `a class is accessed dynamically here, so usage of ${rel(css)} cannot be determined`,
         });
         return;
       }
@@ -370,11 +399,11 @@ function collectReferences(
         if (declarator.init === child && declarator.id.type === "ObjectPattern") {
           for (const property of (declarator.id as ObjectPatternNode).properties) {
             const key = keyNameOf(property);
-            if (key === null) {
+            if (key === null || (namespace && key === "default")) {
               markOpaque(css, {
                 file,
                 offset: property.start,
-                message: `destructuring ${rel(css)} this way hides which classes are used`,
+                message: `the module is destructured here without naming each class, so usage of ${rel(css)} cannot be determined`,
               });
               return;
             }
@@ -386,10 +415,36 @@ function collectReferences(
       markOpaque(css, {
         file,
         offset: node.start,
-        message: `${name} escapes as a value here, so usage of ${rel(css)} cannot be determined`,
+        message: `${subject} escapes as a value here, so usage of ${rel(css)} cannot be determined`,
       });
     },
   });
+}
+
+/** The outermost of `x as T`, `x!` and the like around `ancestors[index]`, which is what consumes it. */
+function throughWrappers(ancestors: AstNode[], index: number): number {
+  while (
+    index > 0 &&
+    TS_WRAPPERS.has(ancestors[index - 1].type) &&
+    (ancestors[index - 1] as WrapperNode).expression === ancestors[index]
+  ) {
+    index--;
+  }
+  return index;
+}
+
+function isObjectOf(parent: AstNode, child: AstNode): parent is MemberExpressionNode {
+  return parent.type === "MemberExpression" && (parent as MemberExpressionNode).object === child;
+}
+
+/** The property `x.name` or `x["name"]` reads, or null when it is computed. */
+function staticKeyOf(member: MemberExpressionNode): string | null {
+  const { property, computed } = member;
+  if (!computed && property.type === "Identifier") return (property as IdentifierNode).name;
+  if (property.type === "Literal" && typeof (property as LiteralNode).value === "string") {
+    return (property as LiteralNode).value as string;
+  }
+  return null;
 }
 
 /** The static key of an object-pattern property, or null for `...rest` and computed keys. */
@@ -414,20 +469,20 @@ function linkCssReferences(
 ): void {
   const edges: { from: string; className: string; to: string; names: string[] }[] = [];
   for (const analysis of modules) {
-    for (const value of analysis.values) {
-      if (value.from === null) continue;
-      const to = resolvers.resolve(analysis.file, value.from);
+    for (const specifier of analysis.valueImports) {
+      const to = resolvers.resolve(analysis.file, specifier);
       if (to && byPath.has(to) && to !== analysis.file) usage.get(to)!.importers.add(analysis.file);
     }
     for (const composes of analysis.composes) {
-      if (composes.from.kind === "global") continue;
+      const { className } = composes;
+      if (className === null || composes.from.kind === "global") continue;
       const to =
         composes.from.kind === "local"
           ? analysis.file
           : resolvers.resolve(analysis.file, composes.from.specifier);
       if (!to || !byPath.has(to)) continue;
       if (to !== analysis.file) usage.get(to)!.importers.add(analysis.file);
-      edges.push({ from: analysis.file, className: composes.className, to, names: composes.names });
+      edges.push({ from: analysis.file, className, to, names: composes.names });
     }
   }
   let changed = true;
@@ -453,8 +508,8 @@ function isUsed(moduleUsage: ModuleUsage, name: string): boolean {
   );
 }
 
-async function findSources(config: Config, cwd: string): Promise<string[]> {
-  const ignore = [...defaultIgnore(config), ...IGNORED_DIRS.map((dir) => `**/${dir}/**`)];
+async function findSources(config: ResolvedConfig, cwd: string): Promise<string[]> {
+  const ignore = [...defaultIgnore(config), ...IGNORED_DIRS.map((dir) => `${dir}/**`)];
   const files = await fg(SOURCE_GLOBS, { cwd, ignore, absolute: true });
   return files.filter((file) => !/\.d\.[mc]?ts$/.test(file)).sort();
 }
