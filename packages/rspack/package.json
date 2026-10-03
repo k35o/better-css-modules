@@ -1,6 +1,6 @@
 {
   "name": "@better-css-modules/rspack",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Rspack plugin for better-css-modules",
   "keywords": [
     "css-modules",
