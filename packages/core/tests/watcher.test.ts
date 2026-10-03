@@ -169,6 +169,39 @@ describe("createSync", () => {
     await expect(fs.access(path.join(root, "__generated__"))).rejects.toThrow();
   });
 
+  it("syncs overlapping events of one file one after the other", async () => {
+    const { css, sync, rel } = await syncing();
+    await sync(css);
+    output.log = [];
+
+    // The first sync reads the stylesheet, which is then deleted, and writes its
+    // .d.ts only after the sync of the deletion has started.
+    let markRead!: () => void;
+    let release!: () => void;
+    const read = new Promise<void>((resolve) => (markRead = resolve));
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const readFile = fs.readFile;
+    vi.spyOn(fs, "readFile").mockImplementationOnce(async (...args) => {
+      const content = await readFile(...args);
+      markRead();
+      await released;
+      return content;
+    });
+    const first = sync(css);
+    await read;
+    await fs.rm(css);
+    const second = sync(css);
+    release();
+    await Promise.all([first, second]);
+
+    const dts = rel("__generated__/src/a.module.css.d.ts");
+    await expect(fs.access(dts)).rejects.toThrow();
+    expect(output.log).toEqual([
+      `[better-css-modules] generated: ${dts}`,
+      `[better-css-modules] removed: ${dts}`,
+    ]);
+  });
+
   it("prints an error rather than throwing when the sync fails", async () => {
     const { root, css, sync, rel } = await syncing();
     // A file where the .d.ts needs a directory.

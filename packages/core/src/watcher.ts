@@ -48,8 +48,7 @@ export function createSync(config: ResolvedConfig): (file: string) => Promise<vo
   const cwd = process.cwd();
   const matches = createMatcher(config);
   const log = logger(config);
-  return async (file) => {
-    if (!matches(file)) return;
+  const syncOne = async (file: string) => {
     try {
       const { generated, removed, diagnostics } = await regenerateDts(file, config);
       if (generated) log(`generated: ${path.relative(cwd, generated)}`);
@@ -58,6 +57,20 @@ export function createSync(config: ResolvedConfig): (file: string) => Promise<vo
     } catch (error) {
       console.error(`[better-css-modules] error processing ${path.relative(cwd, file)}:`, error);
     }
+  };
+  // Events for one file overlap (Linux reports a deletion as a change and an
+  // unlink, git rewrites and deletes files in quick succession). A sync that
+  // read the file before it was deleted must not write its .d.ts after the
+  // sync of the deletion removed it, so each waits for the one before.
+  const pending = new Map<string, Promise<void>>();
+  return (file) => {
+    if (!matches(file)) return Promise.resolve();
+    const next = (pending.get(file) ?? Promise.resolve()).then(() => syncOne(file));
+    pending.set(file, next);
+    void next.then(() => {
+      if (pending.get(file) === next) pending.delete(file);
+    });
+    return next;
   };
 }
 
