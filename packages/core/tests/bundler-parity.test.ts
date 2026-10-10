@@ -73,11 +73,12 @@ function lightningcssRejectsAsImpure(css: string): boolean {
 }
 
 // pure/selector is lightningcss's pure mode: what it reports, lightningcss
-// refuses to build with `pure: true`. postcss-modules-local-by-default 4.2
-// (css-loader) agrees, except that it also rejects `:local(.a)`, and
-// `@scope to (…)` and `@scope (&)` nested in a rule. Turbopack does not use
-// pure mode; its own check is looser and builds `:root`, `html`, `a:hover`
-// and `:global(.x)`.
+// refuses to build with `pure: true`, except that a selector a :global makes
+// impure is pure/global alone. postcss-modules-local-by-default 4.2
+// (postcss-modules, css-loader) agrees, except that it also rejects
+// `:local(.a)`, and `@scope to (…)` nested in a rule; a nested `@scope (&)`
+// crashes it in any mode. Turbopack does not use pure mode; its own check is
+// looser and builds `:root`, `html`, `a:hover` and `:global(.x)`.
 describe("pure/selector matches lightningcss's pure mode", () => {
   it.each([
     "a {}",
@@ -116,8 +117,13 @@ describe("pure/selector matches lightningcss's pure mode", () => {
     ".a { @scope (.b) { p {} } }",
     "a { @scope (.b) { p {} } }",
   ])("%s", (css) => {
-    const diagnostics = checkCss(analyzeCss(css, "/x.module.css"), globalCssFrom([]));
-    const impure = diagnostics.some((diagnostic) => diagnostic.rule === "pure/selector");
+    const analysis = analyzeCss(css, "/x.module.css");
+    const diagnostics = checkCss(analysis, globalCssFrom([]));
+    const local =
+      analysis.classes.length > 0 || analysis.identifiers.some(({ kind }) => kind === "id");
+    const impure = diagnostics.some(
+      ({ rule }) => rule === "pure/selector" || (rule === "pure/global" && !local),
+    );
     expect(impure).toBe(lightningcssRejectsAsImpure(css));
   });
 });

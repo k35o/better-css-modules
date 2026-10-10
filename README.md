@@ -360,7 +360,7 @@ src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effec
 
 | Rule             | Reported at   | What it reports                                                                                                                                                                                                                                           |
 | ---------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`, `:global(.x)`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)     |
+| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)                    |
 | `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                      |
 | `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`. Modes switch by overriding tokens, not by reaching outside the module                                                                                                                              |
 | `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                              |
@@ -370,8 +370,8 @@ src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effec
 
 - A nested rule is pure through the rule it is nested in, and `&` is a local subject: `.card { &:hover {} }` and `.card { .dark & {} }` pass; `.card { p {} }` is `pure/subject`.
 - A subject is local when it holds a local class (`button.primary:hover`), or is `:is()`, `:where()` or `:nth-child(… of …)` whose every selector has a local subject.
-- A local id makes a selector pure, as it does for bundlers, and `pure/id` reports it. A subject made global or written as an id is reported only as `pure/global` or `pure/id`.
-- `pure/selector` agrees with lightningcss in pure mode; `packages/core/tests/bundler-parity.test.ts` pins this down.
+- A local id makes a selector pure, as it does for bundlers, and `pure/id` reports it. A selector or subject made global is reported only as `pure/global`, and a subject written as an id only as `pure/id`: `:global(.x) {}` is one problem, not two.
+- `pure/selector` agrees with lightningcss in pure mode, with the selectors a `:global` makes impure reported as `pure/global`; `packages/core/tests/bundler-parity.test.ts` pins this down.
 - `@layer`, `@position-try` and the other at-rules are allowed.
 
 ### Markup without classes: `@scope`

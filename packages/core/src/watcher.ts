@@ -86,7 +86,9 @@ export function startWatcher(
   const { root } = config;
   // chokidar v4+ does not support glob patterns: watch the base directories and
   // filter events with the config's globs.
-  const baseDirs = [...new Set(config.include.map(extractBaseDir))];
+  // A negated pattern excludes; it names no directory to watch.
+  const included = config.include.filter((pattern) => !pattern.startsWith("!"));
+  const baseDirs = [...new Set(included.map(extractBaseDir))];
   const sync = createSync(config);
   const outDir = path.resolve(root, config.outDir);
   const ignored = (watched: string) => {

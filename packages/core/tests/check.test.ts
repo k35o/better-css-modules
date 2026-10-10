@@ -1037,6 +1037,25 @@ describe("check", () => {
     ]);
   });
 
+  it("checks a module reached through a symlink as well as directly once", async () => {
+    const dir = await project({
+      "src/global.css": card["src/global.css"],
+      "src/real/card.module.css": card["src/card.module.css"],
+      "src/card.ts":
+        'import styles from "./alias/card.module.css";\nexport const card = styles.used;\n',
+    });
+    await fs.symlink(path.join(dir, "src/real"), path.join(dir, "src/alias"));
+    expect((await checkIn(dir)).modules).toBe(1);
+    expect(await run(dir)).toEqual([
+      "src/global.css:6:3 tokens/declaration",
+      "src/real/card.module.css:2:10 tokens/color",
+      "src/real/card.module.css:4:1 usage/unused-class",
+      "src/real/card.module.css:5:1 usage/unused-class",
+      "src/real/card.module.css:5:4 usage/unused-class",
+      "src/real/card.module.css:6:3 invalid-composes",
+    ]);
+  });
+
   describe("disable comments for the usage rules", () => {
     const next = "/* better-css-modules-disable-next-line";
     const file = "/* better-css-modules-disable";

@@ -185,8 +185,10 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
   }
   const globalCss = await loadGlobalCss(config);
   const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
-  // Resolved imports come back as real paths, so the usage analysis needs the modules at theirs.
-  const { modules, diagnostics } = await loadCssModules(files.map((file) => fs.realpathSync(file)));
+  // Resolved imports come back as real paths, so the usage analysis needs the
+  // modules at theirs; a file reached through a symlink as well is one module.
+  const real = [...new Set(files.map((file) => fs.realpathSync(file)))];
+  const { modules, diagnostics } = await loadCssModules(real);
   const usage = await analyzeUsage(modules, config);
   const found = [
     ...diagnostics,
@@ -203,7 +205,7 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
   const declared = new Set([...globalCss.tokens.values()].map(({ category }) => category));
   return {
     diagnostics: sortDiagnostics(found),
-    modules: files.length,
+    modules: real.length,
     tokens: (Object.keys(tokenCategories) as TokenCategory[]).filter((category) =>
       declared.has(category),
     ),
