@@ -1,6 +1,6 @@
 {
   "name": "@better-css-modules/turbopack",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Next.js / Turbopack integration for better-css-modules",
   "keywords": [
     "css-modules",
