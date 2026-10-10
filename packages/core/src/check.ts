@@ -689,8 +689,9 @@ function checkTimes(nodes: CssTree.CssNode[], scope: Scope): void {
 
 /**
  * Report a `var()` of a custom property that is not a token of the category.
- * A name of the category the global CSS does not declare, and outside the
- * global CSS an internal name, are left to `checkReferences`.
+ * A name of the category the global CSS does not declare is left to
+ * `checkReferences`, and so is an internal name outside the global CSS, which
+ * uses its internal names freely.
  */
 function checkToken(node: CssTree.FunctionNode, scope: Scope, inShorthand = false): void {
   const name = node.children.first;
@@ -698,8 +699,7 @@ function checkToken(node: CssTree.FunctionNode, scope: Scope, inShorthand = fals
   const { category, hint } = scope.restriction;
   const own = categoryOf(name.name);
   if (own === category) return;
-  const { tokens, global } = scope.context;
-  if (own === null && !global && tokens.has(name.name)) return;
+  if (own === null && scope.context.tokens.has(name.name)) return;
   report(
     scope,
     node,
