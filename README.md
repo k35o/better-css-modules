@@ -185,30 +185,30 @@ A config that cannot be loaded, has no default export, holds an unknown key, or 
 
 Every problem is an error. The rules of a check are named after it (`usage/`, `pure/`, `tokens/`, `layer/`); a stylesheet that is itself broken gets a plain name.
 
-| Rule                                                     | Reported at                          | Disable                                                                |
-| -------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
-| [`usage/unused-class`](#unused-class-detection)          | The first selector with the class    | Next line or file-wide                                                 |
-| [`usage/unused-module`](#unused-class-detection)         | Line 1 of the stylesheet             | File-wide                                                              |
-| [`usage/unanalyzable`](#unused-class-detection)          | The source file, where usage is lost | File-wide, in the stylesheet                                           |
-| [`pure/selector`](#pure-css-modules)                     | The selector                         | Next line or file-wide                                                 |
-| [`pure/subject`](#pure-css-modules)                      | The subject of the selector          | Next line or file-wide                                                 |
-| [`pure/global`](#pure-css-modules)                       | The `:global`                        | Next line or file-wide                                                 |
-| [`pure/id`](#pure-css-modules)                           | The id                               | Next line or file-wide                                                 |
-| [`pure/important`](#pure-css-modules)                    | `!important`                         | Next line or file-wide                                                 |
-| [`pure/at-rule`](#pure-css-modules)                      | The at-rule                          | Next line or file-wide                                                 |
-| [`pure/value`](#pure-css-modules)                        | The `@value`                         | Next line or file-wide                                                 |
-| [`tokens/<category>`](#what-passes-and-what-is-reported) | The value                            | Next line or file-wide                                                 |
-| [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`                          | Next line or file-wide                                                 |
-| [`tokens/internal`](#tokens-and-modes)                   | The `var()`                          | Next line or file-wide                                                 |
-| [`tokens/declaration`](#tokens-and-modes)                | The custom property                  | Next line or file-wide                                                 |
-| [`tokens/breakpoint`](#breakpoints)                      | The width in `@media`, or the token  | Next line or file-wide                                                 |
-| [`layer/nested`](#cascade-layers)                        | The module's own `@layer`            | Next line or file-wide                                                 |
-| [`layer/composes`](#cascade-layers)                      | The `composes`                       | Never: the plugins stop the build at `composes` in a layer             |
-| `syntax`                                                 | Where postcss or css-tree stopped    | Never: the bundlers cannot read the stylesheet either                  |
-| `invalid-composes`                                       | The `composes`                       | Never: the bundlers reject `composes` outside a rule of a single class |
-| `invalid-disable`                                        | The comment                          | Never: fix or remove the disable comment                               |
+| Rule                                                     | Reported at                          | Disable                                                                           |
+| -------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------- |
+| [`usage/unused-class`](#unused-class-detection)          | The first selector with the class    | Next line or file-wide                                                            |
+| [`usage/unused-module`](#unused-class-detection)         | Line 1 of the stylesheet             | File-wide                                                                         |
+| [`usage/unanalyzable`](#unused-class-detection)          | The source file, where usage is lost | File-wide, in the stylesheet                                                      |
+| [`pure/selector`](#pure-css-modules)                     | The selector                         | Next line or file-wide                                                            |
+| [`pure/subject`](#pure-css-modules)                      | The subject of the selector          | Next line or file-wide                                                            |
+| [`pure/global`](#pure-css-modules)                       | The `:global`                        | Next line or file-wide                                                            |
+| [`pure/id`](#pure-css-modules)                           | The id                               | Next line or file-wide                                                            |
+| [`pure/important`](#pure-css-modules)                    | `!important`                         | Next line or file-wide                                                            |
+| [`pure/at-rule`](#pure-css-modules)                      | The at-rule                          | Next line or file-wide                                                            |
+| [`pure/value`](#pure-css-modules)                        | The `@value`                         | Next line or file-wide                                                            |
+| [`tokens/<category>`](#what-passes-and-what-is-reported) | The value                            | Next line or file-wide                                                            |
+| [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`                          | Next line or file-wide                                                            |
+| [`tokens/internal`](#tokens-and-modes)                   | The `var()`                          | Next line or file-wide                                                            |
+| [`tokens/declaration`](#tokens-and-modes)                | The custom property                  | Next line or file-wide                                                            |
+| [`tokens/breakpoint`](#breakpoints)                      | The width in `@media`, or the token  | Next line or file-wide                                                            |
+| [`layer/nested`](#cascade-layers)                        | The module's own `@layer`            | Next line or file-wide                                                            |
+| [`layer/composes`](#cascade-layers)                      | The `composes`                       | Never: the plugins stop the build at `composes` in a layer                        |
+| `syntax`                                                 | Where postcss or css-tree stopped    | Never: the bundlers cannot read the stylesheet either                             |
+| `invalid-composes`                                       | The `composes`                       | Never: lightningcss rejects `composes` outside a top-level rule of a single class |
+| `invalid-disable`                                        | The comment                          | Never: fix or remove the disable comment                                          |
 
-`invalid-composes` reports `composes` in a rule whose selector is not a single local class. With a `layer`, `layer/composes` reports every `composes` instead.
+`invalid-composes` reports `composes` outside a top-level rule whose selector is a single local class: in a rule of any other selector, which both bundlers reject, and in a nested rule or a rule inside `@media`, `@layer`, `@scope` or another at-rule, which lightningcss rejects (postcss-modules builds `composes` inside an at-rule). With a `layer`, `layer/composes` reports every `composes` instead.
 
 ### Disable comments
 

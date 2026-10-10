@@ -221,8 +221,8 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
  * arithmetic on its tokens pass. Anywhere in the file a token name the global
  * CSS does not declare is reported, and so is a name it declares without a
  * category prefix, which is internal to it. A module cannot declare either kind
- * of name. `composes` outside a rule of a single local class is reported,
- * which bundlers reject. With a layer, what wrapping the module in it would
+ * of name. `composes` outside a top-level rule of a single local class is
+ * reported, which lightningcss rejects. With a layer, what wrapping the module in it would
  * break is reported too. The usage problems found about the module are
  * passed in, so that its disable comments apply to them as well. Pure: reads
  * nothing but its arguments.
@@ -253,7 +253,8 @@ export function checkCss(
       endLine: range.end.line,
       endColumn: range.end.column,
       rule: "invalid-composes",
-      message: "composes is only allowed in a rule whose selector is a single local class",
+      message:
+        "composes is only allowed in a top-level rule whose selector is a single local class",
     })),
   ]);
 }

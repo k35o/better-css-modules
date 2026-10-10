@@ -48,7 +48,9 @@ type ComposesSource = { kind: "local" } | { kind: "global" } | { kind: "file"; s
 interface ComposesDeclaration {
   /**
    * The local class whose rule holds the `composes` declaration, or null when
-   * the selector is not a single local class, where bundlers reject `composes`.
+   * the rule is not a top-level rule of a single local class: lightningcss
+   * rejects `composes` in a nested rule and inside an at-rule, and both
+   * bundlers in a rule of any other selector.
    */
   className: string | null;
   /** Composed class names. */
@@ -165,11 +167,19 @@ function unique(names: string[]): string[] {
   return [...new Set(names)].sort();
 }
 
-function walkContainer(container: Container, local: boolean, collector: Collector): void {
+/** `composing` is the class of the top-level rule the declarations belong to, or null elsewhere. */
+function walkContainer(
+  container: Container,
+  local: boolean,
+  collector: Collector,
+  composing: string | null = null,
+): void {
   container.each((node) => {
     if (node.type === "rule") visitRule(node, local, collector);
     else if (node.type === "atrule") visitAtRule(node, local, collector);
-    else if (node.type === "decl" && local) visitDeclaration(node, collector);
+    else if (node.type === "decl" && node.prop.toLowerCase() === "composes") {
+      collectComposes(node, composing, collector);
+    } else if (node.type === "decl" && local) visitDeclaration(node, collector);
   });
 }
 
@@ -187,13 +197,7 @@ function visitRule(rule: Rule, local: boolean, collector: Collector): void {
     collector.node = rule;
     singleClass = collectSelectorList(selector, startOf(rule), local, collector);
   }
-
-  rule.each((child) => {
-    if (child.type === "decl" && child.prop.toLowerCase() === "composes") {
-      collectComposes(child, singleClass, collector);
-    }
-  });
-  walkContainer(rule, blockLocal, collector);
+  walkContainer(rule, blockLocal, collector, rule.parent?.type === "root" ? singleClass : null);
 }
 
 function visitAtRule(atRule: AtRule, local: boolean, collector: Collector): void {

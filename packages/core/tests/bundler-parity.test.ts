@@ -121,3 +121,36 @@ describe("pure/selector matches lightningcss's pure mode", () => {
     expect(impure).toBe(lightningcssRejectsAsImpure(css));
   });
 });
+
+function lightningcssRejectsComposes(css: string): boolean {
+  try {
+    transform({ filename: "x.module.css", code: Buffer.from(css), cssModules: true });
+    return false;
+  } catch (error) {
+    const type = (error as { data?: { type?: string } }).data?.type ?? "";
+    return type.startsWith("InvalidComposes");
+  }
+}
+
+// invalid-composes is lightningcss's rule: composes goes in a top-level rule
+// of a single class. postcss-modules rejects composes in a nested rule too,
+// but builds it in a rule inside an at-rule.
+describe("invalid-composes matches lightningcss", () => {
+  it.each([
+    [".c {} .a { composes: c; }", "builds"],
+    [".c {} .a .b { composes: c; }", "rejects"],
+    [".c {} .a { .b { composes: c; } }", "rejects"],
+    [".c {} .a { &:hover { composes: c; } }", "rejects"],
+    [".c {} @media (width > 40rem) { .a { composes: c; } }", "builds"],
+    [".c {} @layer x { .a { composes: c; } }", "builds"],
+    [".c {} @scope (.x) { .a { composes: c; } }", "builds"],
+  ])("%s, which postcss-modules %s", async (css, postcssModules) => {
+    const diagnostics = checkCss(analyzeCss(css, "/x.module.css"), globalCssFrom([]));
+    const invalid = diagnostics.some((diagnostic) => diagnostic.rule === "invalid-composes");
+    expect(invalid).toBe(lightningcssRejectsComposes(css));
+    const built = postcssModulesKeys(css);
+    await (postcssModules === "builds"
+      ? expect(built).resolves.toBeDefined()
+      : expect(built).rejects.toThrow());
+  });
+});

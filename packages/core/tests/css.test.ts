@@ -92,6 +92,16 @@ describe("analyzeCss: composes", () => {
     expect(analysis.diagnostics).toEqual([]);
   });
 
+  it("records composes in a nested rule or inside an at-rule without a class name", () => {
+    const css =
+      ".a {}\n.b { .c { composes: a; } @media (width > 1px) { composes: a; } }\n@layer x { .d { composes: a; } }";
+    expect(analyzeCss(css, FILE).composes).toMatchObject([
+      { className: null, range: { start: { line: 2, column: 11 } } },
+      { className: null, range: { start: { line: 2, column: 49 } } },
+      { className: null, range: { start: { line: 3, column: 17 } } },
+    ]);
+  });
+
   it("accepts :local(.a) as the composing class and decodes composed names", () => {
     const analysis = analyzeCss(":local(.a) { composes: w-1\\/2 sm\\:hidden; }", FILE);
     expect(analysis.diagnostics).toEqual([]);

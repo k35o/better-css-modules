@@ -922,17 +922,52 @@ describe("checkCss: ranges", () => {
 
 describe("checkCss: composes", () => {
   const css = ".a {}\n.a .b { composes: a; }\n.c:hover {\n  composes: a;\n}\n.d { composes: a; }";
-  const rules = (layer?: { name: string; order: string[] }) =>
+  const found = (css: string, layer?: { name: string; order: string[] }) =>
     checkCss(analyzeCss(css, FILE), globalCssFrom([]), layer)
       .filter((d) => !d.rule.startsWith("pure/"))
       .map((d) => `${d.line}:${d.column}-${d.endLine}:${d.endColumn} ${d.rule}`);
 
   it("reports composes in a rule that is not a single local class", () => {
-    expect(rules()).toEqual(["2:9-2:21 invalid-composes", "4:3-4:15 invalid-composes"]);
+    expect(found(css)).toEqual(["2:9-2:21 invalid-composes", "4:3-4:15 invalid-composes"]);
+    expect(
+      checkCss(analyzeCss(css, FILE), globalCssFrom([])).map(({ message }) => message),
+    ).toEqual(
+      Array(2).fill(
+        "composes is only allowed in a top-level rule whose selector is a single local class",
+      ),
+    );
+  });
+
+  it("reports composes in a nested rule, which both bundlers reject", () => {
+    const nested = [
+      ".a {}",
+      ".b {",
+      "  .c { composes: a; }",
+      "  &:hover { composes: a; }",
+      "  @media (width > 40rem) { composes: a; }",
+      "}",
+    ].join("\n");
+    expect(found(nested)).toEqual([
+      "3:8-3:20 invalid-composes",
+      "4:13-4:25 invalid-composes",
+      "5:28-5:40 invalid-composes",
+    ]);
+  });
+
+  it.each([
+    "@media (width > 40rem)",
+    "@layer x",
+    "@scope (.x)",
+    "@supports (display: grid)",
+    "@container (width > 1px)",
+  ])("reports composes in a rule inside %s, which lightningcss rejects", (atRule) => {
+    expect(found(`.a {}\n${atRule} {\n  .b { composes: a; }\n}`)).toEqual([
+      "3:8-3:20 invalid-composes",
+    ]);
   });
 
   it("reports only layer/composes when the module goes in a layer", () => {
-    expect(rules({ name: "components", order: ["components"] })).toEqual([
+    expect(found(css, { name: "components", order: ["components"] })).toEqual([
       "2:9-2:17 layer/composes",
       "4:3-4:11 layer/composes",
       "6:6-6:14 layer/composes",
