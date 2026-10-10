@@ -151,6 +151,27 @@ describe("checkCss: the subject of a selector (pure/subject)", () => {
   });
 });
 
+// Nothing follows the last combinator, or only a bare :global or :local does:
+// there is no subject compound to judge.
+describe("checkCss: a selector with no subject compound", () => {
+  it.each([
+    [".a { :global { .b { color: red; } } }", ["pure/global"]],
+    [".a { :local { .b {} } }", []],
+    [".a { :global {} }", ["pure/global"]],
+    [".a :global, .b {}", ["pure/global"]],
+  ])("leaves %s to pure/global", (css, expected) => {
+    expect(rules(css)).toEqual(expected);
+  });
+
+  it.each([".a > { color: red; }", ".a { > { color: red; } }", ".a > , .b {}", "{}", ".a {} {}"])(
+    "reports nothing about %s, whose syntax analyzeCss reports",
+    (css) => {
+      expect(rules(css)).toEqual([]);
+      expect(analyzeCss(css, FILE).diagnostics.map(({ rule }) => rule)).toEqual(["syntax"]);
+    },
+  );
+});
+
 // A Prose component styles the HTML of rendered Markdown, which carries no
 // classes; inside an @scope rooted at a local class any element may be styled.
 describe("checkCss: @scope rooted at a local class", () => {

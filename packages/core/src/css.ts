@@ -246,11 +246,50 @@ function parseSelectorList(
       line: base.line,
       column: base.column,
     });
-    return node.type === "SelectorList" ? node : null;
+    if (node.type !== "SelectorList") return null;
+    collector.diagnostics.push(...checkSelectorEnds(node, base, collector.file));
+    return node;
   } catch (error) {
     collector.diagnostics.push(syntaxDiagnostic(collector.file, error, base));
     return null;
   }
+}
+
+/**
+ * css-tree reads an empty selector list and a selector that ends with a
+ * combinator without complaint; browsers and lightningcss refuse both.
+ */
+function checkSelectorEnds(
+  list: CssTree.SelectorList,
+  base: SourcePosition,
+  file: string,
+): Diagnostic[] {
+  if (list.children.isEmpty) {
+    return [
+      {
+        file,
+        line: base.line,
+        column: base.column,
+        rule: "syntax",
+        message: "Selector is expected",
+      },
+    ];
+  }
+  const diagnostics: Diagnostic[] = [];
+  list.children.forEach((selector) => {
+    const last = selector.type === "Selector" ? selector.children.last : null;
+    if (last?.type !== "Combinator" || !last.loc) return;
+    diagnostics.push({
+      file,
+      line: last.loc.start.line,
+      column: last.loc.start.column,
+      endLine: last.loc.end.line,
+      endColumn: last.loc.end.column,
+      rule: "syntax",
+      message: `Selector is expected after ${last.name}`,
+    });
+  });
+  return diagnostics;
 }
 
 function visitSelectorList(list: CssTree.SelectorList, local: boolean, collector: Collector): void {

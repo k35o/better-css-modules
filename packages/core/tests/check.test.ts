@@ -984,6 +984,24 @@ describe("check", () => {
     ]);
   });
 
+  it("keeps reporting the other files when a selector has no subject compound", async () => {
+    const dir = await project({
+      ...card,
+      "src/bad.module.css": ".a {\n  :global {\n    .b {}\n  }\n}\n.c > {}\n",
+    });
+    expect(await run(dir)).toEqual([
+      "src/bad.module.css:1:1 usage/unused-module",
+      "src/bad.module.css:2:3 pure/global",
+      "src/bad.module.css:6:4 syntax",
+      "src/card.module.css:2:10 tokens/color",
+      "src/card.module.css:4:1 usage/unused-class",
+      "src/card.module.css:5:1 usage/unused-class",
+      "src/card.module.css:5:4 usage/unused-class",
+      "src/card.module.css:6:3 invalid-composes",
+      "src/global.css:6:3 tokens/declaration",
+    ]);
+  });
+
   describe("disable comments for the usage rules", () => {
     const next = "/* better-css-modules-disable-next-line";
     const file = "/* better-css-modules-disable";

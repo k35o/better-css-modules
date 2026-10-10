@@ -152,6 +152,8 @@ function checkSelectorList(
   const diagnostics: Diagnostic[] = [];
   list.children.forEach((selector) => {
     if (selector.type !== "Selector") return;
+    // analyzeCss reports the syntax error.
+    if (selector.children.last?.type === "Combinator") return;
     const scan: Scan = { local: false, globals: [], ids: [] };
     scanSelector(selector, context.local, false, text, scan);
     if (!context.nested && !scan.local) {
@@ -168,8 +170,14 @@ function checkSelectorList(
         ),
       );
     } else if (!context.scoped) {
+      // Only a bare :global or :local after the last combinator leaves no
+      // subject compound; pure/global reports the :global.
       const subject = subjectOf(selector, context.local);
-      if (!isLocalCompound(subject, context.nested) && !isReportedElsewhere(subject)) {
+      if (
+        subject.length > 0 &&
+        !isLocalCompound(subject, context.nested) &&
+        !isReportedElsewhere(subject)
+      ) {
         diagnostics.push(subjectDiagnostic(subject, text, file));
       }
     }
