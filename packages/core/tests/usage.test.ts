@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vite-plus/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveConfig } from "../src/config.js";
+import { ConfigError, resolveConfig } from "../src/config.js";
 import { type Diagnostic, sortDiagnostics } from "../src/diagnostic.js";
 import { findCssModules, loadCssModules } from "../src/project.js";
 import { analyzeUsage } from "../src/usage.js";
@@ -107,6 +107,48 @@ describe("analyzeUsage", () => {
       column: 40,
       rule: "usage/unanalyzable",
       message: `a class is accessed dynamically here, so usage of ${path.relative(process.cwd(), path.join(real, "a.module.css"))} cannot be determined`,
+    });
+  });
+
+  // oxc-resolver fails every resolution through a tsconfig it cannot read,
+  // relative imports included, which would make every module unused.
+  describe("a tsconfig.json it cannot resolve imports through", () => {
+    const sources = {
+      "src/a.module.css": ".a {}",
+      "src/a.tsx":
+        "import styles from './a.module.css';\nexport const A = () => <div className={styles.a} />;",
+    };
+
+    // Messages name files relative to the cwd, like the locations of diagnostics.
+    const named = (real: string, file: string) =>
+      path.relative(process.cwd(), path.join(real, file));
+
+    it("stops the check with the reason when its extends does not resolve", async () => {
+      const { dir, real } = await project({
+        ...sources,
+        "tsconfig.json": '{"extends":"@repo/typescript-config/next.json"}',
+      });
+      await expect(usageIn(dir)).rejects.toThrow(ConfigError);
+      await expect(usageIn(dir)).rejects.toThrow(
+        `${named(real, "tsconfig.json")} cannot be read, so imports cannot be resolved: Tsconfig not found @repo/typescript-config/next.json`,
+      );
+    });
+
+    it("stops the check when it is not JSON, also for one below the root", async () => {
+      const { dir, real } = await project({ ...sources, "src/tsconfig.json": "{ oops" });
+      await expect(usageIn(dir)).rejects.toThrow(
+        `${named(real, "src/tsconfig.json")} cannot be read, so imports cannot be resolved: Failed to load tsconfig`,
+      );
+    });
+
+    it("resolves imports through one whose extends resolves", async () => {
+      const summary = await analyze({
+        ...sources,
+        "src/b.tsx": "import styles from '@/a.module.css';\nexport const b = styles.a;",
+        "tsconfig.json": '{"extends":"./tsconfig.base.json"}',
+        "tsconfig.base.json": '{"compilerOptions":{"paths":{"@/*":["./src/*"]}}}',
+      });
+      expect(summary).toMatchObject({ orphans: [], unused: [], unanalyzable: [] });
     });
   });
 
