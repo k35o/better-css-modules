@@ -202,6 +202,7 @@ Every problem is an error. The rules of a check are named after it (`usage/`, `p
 | [`pure/important`](#pure-css-modules)                    | `!important`                                                                             | Next line or file-wide                                                            |
 | [`pure/at-rule`](#pure-css-modules)                      | The at-rule                                                                              | Next line or file-wide                                                            |
 | [`pure/value`](#pure-css-modules)                        | The `@value`                                                                             | Next line or file-wide                                                            |
+| [`pure/scope`](#markup-without-classes-scope)            | The selector                                                                             | Next line or file-wide                                                            |
 | [`tokens/<category>`](#what-passes-and-what-is-reported) | The value                                                                                | Next line or file-wide                                                            |
 | [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`                                                                              | Next line or file-wide                                                            |
 | [`tokens/internal`](#tokens-and-modes)                   | The `var()`                                                                              | Next line or file-wide                                                            |
@@ -372,6 +373,7 @@ src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effec
 | `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                                     |
 | `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@namespace`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS |
 | `pure/value`     | the `@value`  | `@value`, which is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks. Use a custom property                                                                                                                                           |
+| `pure/scope`     | the selector  | `:scope` in an `@scope` nested in a rule, which lightningcss (Turbopack) rewrites to `& :scope` so that it matches nothing. Write `&` in its place; see [`@scope`](#markup-without-classes-scope)                                                                       |
 
 - A nested rule is pure through the rule it is nested in, and `&` is a local subject: `.card { &:hover {} }` and `.card { .dark & {} }` pass; `.card { p {} }` is `pure/subject`.
 - A subject is local when it holds a local class (`button.primary:hover`), or is `:is()`, `:where()` or `:nth-child(… of …)` whose every selector has a local subject.
@@ -381,22 +383,40 @@ src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effec
 
 ### Markup without classes: `@scope`
 
-Inside an `@scope` rooted at a local class, any element may be the subject. This is for a component that styles HTML it does not write, such as rendered Markdown:
+Inside an `@scope` rooted at a local class, any element may be the subject. This is for a component that styles HTML it does not write, such as rendered Markdown. Nest the `@scope` in the rule of the root class and name that rule as its root with `&`:
 
 ```css
 .prose {
-  @scope {
+  @scope (&) {
     h2 {
       font-size: var(--font-size-xl);
     }
     * + * {
       margin-block-start: calc(var(--spacing) * 4);
     }
+    & > :first-child {
+      margin-block-start: 0;
+    }
   }
 }
 ```
 
-The root is the rule the `@scope` is nested in, or the local class of its prelude (`.prose { @scope (.body) to (.aside) { … } }`). Keep the `@scope` nested: bundlers do not count the root of a top-level `@scope (.prose) { p {} }`, so its `p` is reported as `pure/selector`. Turbopack builds every form, but postcss-modules-local-by-default 4.2, which postcss-modules (Vite) and css-loader use, fails on a nested `@scope (&)`, and css-loader in pure mode also refuses a nested `@scope to (…)`; with them, name the root with a local class (`@scope (.body)`).
+- The root is what the prelude names: `&` for the rule the `@scope` is nested in, or a local class of the markup inside it (`.prose { @scope (.body) to (.aside) { … } }`).
+- An `@scope` without a root selector, `.prose { @scope { … } }` or `.prose { @scope to (.aside) { … } }`, is rooted at the parent of the stylesheet's `<style>` or `<link>`, also when it is nested in a rule, so browsers style nothing inside `.prose` with it. Its selectors are held to a local class like any other.
+- Bundlers do not count the root of a top-level `@scope (.prose) { p {} }`, so its `p` is reported as `pure/selector`.
+- Write `&` for the root, not `:scope`. In an `@scope` nested in a rule, lightningcss rewrites `:scope > p` to `& :scope > p`, which matches nothing; `pure/scope` reports it.
+
+lightningcss builds `@scope (&)`: Turbopack, tsdown, and Vite with `css.transformer: "lightningcss"`. postcss-modules-local-by-default 4.2, which postcss-modules (Vite's default) and css-loader use, fails on `&` in the prelude. In Vite, install `lightningcss` and switch to it; PostCSS then no longer runs:
+
+```ts
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  css: { transformer: "lightningcss" },
+});
+```
+
+With css-loader, root the `@scope` at a local class of the markup inside the rule (`@scope (.body)`). postcss-modules-local-by-default splits the prelude at every `to`, inside class names too, so a class such as `.button` or `.toc` comes out broken there. `packages/core/tests/bundler-parity.test.ts` pins what the bundlers emit for each form.
 
 ## Token enforcement
 
