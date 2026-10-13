@@ -49,9 +49,10 @@ try {
 - `loadConfig({ cwd?, config? })` loads the config file `config` names, relative to `cwd`, or the `better-css-modules.config.*` in `cwd` (by default the working directory), and returns it as a `ResolvedConfig`: the defaults filled in, checked, and with `root`, the directory every relative path starts from, and `file`, the config file or `null`.
 - `generate(config)` writes the `.d.ts` files and their declaration maps, removes the ones it wrote for stylesheets that are gone, and returns a `GenerateResult`: `files`, `removed` and the syntax `diagnostics`.
 - `check(config)` runs every check and returns a `CheckResult`: the sorted `diagnostics`, how many `modules` it checked, and the token categories (`tokens`) the global CSS restricts.
+- `exportTokens(config)` reads the global CSS and returns its tokens as a DTCG resolver document, the `DtcgResolver` the `tokens` command prints; see [Token export](https://github.com/k35o/better-css-modules#token-export).
 - `formatDiagnostic(diagnostic, cwd)` gives the `file:line:col error rule: message` line of the CLI, and `formatGitHubAnnotation(diagnostic, cwd)` the GitHub Actions workflow command of `--format github`.
-- `ConfigError` is a mistake in the config or in the files it names. `loadConfig` throws it, and so does `check` when `include` matches no file, the global CSS cannot be read, or it does not declare the `layer`.
-- The types `Config`, `ResolvedConfig`, `GenerateResult`, `CheckResult`, `Diagnostic` and `RuleId` describe these.
+- `ConfigError` is a mistake in the config or in the files it names. `loadConfig` throws it, and so does `check` when `include` matches no file, the global CSS cannot be read, or it does not declare the `layer`, and `exportTokens` when the global CSS cannot be read or a token has a name DTCG cannot hold.
+- The types `Config`, `ResolvedConfig`, `GenerateResult`, `CheckResult`, `Diagnostic`, `RuleId`, `DtcgResolver` and `DtcgToken` describe these.
 
 `@better-css-modules/core/internal` holds what the CLI and the plugins share. It is for those packages only and outside semver.
 
