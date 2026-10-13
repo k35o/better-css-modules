@@ -185,6 +185,36 @@ describe("@scope: what check reports and what the bundlers emit", () => {
       postcssModules: ".a { @scope (.b) { :scope > p { color: red } } }",
     },
     {
+      css: ".a { @scope (.b) { @media (width > 1px) { :scope > p { color: red } } } }",
+      rules: ["pure/scope"],
+      lightningcss: ".a { @scope (.b) { @media (width > 1px) { & :scope > p { color: red; } } } }",
+      postcssModules: ".a { @scope (.b) { @media (width > 1px) { :scope > p { color: red } } } }",
+    },
+    {
+      css: ".a { @scope (.b) { @scope (.c) { :scope > p { color: red } } } }",
+      rules: ["pure/scope"],
+      lightningcss: ".a { @scope (.b) { @scope (.c) { & :scope > p { color: red; } } } }",
+      postcssModules: ".a { @scope (.b) { @scope (.c) { :scope > p { color: red } } } }",
+    },
+    {
+      css: ".a { @scope (.b) { :scope > p:is(&) { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (.b) { :scope > p& { color: red; } } }",
+      postcssModules: ".a { @scope (.b) { :scope > p:is(&) { color: red } } }",
+    },
+    {
+      css: ".a { @scope (.b) { > p { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (.b) { & > p { color: red; } } }",
+      postcssModules: ".a { @scope (.b) { > p { color: red } } }",
+    },
+    {
+      css: ".a { @scope (.b) { .c { :scope > p { color: red } } } }",
+      rules: [],
+      lightningcss: ".a { @scope (.b) { & .c { & :scope > p { color: red; } } } }",
+      postcssModules: ".a { @scope (.b) { .c { :scope > p { color: red } } } }",
+    },
+    {
       css: ".a { @scope (.b) { p { color: red } } }",
       rules: [],
       lightningcss: ".a { @scope (.b) { & p { color: red; } } }",
