@@ -360,6 +360,62 @@ describe("check", () => {
   });
 });
 
+describe("tokens", () => {
+  it("prints the tokens of the global CSS as a DTCG resolver document and exits with 0", async () => {
+    const dir = await project({
+      "better-css-modules.config.mjs": 'export default { globalCss: ["./src/global.css"] };\n',
+      "src/global.css":
+        ":root {\n  --gray-900: #000;\n  --color-fg-base: var(--gray-900);\n}\n\n.dark {\n  --color-fg-base: #fff;\n}\n",
+    });
+    const { status, stdout, stderr } = run(dir, "tokens");
+    expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
+    expect(JSON.parse(stdout)).toEqual({
+      version: "2025.10",
+      resolutionOrder: [
+        {
+          type: "set",
+          name: ":root",
+          sources: [
+            {
+              "gray-900": { $type: "color", $value: { colorSpace: "srgb", components: [0, 0, 0] } },
+              "color-fg-base": { $type: "color", $value: "{gray-900}" },
+            },
+          ],
+        },
+        {
+          type: "modifier",
+          name: ".dark",
+          contexts: {
+            off: [],
+            on: [
+              {
+                "color-fg-base": {
+                  $type: "color",
+                  $value: { colorSpace: "srgb", components: [1, 1, 1] },
+                },
+              },
+            ],
+          },
+          default: "off",
+        },
+      ],
+    });
+  });
+
+  it("exits with 2 and prints why when a token cannot be named in DTCG", async () => {
+    const dir = await project({
+      "better-css-modules.config.mjs": 'export default { globalCss: ["./src/global.css"] };\n',
+      "src/global.css": ":root {\n  --spacing-0\\.5: 0.125rem;\n}\n",
+    });
+    expect(run(dir, "tokens")).toEqual({
+      status: 2,
+      stdout: "",
+      stderr:
+        '[better-css-modules] src/global.css:2:3: --spacing-0\\.5 cannot be a DTCG token name: DTCG forbids ".", "{" and "}" in names, and "$" at their start\n',
+    });
+  });
+});
+
 describe("--config", () => {
   it("reads the config file it names and resolves paths against its directory", async () => {
     const dir = await project(

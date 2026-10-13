@@ -3,6 +3,7 @@ import cac from "cac";
 import {
   check,
   ConfigError,
+  exportTokens,
   formatDiagnostic,
   formatGitHubAnnotation,
   loadConfig,
@@ -60,6 +61,14 @@ cli
     for (const diagnostic of diagnostics) console.log(formatter(diagnostic, cwd));
     console.log(`[better-css-modules] ${diagnostics.length} problem(s)`);
     process.exitCode = 1;
+  });
+
+cli
+  .command("tokens", "Print the tokens of the global CSS as a DTCG resolver document")
+  .option("--config <path>", CONFIG_OPTION)
+  .action(async (options: { config?: string }) => {
+    const config = await loadConfig({ config: options.config });
+    console.log(JSON.stringify(await exportTokens(config), null, 2));
   });
 
 cli.help();
