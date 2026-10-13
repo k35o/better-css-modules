@@ -189,13 +189,13 @@ describe("checkGlobalCss", () => {
     ]);
   });
 
-  it("holds the base styles to the tokens and lets them use internal names elsewhere", () => {
+  // The global CSS builds the tokens out of its internal names; it uses them freely.
+  it("holds the base styles to the tokens and lets them use internal names anywhere", () => {
     const globalCss = read(
-      `${tokens}\nbody { color: #000; font-size: var(--font-size-lg); background-color: var(--gray-900); width: var(--gray-900); }`,
+      `${tokens}\nbody { color: #000; font-size: var(--font-size-lg); background-color: var(--gray-900); border: 1px solid var(--gray-900); width: var(--gray-900); }`,
     );
     expect(checkGlobalCss(globalCss).map(({ rule, message }) => `${rule}: ${message}`)).toEqual([
       "tokens/color: #000 is a raw value for color; use a --color-* token",
-      "tokens/color: --gray-900 is not a color token; use a --color-* token",
     ]);
   });
 

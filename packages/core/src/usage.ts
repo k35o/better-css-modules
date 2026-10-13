@@ -5,7 +5,7 @@ import { parseSync, type ParseResult } from "oxc-parser";
 import type { Node } from "postcss";
 import { ResolverFactory } from "oxc-resolver";
 import { isReferenceIdentifier, ScopeTracker, walk } from "oxc-walker";
-import type { ResolvedConfig } from "./config.js";
+import { ConfigError, type ResolvedConfig } from "./config.js";
 import type { ClassOccurrence, CssModuleAnalysis, SourcePosition } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { defaultIgnore } from "./project.js";
@@ -569,6 +569,7 @@ class Resolvers {
         conditionNames: ["import", "default"],
         ...(tsconfig ? { tsconfig: { configFile: tsconfig, references: "auto" } } : {}),
       });
+      if (tsconfig) checkTsconfig(resolver, tsconfig);
       this.byTsconfig.set(tsconfig, resolver);
     }
     return resolver;
@@ -585,5 +586,21 @@ class Resolvers {
     }
     this.tsconfigByDir.set(directory, found);
     return found;
+  }
+}
+
+/**
+ * The resolver reads the tsconfig at its first resolution, and one it cannot
+ * read (an `extends` that does not resolve, a syntax error) fails every
+ * resolution after it, relative imports included, which would leave every
+ * module unused. Resolving the tsconfig itself, a file that exists, fails for
+ * that reason only.
+ */
+function checkTsconfig(resolver: ResolverFactory, tsconfig: string): void {
+  const { error } = resolver.sync(path.dirname(tsconfig), `./${path.basename(tsconfig)}`);
+  if (error) {
+    throw new ConfigError(
+      `${relative(process.cwd(), tsconfig)} cannot be read, so imports cannot be resolved: ${error}`,
+    );
   }
 }

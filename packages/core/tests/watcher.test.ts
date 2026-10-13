@@ -33,6 +33,24 @@ afterAll(async () => {
 
 const config = () => resolveConfig({ silent: true }, dir);
 
+describe("startWatcher", () => {
+  it("watches the directories of the include patterns, leaving a negated pattern out", async () => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(dir, "negated-")));
+    await fs.mkdir(path.join(root, "src/legacy"), { recursive: true });
+    await fs.mkdir(path.join(root, "other"));
+    const include = ["src/**/*.module.css", "!src/legacy/**"];
+    const watcher = startWatcher(resolveConfig({ silent: true, include }, root), {
+      persistent: false,
+    });
+    try {
+      await new Promise<void>((resolve) => watcher.once("ready", resolve));
+      expect(Object.keys(watcher.getWatched()).sort()).toEqual([".", "src", "src/legacy"]);
+    } finally {
+      await watcher.close();
+    }
+  });
+});
+
 describe("startWatcher without persistent", () => {
   it("still regenerates the .d.ts of a stylesheet that changes", async () => {
     const watcher = startWatcher(config(), { persistent: false });

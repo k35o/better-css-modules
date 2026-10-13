@@ -200,6 +200,27 @@ describe("check", () => {
     });
   });
 
+  it("annotates every file with --format github when a selector has no subject compound", async () => {
+    const dir = await project({
+      ...card,
+      "src/bad.module.css": ".a {\n  :global {\n    .b {}\n  }\n}\n",
+      "src/card.ts":
+        'import styles from "./card.module.css";\nimport bad from "./bad.module.css";\n\nexport const card = [styles.used, bad.a];\n',
+    });
+    expect(run(dir, "check", "--format", "github")).toEqual({
+      status: 1,
+      stdout: [
+        "::error file=src/bad.module.css,line=2,col=3,endLine=2,endColumn=10,title=pure/global:::global reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope",
+        "::error file=src/card.module.css,line=2,col=10,endLine=2,endColumn=14,title=tokens/color::#fff is a raw value for color; use a --color-* token",
+        "::error file=src/card.module.css,line=5,col=1,endLine=5,endColumn=7,title=usage/unused-class::.ghost is never used",
+        "::error file=src/card.module.css,line=6,col=10,endLine=6,endColumn=13,title=tokens/color::red is a raw value for color; use a --color-* token",
+        "[better-css-modules] 4 problem(s)",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+
   it("holds the modules to the pure rules and leaves the global CSS alone", async () => {
     const dir = await project({
       ...card,

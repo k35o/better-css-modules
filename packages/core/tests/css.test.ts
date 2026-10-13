@@ -92,6 +92,16 @@ describe("analyzeCss: composes", () => {
     expect(analysis.diagnostics).toEqual([]);
   });
 
+  it("records composes in a nested rule or inside an at-rule without a class name", () => {
+    const css =
+      ".a {}\n.b { .c { composes: a; } @media (width > 1px) { composes: a; } }\n@layer x { .d { composes: a; } }";
+    expect(analyzeCss(css, FILE).composes).toMatchObject([
+      { className: null, range: { start: { line: 2, column: 11 } } },
+      { className: null, range: { start: { line: 2, column: 49 } } },
+      { className: null, range: { start: { line: 3, column: 17 } } },
+    ]);
+  });
+
   it("accepts :local(.a) as the composing class and decodes composed names", () => {
     const analysis = analyzeCss(":local(.a) { composes: w-1\\/2 sm\\:hidden; }", FILE);
     expect(analysis.diagnostics).toEqual([]);
@@ -126,6 +136,32 @@ describe("analyzeCss: syntax problems", () => {
     const analysis = analyzeCss(".a, %%% { color: red; }\n.b { color: blue; }", FILE);
     expect(classNamesOf(analysis)).toEqual(["b"]);
     expect(analysis.diagnostics).toMatchObject([{ rule: "syntax", line: 1, column: 5 }]);
+  });
+
+  it("reports an empty selector where the rule starts", () => {
+    const analysis = analyzeCss(".a {}\n{ color: red; }\n.b { {} }", FILE);
+    expect(analysis.diagnostics).toMatchObject([
+      { rule: "syntax", line: 2, column: 1, message: "Selector is expected" },
+      { rule: "syntax", line: 3, column: 6, message: "Selector is expected" },
+    ]);
+  });
+
+  it("reports a combinator with nothing after it, at the combinator", () => {
+    const analysis = analyzeCss(".a >\n  { color: red; }\n.b { ~ {} }\n.c + , .d {}", FILE);
+    expect(classNamesOf(analysis)).toEqual(["a", "b", "c", "d"]);
+    expect(analysis.diagnostics).toEqual([
+      {
+        file: FILE,
+        rule: "syntax",
+        line: 1,
+        column: 4,
+        endLine: 1,
+        endColumn: 5,
+        message: "Selector is expected after >",
+      },
+      expect.objectContaining({ line: 3, column: 6, message: "Selector is expected after ~" }),
+      expect.objectContaining({ line: 4, column: 4, message: "Selector is expected after +" }),
+    ]);
   });
 
   it("throws postcss's error when the stylesheet itself is broken", () => {

@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import postcss, { type AtRule, type ChildNode, type Node, type Root } from "postcss";
 import { ConfigError, type ResolvedConfig } from "./config.js";
 import type { Diagnostic } from "./diagnostic.js";
@@ -94,7 +94,8 @@ export type LayerConfig = ModuleOptions & Pick<ResolvedConfig, "globalCss" | "la
 export function createLayerWrapper(
   config: LayerConfig,
 ): (source: string, file: string, depend: (file: string) => void) => Promise<WrapResult | null> {
-  const matches = createMatcher(config);
+  // Bundlers hand over real paths, so the project is compared by its real path too.
+  const matches = createMatcher({ ...config, root: realpathSync(config.root) });
   /** A read of the global CSS, with the modification time of each file it read. */
   type Read = { css: Promise<GlobalCss>; stamps: Map<string, number | null> };
   let last: Read | undefined;

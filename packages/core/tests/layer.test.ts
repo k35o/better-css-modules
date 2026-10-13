@@ -312,6 +312,19 @@ describe("createLayerWrapper", () => {
     expect(dependencies).toEqual([path.join(dir, "global.css"), path.join(dir, "theme.css")]);
   });
 
+  // Bundlers hand the wrapper real paths; `--config` may point through a symlink.
+  it("wraps a module at its real path when the config is reached through a symlink", async () => {
+    const { dir } = await projectWith({ "global.css": "@layer base, components;" });
+    const link = path.join(path.dirname(dir), `${path.basename(dir)}-link`);
+    await fs.symlink(dir, link);
+    projects.push(link);
+    const wrap = createLayerWrapper(
+      resolveConfig({ globalCss: ["./global.css"], layer: "components" }, link),
+    );
+    const wrapped = await wrap(".a { color: red; }", path.join(dir, "src/a.module.css"), () => {});
+    expect(wrapped && outline(wrapped.code)[0]).toBe("@layer base, components");
+  });
+
   it("leaves a module as written when the config names no layer", async () => {
     const { wrapModule } = await projectWith(
       { "global.css": "@layer base, components;" },

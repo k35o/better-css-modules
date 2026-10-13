@@ -65,15 +65,15 @@ describe("checkCss: selectors without a local class (pure/selector)", () => {
     expect(rules("#main {}")).toEqual(["pure/id"]);
   });
 
-  it("does not count classes made global or view-transition classes", () => {
-    expect(rules(":global(.x) {}")).toEqual(["pure/selector", "pure/global"]);
-    expect(rules(":global .x {}")).toEqual(["pure/selector", "pure/global"]);
+  it("does not count a view-transition class", () => {
     expect(rules("::view-transition-old(.a) {}")).toEqual(["pure/selector"]);
   });
 
-  it("keeps the argument of :global() global, even through :local()", () => {
-    expect(rules(":global(:local(.a)) {}")).toEqual(["pure/selector", "pure/global"]);
-    expect(rules(":global(.x :is(:local(.a))) {}")).toEqual(["pure/selector", "pure/global"]);
+  it("leaves a selector whose classes a :global makes global to pure/global", () => {
+    expect(rules(":global(.x) {}")).toEqual(["pure/global"]);
+    expect(rules(":global .x {}")).toEqual(["pure/global"]);
+    expect(rules(":global(:local(.a)) {}")).toEqual(["pure/global"]);
+    expect(rules(":global(.x :is(:local(.a))) {}")).toEqual(["pure/global"]);
   });
 
   it("does not count the root of a top-level @scope, as bundlers do not", () => {
@@ -151,6 +151,27 @@ describe("checkCss: the subject of a selector (pure/subject)", () => {
   });
 });
 
+// Nothing follows the last combinator, or only a bare :global or :local does:
+// there is no subject compound to judge.
+describe("checkCss: a selector with no subject compound", () => {
+  it.each([
+    [".a { :global { .b { color: red; } } }", ["pure/global"]],
+    [".a { :local { .b {} } }", []],
+    [".a { :global {} }", ["pure/global"]],
+    [".a :global, .b {}", ["pure/global"]],
+  ])("leaves %s to pure/global", (css, expected) => {
+    expect(rules(css)).toEqual(expected);
+  });
+
+  it.each([".a > { color: red; }", ".a { > { color: red; } }", ".a > , .b {}", "{}", ".a {} {}"])(
+    "reports nothing about %s, whose syntax analyzeCss reports",
+    (css) => {
+      expect(rules(css)).toEqual([]);
+      expect(analyzeCss(css, FILE).diagnostics.map(({ rule }) => rule)).toEqual(["syntax"]);
+    },
+  );
+});
+
 // A Prose component styles the HTML of rendered Markdown, which carries no
 // classes; inside an @scope rooted at a local class any element may be styled.
 describe("checkCss: @scope rooted at a local class", () => {
@@ -200,9 +221,17 @@ describe("checkCss: :global (pure/global)", () => {
     ]);
     expect(check(".a { &:is(:global(.open)) {} }")).toHaveLength(1);
     expect(check(":global { .a {} }")).toEqual([
-      `pure/selector: :global has no local class; ${SELECTOR_HINT}`,
       `pure/global: :global reaches outside this module; ${GLOBAL_HINT}`,
     ]);
+  });
+
+  // One root cause, the :global; pure/selector would only say so again.
+  it("reports a selector without a local class as pure/global alone when a :global is in it", () => {
+    expect(diagnose(":global(body:has([data-x]) > *) {}")).toMatchObject([
+      { rule: "pure/global", column: 1, endColumn: 32 },
+    ]);
+    expect(rules(":global(.x) a {}")).toEqual(["pure/global"]);
+    expect(rules("a:not(:global(.x)) {}")).toEqual(["pure/global"]);
   });
 
   it("reports a global keyframes name", () => {
@@ -385,7 +414,8 @@ describe("checkGlobalCss: the global CSS", () => {
 });
 
 // The generated keys and pure/selector decide what is local in two separate
-// walks; they must agree on every selector of a top-level rule.
+// walks; they must agree on every selector of a top-level rule: one without a
+// local key is pure/selector, unless a :global in it is reported as pure/global.
 describe("pure/selector agrees with the local classes and ids of the generated keys", () => {
   it.each([
     ...cssCases.map(({ name, css }) => ({ name, css })),
@@ -396,7 +426,7 @@ describe("pure/selector agrees with the local classes and ids of the generated k
       ...analysis.classes,
       ...analysis.identifiers.filter(({ kind }) => kind === "id"),
     ].map(({ range }) => range.start);
-    const withoutLocal: string[] = [];
+    const diagnostics = diagnose(css);
     analysis.root.walkRules((rule) => {
       if (isNested(rule)) return;
       const start = rule.source?.start ?? { line: 1, column: 1 };
@@ -405,14 +435,13 @@ describe("pure/selector agrees with the local classes and ids of the generated k
       if (list.type !== "SelectorList") return;
       list.children.forEach(({ loc }) => {
         if (!loc) return;
-        const holds = locals.some((at) => !isBefore(at, loc.start) && isBefore(at, loc.end));
-        if (!holds) withoutLocal.push(`${loc.start.line}:${loc.start.column}`);
+        const within = (at: SourcePosition) => !isBefore(at, loc.start) && isBefore(at, loc.end);
+        const reported = (id: string) => diagnostics.some((d) => d.rule === id && within(d));
+        expect(reported("pure/selector"), `${loc.start.line}:${loc.start.column}`).toBe(
+          !locals.some(within) && !reported("pure/global"),
+        );
       });
     });
-    const reported = diagnose(css)
-      .filter(({ rule }) => rule === "pure/selector")
-      .map(({ line, column }) => `${line}:${column}`);
-    expect(reported).toEqual(withoutLocal);
   });
 });
 

@@ -48,7 +48,9 @@ type ComposesSource = { kind: "local" } | { kind: "global" } | { kind: "file"; s
 interface ComposesDeclaration {
   /**
    * The local class whose rule holds the `composes` declaration, or null when
-   * the selector is not a single local class, where bundlers reject `composes`.
+   * the rule is not a top-level rule of a single local class: lightningcss
+   * rejects `composes` in a nested rule and inside an at-rule, and both
+   * bundlers in a rule of any other selector.
    */
   className: string | null;
   /** Composed class names. */
@@ -165,11 +167,19 @@ function unique(names: string[]): string[] {
   return [...new Set(names)].sort();
 }
 
-function walkContainer(container: Container, local: boolean, collector: Collector): void {
+/** `composing` is the class of the top-level rule the declarations belong to, or null elsewhere. */
+function walkContainer(
+  container: Container,
+  local: boolean,
+  collector: Collector,
+  composing: string | null = null,
+): void {
   container.each((node) => {
     if (node.type === "rule") visitRule(node, local, collector);
     else if (node.type === "atrule") visitAtRule(node, local, collector);
-    else if (node.type === "decl" && local) visitDeclaration(node, collector);
+    else if (node.type === "decl" && node.prop.toLowerCase() === "composes") {
+      collectComposes(node, composing, collector);
+    } else if (node.type === "decl" && local) visitDeclaration(node, collector);
   });
 }
 
@@ -187,13 +197,7 @@ function visitRule(rule: Rule, local: boolean, collector: Collector): void {
     collector.node = rule;
     singleClass = collectSelectorList(selector, startOf(rule), local, collector);
   }
-
-  rule.each((child) => {
-    if (child.type === "decl" && child.prop.toLowerCase() === "composes") {
-      collectComposes(child, singleClass, collector);
-    }
-  });
-  walkContainer(rule, blockLocal, collector);
+  walkContainer(rule, blockLocal, collector, rule.parent?.type === "root" ? singleClass : null);
 }
 
 function visitAtRule(atRule: AtRule, local: boolean, collector: Collector): void {
@@ -246,11 +250,50 @@ function parseSelectorList(
       line: base.line,
       column: base.column,
     });
-    return node.type === "SelectorList" ? node : null;
+    if (node.type !== "SelectorList") return null;
+    collector.diagnostics.push(...checkSelectorEnds(node, base, collector.file));
+    return node;
   } catch (error) {
     collector.diagnostics.push(syntaxDiagnostic(collector.file, error, base));
     return null;
   }
+}
+
+/**
+ * css-tree reads an empty selector list and a selector that ends with a
+ * combinator without complaint; browsers and lightningcss refuse both.
+ */
+function checkSelectorEnds(
+  list: CssTree.SelectorList,
+  base: SourcePosition,
+  file: string,
+): Diagnostic[] {
+  if (list.children.isEmpty) {
+    return [
+      {
+        file,
+        line: base.line,
+        column: base.column,
+        rule: "syntax",
+        message: "Selector is expected",
+      },
+    ];
+  }
+  const diagnostics: Diagnostic[] = [];
+  list.children.forEach((selector) => {
+    const last = selector.type === "Selector" ? selector.children.last : null;
+    if (last?.type !== "Combinator" || !last.loc) return;
+    diagnostics.push({
+      file,
+      line: last.loc.start.line,
+      column: last.loc.start.column,
+      endLine: last.loc.end.line,
+      endColumn: last.loc.end.column,
+      rule: "syntax",
+      message: `Selector is expected after ${last.name}`,
+    });
+  });
+  return diagnostics;
 }
 
 function visitSelectorList(list: CssTree.SelectorList, local: boolean, collector: Collector): void {

@@ -185,8 +185,10 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
   }
   const globalCss = await loadGlobalCss(config);
   const layer = config.layer === undefined ? undefined : resolveLayer(config.layer, globalCss);
-  // Resolved imports come back as real paths, so the usage analysis needs the modules at theirs.
-  const { modules, diagnostics } = await loadCssModules(files.map((file) => fs.realpathSync(file)));
+  // Resolved imports come back as real paths, so the usage analysis needs the
+  // modules at theirs; a file reached through a symlink as well is one module.
+  const real = [...new Set(files.map((file) => fs.realpathSync(file)))];
+  const { modules, diagnostics } = await loadCssModules(real);
   const usage = await analyzeUsage(modules, config);
   const found = [
     ...diagnostics,
@@ -203,7 +205,7 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
   const declared = new Set([...globalCss.tokens.values()].map(({ category }) => category));
   return {
     diagnostics: sortDiagnostics(found),
-    modules: files.length,
+    modules: real.length,
     tokens: (Object.keys(tokenCategories) as TokenCategory[]).filter((category) =>
       declared.has(category),
     ),
@@ -221,8 +223,8 @@ export async function check(config: ResolvedConfig): Promise<CheckResult> {
  * arithmetic on its tokens pass. Anywhere in the file a token name the global
  * CSS does not declare is reported, and so is a name it declares without a
  * category prefix, which is internal to it. A module cannot declare either kind
- * of name. `composes` outside a rule of a single local class is reported,
- * which bundlers reject. With a layer, what wrapping the module in it would
+ * of name. `composes` outside a top-level rule of a single local class is
+ * reported, which lightningcss rejects. With a layer, what wrapping the module in it would
  * break is reported too. The usage problems found about the module are
  * passed in, so that its disable comments apply to them as well. Pure: reads
  * nothing but its arguments.
@@ -253,7 +255,8 @@ export function checkCss(
       endLine: range.end.line,
       endColumn: range.end.column,
       rule: "invalid-composes",
-      message: "composes is only allowed in a rule whose selector is a single local class",
+      message:
+        "composes is only allowed in a top-level rule whose selector is a single local class",
     })),
   ]);
 }
@@ -686,8 +689,9 @@ function checkTimes(nodes: CssTree.CssNode[], scope: Scope): void {
 
 /**
  * Report a `var()` of a custom property that is not a token of the category.
- * A name of the category the global CSS does not declare, and outside the
- * global CSS an internal name, are left to `checkReferences`.
+ * A name of the category the global CSS does not declare is left to
+ * `checkReferences`, and so is an internal name outside the global CSS, which
+ * uses its internal names freely.
  */
 function checkToken(node: CssTree.FunctionNode, scope: Scope, inShorthand = false): void {
   const name = node.children.first;
@@ -695,8 +699,7 @@ function checkToken(node: CssTree.FunctionNode, scope: Scope, inShorthand = fals
   const { category, hint } = scope.restriction;
   const own = categoryOf(name.name);
   if (own === category) return;
-  const { tokens, global } = scope.context;
-  if (own === null && !global && tokens.has(name.name)) return;
+  if (own === null && scope.context.tokens.has(name.name)) return;
   report(
     scope,
     node,

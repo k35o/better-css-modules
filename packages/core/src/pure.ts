@@ -152,24 +152,36 @@ function checkSelectorList(
   const diagnostics: Diagnostic[] = [];
   list.children.forEach((selector) => {
     if (selector.type !== "Selector") return;
+    // analyzeCss reports the syntax error.
+    if (selector.children.last?.type === "Combinator") return;
     const scan: Scan = { local: false, globals: [], ids: [] };
     scanSelector(selector, context.local, false, text, scan);
     if (!context.nested && !scan.local) {
-      // Scoped but not nested: a top-level @scope rooted at a local class.
-      const hint = context.scoped
-        ? ", and bundlers do not count the root of a top-level @scope; nest the @scope inside the rule of its root class"
-        : "; every selector of a CSS Module needs one";
-      diagnostics.push(
-        diagnosticAt(
-          { node: selector, text },
-          file,
-          "pure/selector",
-          (written) => `${written} has no local class${hint}`,
-        ),
-      );
+      // A :global is what makes the selector reach outside, and pure/global
+      // reports it; saying that it has no local class would add nothing.
+      if (scan.globals.length === 0) {
+        // Scoped but not nested: a top-level @scope rooted at a local class.
+        const hint = context.scoped
+          ? ", and bundlers do not count the root of a top-level @scope; nest the @scope inside the rule of its root class"
+          : "; every selector of a CSS Module needs one";
+        diagnostics.push(
+          diagnosticAt(
+            { node: selector, text },
+            file,
+            "pure/selector",
+            (written) => `${written} has no local class${hint}`,
+          ),
+        );
+      }
     } else if (!context.scoped) {
+      // Only a bare :global or :local after the last combinator leaves no
+      // subject compound; pure/global reports the :global.
       const subject = subjectOf(selector, context.local);
-      if (!isLocalCompound(subject, context.nested) && !isReportedElsewhere(subject)) {
+      if (
+        subject.length > 0 &&
+        !isLocalCompound(subject, context.nested) &&
+        !isReportedElsewhere(subject)
+      ) {
         diagnostics.push(subjectDiagnostic(subject, text, file));
       }
     }

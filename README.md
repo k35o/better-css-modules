@@ -42,6 +42,8 @@ const withMDX = createMDX();
 export default withBetterCssModules(withMDX(nextConfig));
 ```
 
+Keep it outermost. Put inside another wrapper, the function it returns is spread into a plain config object and lost: no types are generated, and nothing says so.
+
 It generates the types when Next.js loads its config in the development server or production build phase, as `next dev`, `next build` and `next typegen` do, and keeps them in sync in the development server phase, as during `next dev`. A config it cannot load stops Next.js.
 
 Put the config in `better-css-modules.config.ts`, next to `package.json`:
@@ -66,6 +68,8 @@ Then let TypeScript find the generated types. With `rootDirs`, `import styles fr
   "include": ["src", "__generated__"]
 }
 ```
+
+Without `rootDirs`, the import falls back to the `*.module.css` declaration Next.js ships, under which every key is a string: `styles.nope` type-checks, and nothing says the generated types are not in use.
 
 ### Vite, webpack, Rspack, Rollup and esbuild
 
@@ -178,6 +182,7 @@ export default defineConfig({
 - An `exclude` pattern also leaves out everything beneath it: `src/legacy` excludes `src/legacy/**`.
 - A pattern in `include` that starts with `!` is an exclusion.
 - `node_modules` and the `outDir` are always left out. Only the `outDir` at the project root is: a directory of the same name further down is not.
+- Parentheses, brackets and braces are glob syntax. A Next.js route group is escaped, `"app/\\(marketing\\)/**/*.module.css"`, or reached through `app/**/*.module.css`.
 
 A config that cannot be loaded, has no default export, holds an unknown key, or gives a key a value of the wrong type stops every command with exit code 2, and so does an `outDir` outside the project root. A key set to `undefined` counts as unset.
 
@@ -185,30 +190,30 @@ A config that cannot be loaded, has no default export, holds an unknown key, or 
 
 Every problem is an error. The rules of a check are named after it (`usage/`, `pure/`, `tokens/`, `layer/`); a stylesheet that is itself broken gets a plain name.
 
-| Rule                                                     | Reported at                          | Disable                                                                |
-| -------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
-| [`usage/unused-class`](#unused-class-detection)          | The first selector with the class    | Next line or file-wide                                                 |
-| [`usage/unused-module`](#unused-class-detection)         | Line 1 of the stylesheet             | File-wide                                                              |
-| [`usage/unanalyzable`](#unused-class-detection)          | The source file, where usage is lost | File-wide, in the stylesheet                                           |
-| [`pure/selector`](#pure-css-modules)                     | The selector                         | Next line or file-wide                                                 |
-| [`pure/subject`](#pure-css-modules)                      | The subject of the selector          | Next line or file-wide                                                 |
-| [`pure/global`](#pure-css-modules)                       | The `:global`                        | Next line or file-wide                                                 |
-| [`pure/id`](#pure-css-modules)                           | The id                               | Next line or file-wide                                                 |
-| [`pure/important`](#pure-css-modules)                    | `!important`                         | Next line or file-wide                                                 |
-| [`pure/at-rule`](#pure-css-modules)                      | The at-rule                          | Next line or file-wide                                                 |
-| [`pure/value`](#pure-css-modules)                        | The `@value`                         | Next line or file-wide                                                 |
-| [`tokens/<category>`](#what-passes-and-what-is-reported) | The value                            | Next line or file-wide                                                 |
-| [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`                          | Next line or file-wide                                                 |
-| [`tokens/internal`](#tokens-and-modes)                   | The `var()`                          | Next line or file-wide                                                 |
-| [`tokens/declaration`](#tokens-and-modes)                | The custom property                  | Next line or file-wide                                                 |
-| [`tokens/breakpoint`](#breakpoints)                      | The width in `@media`, or the token  | Next line or file-wide                                                 |
-| [`layer/nested`](#cascade-layers)                        | The module's own `@layer`            | Next line or file-wide                                                 |
-| [`layer/composes`](#cascade-layers)                      | The `composes`                       | Never: the plugins stop the build at `composes` in a layer             |
-| `syntax`                                                 | Where postcss or css-tree stopped    | Never: the bundlers cannot read the stylesheet either                  |
-| `invalid-composes`                                       | The `composes`                       | Never: the bundlers reject `composes` outside a rule of a single class |
-| `invalid-disable`                                        | The comment                          | Never: fix or remove the disable comment                               |
+| Rule                                                     | Reported at                                                                              | Disable                                                                           |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [`usage/unused-class`](#unused-class-detection)          | The first selector with the class                                                        | Next line or file-wide                                                            |
+| [`usage/unused-module`](#unused-class-detection)         | Line 1 of the stylesheet                                                                 | File-wide                                                                         |
+| [`usage/unanalyzable`](#unused-class-detection)          | The source file, where usage is lost                                                     | File-wide, in the stylesheet                                                      |
+| [`pure/selector`](#pure-css-modules)                     | The selector                                                                             | Next line or file-wide                                                            |
+| [`pure/subject`](#pure-css-modules)                      | The subject of the selector                                                              | Next line or file-wide                                                            |
+| [`pure/global`](#pure-css-modules)                       | The `:global`                                                                            | Next line or file-wide                                                            |
+| [`pure/id`](#pure-css-modules)                           | The id                                                                                   | Next line or file-wide                                                            |
+| [`pure/important`](#pure-css-modules)                    | `!important`                                                                             | Next line or file-wide                                                            |
+| [`pure/at-rule`](#pure-css-modules)                      | The at-rule                                                                              | Next line or file-wide                                                            |
+| [`pure/value`](#pure-css-modules)                        | The `@value`                                                                             | Next line or file-wide                                                            |
+| [`tokens/<category>`](#what-passes-and-what-is-reported) | The value                                                                                | Next line or file-wide                                                            |
+| [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`                                                                              | Next line or file-wide                                                            |
+| [`tokens/internal`](#tokens-and-modes)                   | The `var()`                                                                              | Next line or file-wide                                                            |
+| [`tokens/declaration`](#tokens-and-modes)                | The custom property                                                                      | Next line or file-wide                                                            |
+| [`tokens/breakpoint`](#breakpoints)                      | The width in `@media`, or the token                                                      | Next line or file-wide                                                            |
+| [`layer/nested`](#cascade-layers)                        | The module's own `@layer`                                                                | Next line or file-wide                                                            |
+| [`layer/composes`](#cascade-layers)                      | The `composes`                                                                           | Never: the plugins stop the build at `composes` in a layer                        |
+| `syntax`                                                 | Where postcss or css-tree stopped, or a selector that is empty or ends with a combinator | Never: the bundlers cannot read the stylesheet either                             |
+| `invalid-composes`                                       | The `composes`                                                                           | Never: lightningcss rejects `composes` outside a top-level rule of a single class |
+| `invalid-disable`                                        | The comment                                                                              | Never: fix or remove the disable comment                                          |
 
-`invalid-composes` reports `composes` in a rule whose selector is not a single local class. With a `layer`, `layer/composes` reports every `composes` instead.
+`invalid-composes` reports `composes` outside a top-level rule whose selector is a single local class: in a rule of any other selector, which both bundlers reject, and in a nested rule or a rule inside `@media`, `@layer`, `@scope` or another at-rule, which lightningcss rejects (postcss-modules builds `composes` inside an at-rule). With a `layer`, `layer/composes` reports every `composes` instead.
 
 ### Disable comments
 
@@ -358,20 +363,20 @@ src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effec
 [better-css-modules] 4 problem(s)
 ```
 
-| Rule             | Reported at   | What it reports                                                                                                                                                                                                                                           |
-| ---------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`, `:global(.x)`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)     |
-| `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                      |
-| `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`. Modes switch by overriding tokens, not by reaching outside the module                                                                                                                              |
-| `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                              |
-| `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                       |
-| `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS |
-| `pure/value`     | the `@value`  | `@value`, which is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks. Use a custom property                                                                                                                             |
+| Rule             | Reported at   | What it reports                                                                                                                                                                                                                                                         |
+| ---------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)                                  |
+| `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                                    |
+| `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`. Modes switch by overriding tokens, not by reaching outside the module                                                                                                                                            |
+| `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                                            |
+| `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                                     |
+| `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@namespace`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS |
+| `pure/value`     | the `@value`  | `@value`, which is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks. Use a custom property                                                                                                                                           |
 
 - A nested rule is pure through the rule it is nested in, and `&` is a local subject: `.card { &:hover {} }` and `.card { .dark & {} }` pass; `.card { p {} }` is `pure/subject`.
 - A subject is local when it holds a local class (`button.primary:hover`), or is `:is()`, `:where()` or `:nth-child(… of …)` whose every selector has a local subject.
-- A local id makes a selector pure, as it does for bundlers, and `pure/id` reports it. A subject made global or written as an id is reported only as `pure/global` or `pure/id`.
-- `pure/selector` agrees with lightningcss in pure mode; `packages/core/tests/bundler-parity.test.ts` pins this down.
+- A local id makes a selector pure, as it does for bundlers, and `pure/id` reports it. A selector or subject made global is reported only as `pure/global`, and a subject written as an id only as `pure/id`: `:global(.x) {}` is one problem, not two.
+- `pure/selector` agrees with lightningcss in pure mode, with the selectors a `:global` makes impure reported as `pure/global`; `packages/core/tests/bundler-parity.test.ts` pins this down.
 - `@layer`, `@position-try` and the other at-rules are allowed.
 
 ### Markup without classes: `@scope`
@@ -391,7 +396,7 @@ Inside an `@scope` rooted at a local class, any element may be the subject. This
 }
 ```
 
-The root is the rule the `@scope` is nested in, or the local class of its prelude (`.prose { @scope (.body) to (.aside) { … } }`). Keep the `@scope` nested: bundlers do not count the root of a top-level `@scope (.prose) { p {} }`, so its `p` is reported as `pure/selector`. css-loader (postcss-modules-local-by-default 4.2) also refuses a nested `@scope to (…)` or `@scope (&)`, which Turbopack builds; with css-loader, name the root with a local class.
+The root is the rule the `@scope` is nested in, or the local class of its prelude (`.prose { @scope (.body) to (.aside) { … } }`). Keep the `@scope` nested: bundlers do not count the root of a top-level `@scope (.prose) { p {} }`, so its `p` is reported as `pure/selector`. Turbopack builds every form, but postcss-modules-local-by-default 4.2, which postcss-modules (Vite) and css-loader use, fails on a nested `@scope (&)`, and css-loader in pure mode also refuses a nested `@scope to (…)`; with them, name the root with a local class (`@scope (.body)`).
 
 ## Token enforcement
 
@@ -485,7 +490,7 @@ These are reported as `tokens/<category>`:
 - A `var()` of a custom property that is not a token of the category: a token of another category, or a custom property declared in the file.
 - A raw value in the fallback of a `var()` (`var(--color-fg-base, red)`).
 
-`tokens/unknown` reports a token name the global CSS does not declare, in any property and in the value of a custom property: most likely a typo. The message names the closest declared token of the category when one is within two edits.
+`tokens/unknown` reports a `var()` of a name with the prefix of a restricted category that the global CSS does not declare (`--color-fg-bsae`), in any property and in the value of a custom property: most likely a typo. The message names the closest declared token of the category when one is within two edits. A name of a category the global CSS declares no token for is not checked.
 
 `tokens/declaration` reports a custom property a module declares under a token name of a restricted category (`--color-mine: red`), whatever its value. Otherwise a module could declare its own `--color-*` and feed any raw value through the category. (A module registers no custom property with `@property` at all: that is `pure/at-rule`.)
 
