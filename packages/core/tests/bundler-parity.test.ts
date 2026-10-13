@@ -235,6 +235,12 @@ describe("@scope: what check reports and what the bundlers emit", () => {
       postcssModules: null,
     },
     {
+      css: ".a { @scope (.a) { p { color: red } } }",
+      rules: ["pure/scope"],
+      lightningcss: ".a { @scope (.a) { & p { color: red; } } }",
+      postcssModules: ".a { @scope (.a) { p { color: red } } }",
+    },
+    {
       css: ".a { @scope { p { color: red } } }",
       rules: ["pure/subject"],
       lightningcss: ".a { @scope { & p { color: red; } } }",

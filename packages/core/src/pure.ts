@@ -160,6 +160,7 @@ function visitScope(atRule: AtRule, context: Context, checker: Checker): Context
       (found) => globalDiagnostic(found, checker.file),
     ),
     ...[...scan.ids, ...limitScan.ids].map((found) => idDiagnostic(found, checker.file)),
+    ...(root && context.nested ? repeatedRoots(atRule, root, text, checker.file) : []),
   ]);
   return {
     ...context,
@@ -420,6 +421,42 @@ function globalsInside(node: CssTree.Selector | CssTree.SelectorList): Set<CssTr
     }
   }
   return inside;
+}
+
+/**
+ * A root selector of an @scope nested in a rule is relative to that rule, so
+ * one that repeats the rule's selector roots the @scope at a copy of it
+ * nested inside it, not at the element the rule styles.
+ */
+function repeatedRoots(
+  atRule: AtRule,
+  root: CssTree.SelectorList,
+  text: string,
+  file: string,
+): Diagnostic[] {
+  let parent: Node | Container | undefined = atRule.parent ?? undefined;
+  while (parent && parent.type !== "rule") parent = parent.parent ?? undefined;
+  if (parent?.type !== "rule") return [];
+  const own = new Set((parent as Rule).selectors.map(normalize));
+  const diagnostics: Diagnostic[] = [];
+  root.children.forEach((selector) => {
+    if (selector.type !== "Selector" || !selector.loc) return;
+    if (!own.has(normalize(text.slice(selector.loc.start.offset, selector.loc.end.offset)))) return;
+    diagnostics.push(
+      diagnosticAt(
+        { node: selector, text },
+        file,
+        "pure/scope",
+        (written) =>
+          `the root of an @scope nested in ${written} is relative to it, so this one is a ${written} inside ${written}; write @scope (&)`,
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+function normalize(selector: string): string {
+  return selector.trim().replace(/\s+/g, " ");
 }
 
 function isAnchor(node: CssTree.CssNode): boolean {

@@ -267,6 +267,39 @@ describe("checkCss: :global inside an @scope rooted at a local class", () => {
   });
 });
 
+describe("checkCss: an @scope nested in a rule whose root repeats the rule (pure/scope)", () => {
+  it("reports the root, which is a copy of the rule nested inside it", () => {
+    expect(diagnose(".prose {\n  @scope (.prose) to (.aside) { p {} }\n}")).toMatchObject([
+      {
+        rule: "pure/scope",
+        line: 2,
+        column: 11,
+        endLine: 2,
+        endColumn: 17,
+        message:
+          "the root of an @scope nested in .prose is relative to it, so this one is a .prose inside .prose; write @scope (&)",
+      },
+    ]);
+  });
+
+  it.each([
+    ".prose { @media (width > 40rem) { @scope (.prose) { p {} } } }",
+    ".a, .b { @scope (.b) { p {} } }",
+    ".prose { @scope (&, .prose) { p {} } }",
+  ])("reports %s", (css) => {
+    expect(rules(css)).toEqual(["pure/scope"]);
+  });
+
+  it.each([
+    ".prose { @scope (&) { p {} } }",
+    ".prose { @scope (.body) { p {} } }",
+    ".prose { .body { @scope (.prose) { p {} } } }",
+    "@scope (.prose) { p {} }",
+  ])("leaves %s alone", (css) => {
+    expect(rules(css).filter((rule) => rule === "pure/scope")).toEqual([]);
+  });
+});
+
 // lightningcss reads the rules of an @scope nested in a rule as nested rules
 // and puts `& ` before each selector without `&`, `:scope` or not.
 describe("checkCss: :scope in an @scope nested in a rule (pure/scope)", () => {
