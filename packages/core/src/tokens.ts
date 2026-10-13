@@ -7,9 +7,10 @@
  * - `shadow-color`: the same, except that a layer made of a single `var()` is
  *   a whole shadow rather than its color.
  * - `gradient-colors`: an image; only gradients inside it hold colors.
- * - `shadows`: the whole value is a list of shadows.
+ * - `items`: the whole value is a comma-separated list, each item one token
+ *   or keyword: shadows, font families, easings.
  * - `font`: the category's own position in the `font` shorthand.
- * - `times`: the time values of `transition` and `animation`.
+ * - `transition`: the category's own components of `transition` and `animation`.
  */
 export type ValuePart =
   | "value"
@@ -17,9 +18,9 @@ export type ValuePart =
   | "layer-color"
   | "shadow-color"
   | "gradient-colors"
-  | "shadows"
+  | "items"
   | "font"
-  | "times";
+  | "transition";
 
 export interface TokenCategoryDefinition {
   /** The properties that hold the category, and which part of their value does. */
@@ -132,8 +133,12 @@ export const tokenCategories = {
     percentages: true,
   },
   shadow: {
-    properties: { "box-shadow": "shadows", "text-shadow": "shadows" },
+    properties: { "box-shadow": "items", "text-shadow": "items" },
     keywords: ["none"],
+  },
+  "font-family": {
+    properties: { "font-family": "items", font: "font" },
+    keywords: [],
   },
   "font-size": {
     properties: { "font-size": "value", font: "font" },
@@ -147,6 +152,10 @@ export const tokenCategories = {
     properties: { "line-height": "value", font: "font" },
     keywords: ["normal"],
   },
+  "letter-spacing": {
+    properties: { "letter-spacing": "value" },
+    keywords: ["normal"],
+  },
   "z-index": {
     properties: { "z-index": "value" },
     keywords: ["auto"],
@@ -157,10 +166,19 @@ export const tokenCategories = {
       "transition-delay": "value",
       "animation-duration": "value",
       "animation-delay": "value",
-      transition: "times",
-      animation: "times",
+      transition: "transition",
+      animation: "transition",
     },
     keywords: ["auto"],
+  },
+  easing: {
+    properties: {
+      "transition-timing-function": "items",
+      "animation-timing-function": "items",
+      transition: "transition",
+      animation: "transition",
+    },
+    keywords: ["linear"],
   },
   // A media query cannot use var(); its widths are held to the values of these
   // tokens instead (breakpoint.ts).

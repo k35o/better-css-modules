@@ -414,7 +414,7 @@ describe("checkCss: what passes", () => {
 
   it("does not restrict categories the global CSS declares no token for", () => {
     const css =
-      ".a { z-index: 10; font-weight: 700; line-height: 1.5; transition: opacity 200ms; font: 700 1rem/1.5 serif; }";
+      ".a { z-index: 10; font-weight: 700; line-height: 1.5; transition: opacity 200ms ease-out; font: 700 1rem/1.5 serif; font-family: Arial; letter-spacing: 0.025em; animation-timing-function: cubic-bezier(0, 0, 0.2, 1); }";
     expect(check(css, declaring("--color-fg-base"))).toEqual([]);
   });
 
@@ -596,6 +596,120 @@ describe("checkCss: numbers", () => {
 
   it("checks both radii around the slash", () => {
     expect(check(".a { border-radius: var(--radius-md) 0 / 8px; }")).toHaveLength(1);
+  });
+});
+
+describe("checkCss: font families", () => {
+  const globalCss = declaring("--font-family-sans");
+  const HINT = "use a --font-family-* token";
+
+  it("reports each family name and generic family of the list", () => {
+    expect(
+      check('.a { font-family: "Noto Sans JP", Times New Roman, sans-serif; }', globalCss),
+    ).toEqual([
+      `tokens/font-family: "Noto Sans JP" is a raw value for font-family; ${HINT}`,
+      `tokens/font-family: Times New Roman is a raw value for font-family; ${HINT}`,
+      `tokens/font-family: sans-serif is a raw value for font-family; ${HINT}`,
+    ]);
+  });
+
+  it("accepts a token and the CSS-wide keywords, and nothing after the token", () => {
+    expect(check(".a { font-family: var(--font-family-sans); }", globalCss)).toEqual([]);
+    expect(check(".a { font-family: inherit; }", globalCss)).toEqual([]);
+    expect(check(".a { font-family: var(--font-family-sans), system-ui; }", globalCss)).toEqual([
+      `tokens/font-family: system-ui is a raw value for font-family; ${HINT}`,
+    ]);
+  });
+
+  it("takes everything after the line height of font for the families", () => {
+    expect(
+      check(".a { font: 700 1rem/1.5 var(--font-family-sans), monospace; }", globalCss),
+    ).toEqual([`tokens/font-family: monospace is a raw value for font-family; ${HINT}`]);
+    expect(check(".a { font: 1rem/1.5 var(--glow); }", globalCss)).toEqual([
+      `tokens/font-family: --glow is not a font-family token; ${HINT}`,
+    ]);
+  });
+
+  it("takes only the names that end font for the first family when it has no slash", () => {
+    expect(check(".a { font: italic large Times New Roman, serif; }", globalCss)).toEqual([
+      `tokens/font-family: Times New Roman is a raw value for font-family; ${HINT}`,
+      `tokens/font-family: serif is a raw value for font-family; ${HINT}`,
+    ]);
+    expect(check('.a { font: var(--size) "Noto Sans JP"; }', globalCss)).toHaveLength(1);
+    // The var() may be the size, followed by a family that is a token.
+    expect(check(".a { font: var(--size) var(--glow); }", globalCss)).toEqual([]);
+  });
+
+  it("reports a system font, which sets the family as well", () => {
+    expect(check(".a { font: caption; }", globalCss)).toEqual([
+      `tokens/font-family: caption is a raw value for font-family; ${HINT}`,
+    ]);
+    expect(check(".a { font: inherit; }", globalCss)).toEqual([]);
+  });
+});
+
+describe("checkCss: letter spacing", () => {
+  const globalCss = declaring("--letter-spacing-wide");
+  const HINT = "use a --letter-spacing-* token";
+
+  it("reports lengths and percentages, which are of the font size and not of the box", () => {
+    expect(check(".a { letter-spacing: 0.025em; } .b { letter-spacing: 5%; }", globalCss)).toEqual([
+      `tokens/letter-spacing: 0.025em is a raw value for letter-spacing; ${HINT}`,
+      `tokens/letter-spacing: 5% is a raw value for letter-spacing; ${HINT}`,
+    ]);
+  });
+
+  it("accepts a token, normal and zero", () => {
+    const css =
+      ".a { letter-spacing: var(--letter-spacing-wide); } .b { letter-spacing: normal; } .c { letter-spacing: 0; }";
+    expect(check(css, globalCss)).toEqual([]);
+  });
+
+  it("leaves word-spacing alone", () => {
+    expect(check(".a { word-spacing: 0.25em; }", globalCss)).toEqual([]);
+  });
+});
+
+describe("checkCss: easings", () => {
+  const globalCss = declaring("--easing-out", "--duration-fast");
+  const HINT = "use a --easing-* token";
+
+  it("reports easing functions and the keywords that name a curve", () => {
+    const css =
+      ".a { transition-timing-function: cubic-bezier(0, 0, 0.2, 1), steps(4), linear(0, 0.5 25%, 1); animation-timing-function: ease-out; }";
+    expect(check(css, globalCss)).toEqual([
+      `tokens/easing: cubic-bezier(0, 0, 0.2, 1) is a raw value for easing; ${HINT}`,
+      `tokens/easing: steps(4) is a raw value for easing; ${HINT}`,
+      `tokens/easing: linear(0, 0.5 25%, 1) is a raw value for easing; ${HINT}`,
+      `tokens/easing: ease-out is a raw value for easing; ${HINT}`,
+    ]);
+  });
+
+  it("accepts a token and linear, which is no curve", () => {
+    expect(
+      check(".a { transition-timing-function: var(--easing-out), linear; }", globalCss),
+    ).toEqual([]);
+  });
+
+  it("reports a token of another category", () => {
+    expect(check(".a { animation-timing-function: var(--duration-fast); }", globalCss)).toEqual([
+      `tokens/easing: --duration-fast is not an easing token; ${HINT}`,
+    ]);
+  });
+
+  it("reports raw easings of transition and animation, also in the fallback of a var()", () => {
+    const css =
+      ".a { transition: opacity var(--duration-fast) ease-in, color var(--duration-fast) var(--glow, steps(2)); animation: spin var(--duration-fast) linear infinite; }";
+    expect(check(css, globalCss)).toEqual([
+      `tokens/easing: ease-in is a raw value for easing; ${HINT}`,
+      `tokens/easing: steps(2) is a raw value for easing; ${HINT}`,
+    ]);
+  });
+
+  it("does not guess which component a var() of transition or animation is", () => {
+    const css =
+      ".a { transition: opacity var(--duration-fast) var(--glow); animation: var(--duration-fast) var(--easing-out) spin; }";
+    expect(check(css, globalCss)).toEqual([]);
   });
 });
 
