@@ -517,6 +517,27 @@ describe("checkCss: var() in shorthands that hold a color", () => {
     expect(check(css)).toEqual([]);
   });
 
+  // A gradient needs two color stops, so a lone var() before two of them may
+  // be the direction; before one it can only be a color.
+  it("leaves a lone var() before two color stops alone, as it may be the direction", () => {
+    const css =
+      ".a { background-image: linear-gradient(var(--direction), var(--color-fg-base), var(--color-bg-base)); }";
+    expect(check(css)).toEqual([]);
+  });
+
+  it("takes a lone var() for a color when only one color stop follows", () => {
+    const css = ".a { background-image: linear-gradient(var(--glow), var(--color-bg-base)); }";
+    expect(check(css)).toEqual([`tokens/color: --glow is not a color token; ${COLOR_HINT}`]);
+  });
+
+  it("takes a lone var() of a color token first for a color stop", () => {
+    const css =
+      ".a { background-image: linear-gradient(var(--color-fg-bsae), var(--color-fg-base), var(--color-bg-base)); }";
+    expect(check(css)).toEqual([
+      "tokens/unknown: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
+    ]);
+  });
+
   it("does not take a var() that is a whole image or a whole shadow for a color", () => {
     const globalCss = declaring("--color-fg-base");
     expect(check(".a { background-image: var(--hero); }", globalCss)).toEqual([]);

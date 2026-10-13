@@ -625,17 +625,22 @@ function checkChannelFunction(node: CssTree.FunctionNode, scope: Scope): void {
 }
 
 function checkGradient(node: CssTree.FunctionNode, scope: Scope): void {
-  layersOf(node.children.toArray()).forEach((argument, index) => {
+  const argumentsOf = layersOf(node.children.toArray());
+  argumentsOf.forEach((argument, index) => {
     // The first argument can be the direction, shape or position rather than a
-    // color stop; its keywords (`to`, `from`, `at`, `in`) tell.
+    // color stop; its keywords (`to`, `from`, `at`, `in`) tell. A var() alone
+    // that is not a color token may be either when two color stops follow,
+    // which a gradient needs.
+    const token = loneVar(argument);
     const isSetup =
       index === 0 &&
-      argument.some(
+      (argument.some(
         (child) =>
           child.type === "Identifier" &&
           !scope.restriction.keywords.has(child.name.toLowerCase()) &&
           !isRawColorName(child, scope),
-      );
+      ) ||
+        (token !== null && !allowsReference(token, scope) && argumentsOf.length > 2));
     checkColors(argument, scope, isSetup ? "unknown" : "stop-color");
   });
 }
