@@ -216,13 +216,54 @@ describe("checkCss: @scope rooted at a local class", () => {
     expect(check(css)).toEqual([`pure/subject: p is not a local class, and ${UNROOTED_HINT}`]);
   });
 
-  it("checks the prelude for :global and ids", () => {
-    expect(diagnose(".prose { @scope (&) to (:global(.not-prose), #toc) { p {} } }")).toMatchObject(
-      [
-        { rule: "pure/global", column: 25, endColumn: 44 },
-        { rule: "pure/id", column: 46, endColumn: 50 },
-      ],
-    );
+  it("checks the prelude for :global in the root and ids", () => {
+    expect(diagnose(".prose { @scope (:global(.dark) &) to (#toc) { p {} } }")).toMatchObject([
+      { rule: "pure/global", column: 18, endColumn: 32 },
+      { rule: "pure/id", column: 40, endColumn: 44 },
+    ]);
+  });
+});
+
+// What an @scope nested in a rule matches is inside its root, so a :global
+// there styles markup the module does not write, such as the lines of a
+// highlighter or the footnotes of a Markdown renderer, and reaches no further.
+describe("checkCss: :global inside an @scope rooted at a local class", () => {
+  it.each([
+    ".prose { @scope (&) { :global(.line) {} } }",
+    ".prose { @scope (&) { pre :global(.line) {} } }",
+    ".prose { @scope (&) { & > :global(.line) {} } }",
+    ".prose { @scope (&) { & :global(.a) + :global(.b) {} } }",
+    ".prose { @scope (&) { :global .line {} } }",
+    ".prose { @scope (&) { :global { .line {} } } }",
+    ".prose { @scope (&) { p { :global(.x) {} } } }",
+    ".prose { @scope (.body) { :global(.line) {} } }",
+    ".prose { @scope (&) to (:global(.footnotes)) { p {} } }",
+    ".prose { @scope (&) to (:global(.footnotes), :global(.task-list)) { p {} } }",
+    "@scope (.prose) { .lead { @scope (&) { :global(.line) {} } } }",
+  ])("accepts %s", (css) => {
+    expect(rules(css)).toEqual([]);
+  });
+
+  it.each([
+    // Before `&` or `:scope`: an ancestor of the root.
+    ".prose { @scope (&) { :global(.dark) & p {} } }",
+    ".prose { @scope (&) { p { :global(.dark) & {} } } }",
+    ".prose { @scope (&) to (:global(.dark) :scope .x) { p {} } }",
+    // On the root itself, or beside it.
+    ".prose { @scope (&) { &:global(.dark) p {} } }",
+    ".prose { @scope (&) { & + :global(.x) {} } }",
+    ".prose { @scope (&) { ~ :global(.x) {} } }",
+    // In the argument of another pseudo-class, which may reach the ancestors.
+    ".prose { @scope (&) { p:is(:global(.dark) *) {} } }",
+    // An @scope whose root bundlers do not count, or that is rooted elsewhere.
+    ".prose { @scope { :global(.line) {} } }",
+    ".prose { @scope to (:global(.footnotes)) { .a {} } }",
+  ])("reports the :global in %s", (css) => {
+    expect(rules(css)).toEqual(["pure/global"]);
+  });
+
+  it("reports a :global directly in a top-level @scope, whose root bundlers do not count", () => {
+    expect(rules("@scope (.prose) { :global(.line) {} }")).toEqual(["pure/global"]);
   });
 });
 

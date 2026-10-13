@@ -146,16 +146,21 @@ function visitScope(atRule: AtRule, context: Context, checker: Checker): Context
   }
   const scope = find(prelude, (node) => node.type === "Scope") as CssTree.Scope | null;
   const root = scope?.root?.type === "SelectorList" ? scope.root : null;
-  const scan: Scan = { local: false, globals: [], ids: [] };
-  for (const list of [root, scope?.limit]) {
-    if (list?.type === "SelectorList") scanList(list, context.local, false, text, scan);
-  }
-  checker.report(atRule, [
-    ...scan.globals.map((found) => globalDiagnostic(found, checker.file)),
-    ...scan.ids.map((found) => idDiagnostic(found, checker.file)),
-  ]);
+  const limit = scope?.limit?.type === "SelectorList" ? scope.limit : null;
   const unrooted = !scope?.root;
   const rooted = root !== null && hasLocalSubjects(root, context.local, context.nested);
+  const scan: Scan = { local: false, globals: [], ids: [] };
+  if (root) scanList(root, context.local, false, text, scan);
+  const limitScan: Scan = { local: false, globals: [], ids: [] };
+  if (limit) scanList(limit, context.local, false, text, limitScan);
+  // The limit is matched inside the root, like the rules of the @scope.
+  const inside = rooted && context.nested && limit ? globalsInside(limit) : new Set();
+  checker.report(atRule, [
+    ...[...scan.globals, ...limitScan.globals.filter(({ node }) => !inside.has(node))].map(
+      (found) => globalDiagnostic(found, checker.file),
+    ),
+    ...[...scan.ids, ...limitScan.ids].map((found) => idDiagnostic(found, checker.file)),
+  ]);
   return {
     ...context,
     scoped: !unrooted && (context.scoped || rooted),
@@ -211,8 +216,14 @@ function checkSelectorList(
     if (context.nestedScope && find(selector, isScopePseudoClass) && !find(selector, isNesting)) {
       diagnostics.push(scopeDiagnostic({ node: selector, text }, file));
     }
+    // Bundlers count the root of an @scope nested in a rule, and what is
+    // matched inside it may carry the classes of markup the module does not write.
+    const inside =
+      context.scoped && context.nested ? globalsInside(selector) : new Set<CssTree.CssNode>();
     diagnostics.push(
-      ...scan.globals.map((found) => globalDiagnostic(found, file)),
+      ...scan.globals
+        .filter(({ node }) => !inside.has(node))
+        .map((found) => globalDiagnostic(found, file)),
       ...scan.ids.map((found) => idDiagnostic(found, file)),
     );
   });
@@ -369,6 +380,50 @@ function isReportedElsewhere(parts: SubjectPart[]): boolean {
           (child.type === "PseudoClassSelector" && child.name.toLowerCase() === "global"),
       ) !== null,
   );
+}
+
+/**
+ * The `:global` of a selector matched inside an @scope that stay inside its
+ * root: those after the last compound holding `&` or `:scope`, reached from it
+ * by a descendant or child combinator, or anywhere when no compound holds
+ * either, since the selector is then relative to the root. A `:global` in the
+ * argument of another pseudo-class may hold a selector that reaches the
+ * ancestors of the root, so it is not counted.
+ */
+function globalsInside(node: CssTree.Selector | CssTree.SelectorList): Set<CssTree.CssNode> {
+  const inside = new Set<CssTree.CssNode>();
+  if (node.type === "SelectorList") {
+    node.children.forEach((selector) => {
+      if (selector.type !== "Selector") return;
+      for (const found of globalsInside(selector)) inside.add(found);
+    });
+    return inside;
+  }
+  // css-tree lists the simple selectors of every compound one after another.
+  const parts = node.children.toArray();
+  let anchor = -1;
+  parts.forEach((part, index) => {
+    if (part.type !== "Combinator" && find(part, isAnchor) !== null) anchor = index;
+  });
+  // A :global in the compound of `&` or `:scope` is on the root itself.
+  const start =
+    anchor === -1
+      ? 0
+      : parts.findIndex((part, index) => index > anchor && part.type === "Combinator");
+  if (start === -1) return inside;
+  const step = parts[start];
+  if (step?.type === "Combinator" && (step.name === "+" || step.name === "~")) return inside;
+  for (const part of parts.slice(start)) {
+    if (part.type === "PseudoClassSelector" && part.name.toLowerCase() === "global") {
+      const argument = argumentOf(part);
+      if (!argument || find(argument.list, isAnchor) === null) inside.add(part);
+    }
+  }
+  return inside;
+}
+
+function isAnchor(node: CssTree.CssNode): boolean {
+  return isNesting(node) || isScopePseudoClass(node);
 }
 
 function isScopePseudoClass(node: CssTree.CssNode): boolean {
