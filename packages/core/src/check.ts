@@ -146,6 +146,8 @@ interface Restriction {
 interface Context {
   file: string;
   tokens: Map<string, Token>;
+  /** Every value the global CSS gives each custom property. */
+  values: Map<string, string[]>;
   restrictions: Map<TokenCategory, Restriction>;
   breakpoints: Breakpoint[];
   /** The stylesheet when it belongs to the global CSS, which declares tokens and may use any. */
@@ -308,7 +310,15 @@ function contextOf(
     });
   }
   const breakpoints = breakpointsOf(globalCss.tokens);
-  return { file, tokens: globalCss.tokens, restrictions, breakpoints, global, layer };
+  return {
+    file,
+    tokens: globalCss.tokens,
+    values: globalCss.values,
+    restrictions,
+    breakpoints,
+    global,
+    layer,
+  };
 }
 
 /** What to write instead of a raw value: the kinds of token the global CSS declares for the category. */
@@ -346,6 +356,13 @@ function checkRoot(root: Root, context: Context, disabled: Keep): Diagnostic[] {
       keep(atRule, checkMediaQuery(atRule, context.breakpoints, context.file));
     });
   }
+  const own = new Set<string>();
+  root.walkDecls((declaration) => {
+    if (declaration.prop.startsWith("--")) own.add(declaration.prop);
+  });
+  root.walkAtRules(/^container$/i, (atRule) => {
+    keep(atRule, checkContainerQuery(atRule, context, own));
+  });
   if (context.global) {
     for (const token of context.tokens.values()) {
       if (token.file === context.file) keep(token.node, checkBreakpointToken(token));
@@ -473,17 +490,155 @@ function closestToken(
   category: TokenCategory,
   tokens: Map<string, Token>,
 ): string | null {
+  const names = [...tokens.values()].filter((token) => token.category === category);
+  return closestName(
+    name,
+    names.map((token) => token.name),
+  );
+}
+
+/** The name nearest to a misspelt one, within two edits. */
+function closestName(name: string, names: Iterable<string>): string | null {
   let closest: string | null = null;
   let best = 3;
-  for (const token of tokens.values()) {
-    if (token.category !== category) continue;
-    const distance = editDistance(name, token.name);
+  for (const candidate of names) {
+    const distance = editDistance(name, candidate);
     if (distance < best) {
       best = distance;
-      closest = token.name;
+      closest = candidate;
     }
   }
   return closest;
+}
+
+/** A custom property a style query reads, and the value it compares with, if any. */
+interface StyleQuery {
+  name: string;
+  /** Offset of the name in the prelude. */
+  offset: number;
+  value: { text: string; offset: number } | null;
+}
+
+/**
+ * Report what a style query of `@container` reads that the CSS does not set.
+ * A style query may read an internal name: a module follows a mode the global
+ * CSS sets that way. Reported are a token name the global CSS does not
+ * declare, as in a var(); a name without a category that neither the global
+ * CSS nor the stylesheet declares, when it is within two edits of one that
+ * is, since the markup may set any other in a style attribute; and a keyword
+ * that the global CSS never gives the name it compares, when it gives it only
+ * keywords.
+ */
+function checkContainerQuery(atRule: AtRule, context: Context, own: Set<string>): Diagnostic[] {
+  // postcss strips comments from `params`; the raw text keeps positions exact.
+  const text = atRule.raws.params?.raw ?? atRule.params;
+  const start = paramsStart(atRule);
+  let prelude: CssTree.CssNode;
+  try {
+    prelude = parse(text, { context: "atrulePrelude", atrule: "container", positions: true });
+  } catch {
+    return [];
+  }
+  const diagnostics: Diagnostic[] = [];
+  const report = (offset: number, length: number, message: string) => {
+    const first = positionIn(text, start, offset);
+    const last = positionIn(text, start, offset + length);
+    diagnostics.push({
+      file: context.file,
+      line: first.line,
+      column: first.column,
+      endLine: last.line,
+      endColumn: last.column,
+      rule: "tokens/unknown",
+      message,
+    });
+  };
+  walk(prelude, (node: CssTree.CssNode) => {
+    if (node.type !== "FeatureFunction" || node.feature.toLowerCase() !== "style") return;
+    for (const { name, offset, value } of styleQueriesOf(node)) {
+      const problem = unknownName(name, context, own);
+      if (problem) {
+        report(offset, name.length, problem);
+        continue;
+      }
+      const given = context.values.get(name) ?? [];
+      if (
+        value &&
+        context.tokens.has(name) &&
+        isKeywordText(value.text) &&
+        given.length > 0 &&
+        given.every(isKeywordText) &&
+        !given.includes(value.text)
+      ) {
+        const values = [...new Set(given)].join(", ");
+        report(
+          value.offset,
+          value.text.length,
+          `${value.text} is not a value the global CSS gives ${name}; it gives ${values}`,
+        );
+      }
+    }
+  });
+  return diagnostics;
+}
+
+/**
+ * The custom properties a style query reads. css-tree reads `style(--a: b)`
+ * as a declaration and leaves the rest as raw text: a name alone, conditions
+ * joined with `and` / `or`, and ranges. Only the first form is compared.
+ */
+function styleQueriesOf(node: CssTree.FeatureFunction): StyleQuery[] {
+  // css-tree's types leave out the Raw it gives for everything but a declaration.
+  const value = node.value as CssTree.FeatureFunction["value"] | CssTree.Raw;
+  if (value.type === "Declaration") {
+    if (!value.loc || !value.property.startsWith("--")) return [];
+    const offset = value.loc.start.offset;
+    const raw = value.value.type === "Raw" ? value.value : null;
+    const text = raw?.value.trim() ?? "";
+    const compared =
+      raw?.loc && text !== ""
+        ? { text, offset: raw.loc.start.offset + raw.value.indexOf(text) }
+        : null;
+    return [{ name: value.property, offset, value: compared }];
+  }
+  if (value.type !== "Raw" || !value.loc) return [];
+  const queries: StyleQuery[] = [];
+  // A name opens the condition or follows its `(`, unlike one in a var().
+  for (const match of value.value.matchAll(/(?:^|(?<![\w-])\()\s*(--[\w-]+)/g)) {
+    const name = match[1];
+    const offset = value.loc.start.offset + match.index + match[0].length - name.length;
+    queries.push({ name, offset, value: null });
+  }
+  return queries;
+}
+
+/** Why a name a style query reads is unknown, or null. */
+function unknownName(name: string, context: Context, own: Set<string>): string | null {
+  const category = categoryOf(name);
+  if (category) {
+    if (!context.restrictions.has(category) || context.tokens.has(name)) return null;
+    const suggestion = closestToken(name, category, context.tokens);
+    return `${name} is not defined in the global CSS${suggestion ? `; did you mean ${suggestion}?` : ""}`;
+  }
+  if (context.tokens.has(name) || own.has(name)) return null;
+  const internal = [...context.tokens.values()].filter((token) => token.category === null);
+  const suggestion = closestName(name, [...internal.map((token) => token.name), ...own]);
+  return suggestion
+    ? `${name} is declared neither in the global CSS nor in this stylesheet; did you mean ${suggestion}?`
+    : null;
+}
+
+/** A value that is one identifier, such as a mode a custom property names. */
+function isKeywordText(text: string): boolean {
+  return /^-?[a-z_][\w-]*$/i.test(text);
+}
+
+/** The position of an offset in a prelude that starts at `start`. */
+function positionIn(text: string, start: SourcePosition, offset: number): SourcePosition {
+  const before = text.slice(0, offset);
+  const lastBreak = before.lastIndexOf("\n");
+  if (lastBreak === -1) return { line: start.line, column: start.column + offset };
+  return { line: start.line + before.split("\n").length - 1, column: offset - lastBreak };
 }
 
 /** Optimal string alignment distance: a swap of two neighbours counts as one edit. */

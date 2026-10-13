@@ -59,6 +59,8 @@ export interface GlobalCss {
   /** The stylesheets with their imports followed, in cascade order. */
   files: GlobalCssFile[];
   tokens: Map<string, Token>;
+  /** Every value the global CSS gives each custom property, at `:root` and in its modes, as written. */
+  values: Map<string, string[]>;
   /** The layers declared at the top level of the cascade, in order. */
   layers: string[];
 }
@@ -106,14 +108,20 @@ export function globalCssFrom(files: GlobalCssFile[]): GlobalCss {
   type Source = { node: Declaration | AtRule; file: string; text: string };
   const declarations = new Map<string, Source>();
   const registrations = new Map<string, Source>();
+  const given = new Map<string, string[]>();
+  const give = (name: string, value: string) => {
+    if (value.trim() !== "") given.set(name, [...(given.get(name) ?? []), value.trim()]);
+  };
   for (const { file, root, conditional } of files) {
     root.walk((node) => {
       if (node.type === "decl" && node.prop.startsWith("--")) {
+        if (!isForeign(node)) give(node.prop, node.value);
         if (declaresToken(node, conditional)) {
           declarations.set(node.prop, { node, file, text: node.value });
         }
       } else if (node.type === "atrule" && node.name.toLowerCase() === "property") {
         const name = node.params.trim();
+        give(name, initialValueOf(node));
         if (name.startsWith("--") && declaresToken(node, conditional)) {
           registrations.set(name, { node, file, text: initialValueOf(node) });
         }
@@ -135,7 +143,7 @@ export function globalCssFrom(files: GlobalCssFile[]): GlobalCss {
       node,
     });
   }
-  return { files, tokens, layers: layersOf(files) };
+  return { files, tokens, values: given, layers: layersOf(files) };
 }
 
 /**
