@@ -23,12 +23,17 @@ export const GLOBAL_AT_RULES = new Set([
   "color-profile",
 ]);
 
+const ROOT_AT_CLASS = "write @scope (&) in the rule of its root class";
+const UNROOTED = `an @scope without a root selector is rooted at the parent of the stylesheet's <style> or <link>; ${ROOT_AT_CLASS}`;
+
 /** Where a rule sits, as far as purity goes. */
 interface Context {
   /** Nested in a style rule, which makes the rule pure and `&` a local subject. */
   nested: boolean;
   /** Inside an @scope rooted at a local class, where any element may be the subject. */
   scoped: boolean;
+  /** Inside an @scope without a root selector, which is rooted outside the module. */
+  unrooted: boolean;
   /** Not inside a `:global { ... }` block. */
   local: boolean;
 }
@@ -66,7 +71,7 @@ interface SubjectPart {
  */
 export function checkPure(root: Root, file: string, report: Report): void {
   const checker: Checker = { file, report };
-  walkContainer(root, { nested: false, scoped: false, local: true }, checker);
+  walkContainer(root, { nested: false, scoped: false, unrooted: false, local: true }, checker);
   root.walkDecls((declaration) => {
     if (declaration.important) report(declaration, checkImportant(declaration, file));
   });
@@ -110,8 +115,9 @@ function visitAtRule(atRule: AtRule, context: Context, checker: Checker): void {
 }
 
 /**
- * The root of an @scope is local when its selectors have a local subject, or,
- * without one, when the @scope is nested in a style rule: that rule is the root.
+ * The root of an @scope is local when its selectors have a local subject.
+ * Without them, the root is the parent of the stylesheet's owner node, also
+ * when the @scope is nested in a style rule.
  */
 function visitScope(atRule: AtRule, context: Context, checker: Checker): Context {
   const text = atRule.raws.params?.raw ?? atRule.params;
@@ -139,8 +145,8 @@ function visitScope(atRule: AtRule, context: Context, checker: Checker): Context
     ...scan.globals.map((found) => globalDiagnostic(found, checker.file)),
     ...scan.ids.map((found) => idDiagnostic(found, checker.file)),
   ]);
-  const rooted = root ? hasLocalSubjects(root, context.local, context.nested) : context.nested;
-  return { ...context, scoped: context.scoped || rooted };
+  const rooted = root !== null && hasLocalSubjects(root, context.local, context.nested);
+  return { ...context, scoped: context.scoped || rooted, unrooted: root === null };
 }
 
 function checkSelectorList(
@@ -162,8 +168,10 @@ function checkSelectorList(
       if (scan.globals.length === 0) {
         // Scoped but not nested: a top-level @scope rooted at a local class.
         const hint = context.scoped
-          ? ", and bundlers do not count the root of a top-level @scope; nest the @scope inside the rule of its root class"
-          : "; every selector of a CSS Module needs one";
+          ? `, and bundlers do not count the root of a top-level @scope; ${ROOT_AT_CLASS}`
+          : context.unrooted
+            ? `, and ${UNROOTED}`
+            : "; every selector of a CSS Module needs one";
         diagnostics.push(
           diagnosticAt(
             { node: selector, text },
@@ -182,7 +190,7 @@ function checkSelectorList(
         !isLocalCompound(subject, context.nested) &&
         !isReportedElsewhere(subject)
       ) {
-        diagnostics.push(subjectDiagnostic(subject, text, file));
+        diagnostics.push(subjectDiagnostic(subject, text, context.unrooted, file));
       }
     }
     diagnostics.push(
@@ -350,7 +358,12 @@ function isScoping(node: CssTree.PseudoClassSelector): boolean {
   return name === "global" || name === "local";
 }
 
-function subjectDiagnostic(parts: SubjectPart[], text: string, file: string): Diagnostic {
+function subjectDiagnostic(
+  parts: SubjectPart[],
+  text: string,
+  unrooted: boolean,
+  file: string,
+): Diagnostic {
   const first = parts[0].node.loc;
   const last = parts[parts.length - 1].node.loc;
   const written = first && last ? text.slice(first.start.offset, last.end.offset) : "";
@@ -361,7 +374,9 @@ function subjectDiagnostic(parts: SubjectPart[], text: string, file: string): Di
     endLine: last?.end.line,
     endColumn: last?.end.column,
     rule: "pure/subject",
-    message: `${written} is not a local class; give the element a class of its own, or style markup the component does not write inside @scope`,
+    message: unrooted
+      ? `${written} is not a local class, and ${UNROOTED}`
+      : `${written} is not a local class; give the element a class of its own, or style markup the component does not write inside @scope (&)`,
   };
 }
 
@@ -371,7 +386,7 @@ function globalDiagnostic(found: Located, file: string): Diagnostic {
     file,
     "pure/global",
     (written) =>
-      `${written} reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope`,
+      `${written} reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope (&)`,
   );
 }
 

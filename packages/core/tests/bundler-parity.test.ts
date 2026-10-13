@@ -112,8 +112,10 @@ describe("pure/selector matches lightningcss's pure mode", () => {
     "@scope (.a) to (.b) { p {} }",
     "@scope (.a) { :scope {} }",
     "@scope (.a) { .b p {} }",
+    "@scope { p {} }",
     ".a { @scope { p {} } }",
     ".a { @scope to (.b) { p {} } }",
+    ".a { @scope (&) { p {} } }",
     ".a { @scope (.b) { p {} } }",
     "a { @scope (.b) { p {} } }",
   ])("%s", (css) => {
@@ -125,6 +127,89 @@ describe("pure/selector matches lightningcss's pure mode", () => {
       ({ rule }) => rule === "pure/selector" || (rule === "pure/global" && !local),
     );
     expect(impure).toBe(lightningcssRejectsAsImpure(css));
+  });
+});
+
+function lightningcssCode(css: string): string {
+  const { code } = transform({
+    filename: "x.module.css",
+    code: Buffer.from(css),
+    cssModules: { pattern: "[local]" },
+  });
+  return code.toString().replace(/\s+/g, " ").trim();
+}
+
+async function postcssModulesCode(css: string): Promise<string> {
+  const result = await postcss([
+    postcssModules({ getJSON: () => {}, generateScopedName: "[local]" }),
+  ]).process(css, { from: path.join(fixtureDir, "x.module.css") });
+  return result.css;
+}
+
+// What the bundlers emit for each form of @scope. In Chromium 153 and WebKit
+// 26.6, every form check accepts styles the markup of its root, and an @scope
+// without a root selector styles none of it, nested in a rule or not: its root
+// is the parent of the stylesheet's <style> or <link>. null stands for a
+// postcss-modules that fails; postcss-modules-local-by-default 4.2 crashes at
+// `&` in the prelude and splits the prelude at every "to", in class names too.
+describe("@scope: what check reports and what the bundlers emit", () => {
+  it.each([
+    {
+      css: ".a { @scope (&) { p { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (&) { & p { color: red; } } }",
+      postcssModules: null,
+    },
+    {
+      css: ".a { @scope (&) to (.b) { p { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (&) to (.b) { & p { color: red; } } }",
+      postcssModules: null,
+    },
+    {
+      css: ".a { @scope (&) { & > p { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (&) { & > p { color: red; } } }",
+      postcssModules: null,
+    },
+    {
+      css: ".a { @scope (.b) { p { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (.b) { & p { color: red; } } }",
+      postcssModules: ".a { @scope (.b) { p { color: red } } }",
+    },
+    {
+      css: ".a { @scope (.button) { p { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (.button) { & p { color: red; } } }",
+      postcssModules: ".a { @scope (.bu) to () { p { color: red } } }",
+    },
+    {
+      css: ".a { @scope { p { color: red } } }",
+      rules: ["pure/subject"],
+      lightningcss: ".a { @scope { & p { color: red; } } }",
+      postcssModules: ".a { @scope { p { color: red } } }",
+    },
+    {
+      css: ".a { @scope to (.b) { p { color: red } } }",
+      rules: ["pure/subject"],
+      lightningcss: ".a { @scope to (.b) { & p { color: red; } } }",
+      postcssModules: ".a { @scope () to (.b) { p { color: red } } }",
+    },
+    {
+      css: "@scope (.a) { p { color: red } }",
+      rules: ["pure/selector"],
+      lightningcss: "@scope (.a) { p { color: red; } }",
+      postcssModules: "@scope (.a) { p { color: red } }",
+    },
+  ])("$css", async ({ css, rules, lightningcss, postcssModules }) => {
+    const diagnostics = checkCss(analyzeCss(css, "/x.module.css"), globalCssFrom([]));
+    expect(diagnostics.map(({ rule }) => rule)).toEqual(rules);
+    expect(lightningcssCode(css)).toBe(lightningcss);
+    const built = postcssModulesCode(css);
+    await (postcssModules === null
+      ? expect(built).rejects.toThrow()
+      : expect(built).resolves.toBe(postcssModules));
   });
 });
 

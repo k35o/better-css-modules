@@ -10,9 +10,11 @@ const FILE = "/project/src/a.module.css";
 
 const SELECTOR_HINT = "every selector of a CSS Module needs one";
 const SUBJECT_HINT =
-  "give the element a class of its own, or style markup the component does not write inside @scope";
+  "give the element a class of its own, or style markup the component does not write inside @scope (&)";
 const GLOBAL_HINT =
-  "a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope";
+  "a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope (&)";
+const UNROOTED_HINT =
+  "an @scope without a root selector is rooted at the parent of the stylesheet's <style> or <link>; write @scope (&) in the rule of its root class";
 const AT_RULE_HINT =
   "is global and takes effect only while this module is loaded; move it to the global CSS";
 
@@ -78,7 +80,7 @@ describe("checkCss: selectors without a local class (pure/selector)", () => {
 
   it("does not count the root of a top-level @scope, as bundlers do not", () => {
     expect(check("@scope (.prose) to (.aside) { p {} }")).toEqual([
-      "pure/selector: p has no local class, and bundlers do not count the root of a top-level @scope; nest the @scope inside the rule of its root class",
+      "pure/selector: p has no local class, and bundlers do not count the root of a top-level @scope; write @scope (&) in the rule of its root class",
     ]);
   });
 
@@ -86,6 +88,12 @@ describe("checkCss: selectors without a local class (pure/selector)", () => {
     expect(rules("@media (width > 40rem) { a {} }")).toEqual(["pure/selector"]);
     expect(rules("@layer components { a {} }")).toEqual(["pure/selector"]);
     expect(rules("@scope (main) { p {} }")).toEqual(["pure/selector"]);
+  });
+
+  it("does not count an @scope without a root selector, which is rooted outside the module", () => {
+    expect(check("@scope { p {} }")).toEqual([
+      `pure/selector: p has no local class, and ${UNROOTED_HINT}`,
+    ]);
   });
 
   it("accepts a nested rule through the rule it is nested in", () => {
@@ -176,12 +184,13 @@ describe("checkCss: a selector with no subject compound", () => {
 // classes; inside an @scope rooted at a local class any element may be styled.
 describe("checkCss: @scope rooted at a local class", () => {
   it.each([
-    ".prose { @scope { p {} } }",
-    ".prose { @scope to (.aside) { h2 + p {} } }",
+    ".prose { @scope (&) { p {} } }",
+    ".prose { @scope (&) to (.aside) { h2 + p {} } }",
     ".prose { @scope (&) { * + * {} } }",
+    ".prose { @scope (&) { & > p {} } }",
     ".prose { @scope (.inner) { li > p {} } }",
-    ".prose { @scope { ul { li {} } } }",
-    "@media (width > 40rem) { .prose { @scope { p {} } } }",
+    ".prose { @scope (&) { ul { li {} } } }",
+    "@media (width > 40rem) { .prose { @scope (&) { p {} } } }",
     "@scope (.prose) { .lead p {} }",
   ])("accepts any subject in %s", (css) => {
     expect(rules(css)).toEqual([]);
@@ -194,11 +203,24 @@ describe("checkCss: @scope rooted at a local class", () => {
     expect(rules("@scope (main) { .lead p {} }")).toEqual(["pure/subject"]);
   });
 
+  // Browsers root an @scope without a root selector at the parent of the
+  // stylesheet's owner node, even when it is nested in a rule.
+  it.each([
+    ".prose { @scope { p {} } }",
+    ".prose { @scope to (.aside) { p {} } }",
+    ".prose { @scope { .lead { p {} } } }",
+    "@scope { .lead p {} }",
+  ])("holds the subject of an @scope without a root selector to a local class in %s", (css) => {
+    expect(check(css)).toEqual([`pure/subject: p is not a local class, and ${UNROOTED_HINT}`]);
+  });
+
   it("checks the prelude for :global and ids", () => {
-    expect(diagnose(".prose { @scope to (:global(.not-prose), #toc) { p {} } }")).toMatchObject([
-      { rule: "pure/global", column: 21, endColumn: 40 },
-      { rule: "pure/id", column: 42, endColumn: 46 },
-    ]);
+    expect(diagnose(".prose { @scope (&) to (:global(.not-prose), #toc) { p {} } }")).toMatchObject(
+      [
+        { rule: "pure/global", column: 25, endColumn: 44 },
+        { rule: "pure/id", column: 46, endColumn: 50 },
+      ],
+    );
   });
 });
 

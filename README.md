@@ -356,8 +356,8 @@ A `.module.css` holds the styles of one component: they reach only its own class
 ```
 
 ```
-src/list.module.css:1:9 error pure/subject: * is not a local class; give the element a class of its own, or style markup the component does not write inside @scope
-src/list.module.css:4:1 error pure/global: :global(.dark) reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope
+src/list.module.css:1:9 error pure/subject: * is not a local class; give the element a class of its own, or style markup the component does not write inside @scope (&)
+src/list.module.css:4:1 error pure/global: :global(.dark) reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope (&)
 src/list.module.css:5:31 error pure/important: !important defeats overrides from outside the component and the order of @layer
 src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effect only while this module is loaded; move it to the global CSS
 [better-css-modules] 4 problem(s)

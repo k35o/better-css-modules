@@ -210,7 +210,7 @@ describe("check", () => {
     expect(run(dir, "check", "--format", "github")).toEqual({
       status: 1,
       stdout: [
-        "::error file=src/bad.module.css,line=2,col=3,endLine=2,endColumn=10,title=pure/global:::global reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope",
+        "::error file=src/bad.module.css,line=2,col=3,endLine=2,endColumn=10,title=pure/global:::global reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope (&)",
         "::error file=src/card.module.css,line=2,col=10,endLine=2,endColumn=14,title=tokens/color::#fff is a raw value for color; use a --color-* token",
         "::error file=src/card.module.css,line=5,col=1,endLine=5,endColumn=7,title=usage/unused-class::.ghost is never used",
         "::error file=src/card.module.css,line=6,col=10,endLine=6,endColumn=13,title=tokens/color::red is a raw value for color; use a --color-* token",
@@ -231,7 +231,7 @@ describe("check", () => {
     expect(run(dir, "check")).toEqual({
       status: 1,
       stdout: [
-        "src/card.module.css:1:1 error pure/global: :global(.dark) reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope",
+        "src/card.module.css:1:1 error pure/global: :global(.dark) reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope (&)",
         "[better-css-modules] 1 problem(s)",
         "",
       ].join("\n"),
