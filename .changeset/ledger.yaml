@@ -20,6 +20,12 @@
   intents:
     - spicy-years-sip
     - tasty-sails-clean
+"@better-css-modules/cli@0.3.0":
+  dir: packages/cli
+  intents:
+    - calm-queries-read
+    - heavy-beans-bow
+    - quiet-lines-scope
 "@better-css-modules/core@0.1.3":
   dir: packages/core
   intents:
@@ -44,6 +50,12 @@
     - spicy-years-sip
     - tasty-sails-clean
     - wide-pandas-look
+"@better-css-modules/core@0.3.0":
+  dir: packages/core
+  intents:
+    - calm-queries-read
+    - heavy-beans-bow
+    - quiet-lines-scope
 "@better-css-modules/esbuild@0.2.0":
   dir: packages/esbuild
   intents:
