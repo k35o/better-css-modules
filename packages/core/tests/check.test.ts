@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import postcss from "postcss";
-import { check as checkProject, checkCss } from "../src/check.js";
+import { check as checkProject, checkCss, checkGlobalCss } from "../src/check.js";
 import { type Config, ConfigError, resolveConfig } from "../src/config.js";
 import { analyzeCss } from "../src/css.js";
 import { type GlobalCss, globalCssFrom } from "../src/global.js";
@@ -49,6 +49,11 @@ function diagnose(css: string, globalCss: GlobalCss = designSystem) {
 /** `rule: message` of every diagnostic, in source order. */
 function check(css: string, globalCss?: GlobalCss): string[] {
   return diagnose(css, globalCss).map((d) => `${d.rule}: ${d.message}`);
+}
+
+/** `rule: message` of every diagnostic of the project's global CSS. */
+function checkGlobal(globalCss: GlobalCss): string[] {
+  return checkGlobalCss(globalCss).map((d) => `${d.rule}: ${d.message}`);
 }
 
 describe("checkCss: raw values", () => {
@@ -336,6 +341,107 @@ describe("checkCss: token names the global CSS does not declare", () => {
   });
 });
 
+// A mode that styles more than tokens can, such as rotating an icon in
+// vertical writing, sets a custom property for style queries to read.
+describe("checkCss: style queries", () => {
+  const writing = globalCssOf(`
+:root {
+  --color-fg-base: #111;
+  --writing: horizontal;
+}
+.writing-v {
+  --writing: vertical;
+}`);
+
+  it("accepts a name and a value the global CSS gives it, internal or not", () => {
+    const css =
+      ".a { @container style(--writing: vertical) { rotate: 90deg; } }\n@container style(--color-fg-base) { .b { color: var(--color-fg-base); } }";
+    expect(check(css, writing)).toEqual([]);
+  });
+
+  it("reports a misspelt name near a name the global CSS declares", () => {
+    const css = ".a {\n  @container style(--writng: vertical) { rotate: 90deg; }\n}";
+    expect(diagnose(css, writing)).toMatchObject([
+      {
+        rule: "tokens/unknown",
+        line: 2,
+        column: 20,
+        endLine: 2,
+        endColumn: 28,
+        message:
+          "--writng is declared neither in the global CSS nor in this stylesheet; did you mean --writing?",
+      },
+    ]);
+  });
+
+  it("reports a misspelt token name as in a var()", () => {
+    expect(check("@container style(--color-fg-bsae) { .a {} }", writing)).toEqual([
+      "tokens/unknown: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
+    ]);
+  });
+
+  it("reports a keyword the global CSS never gives the name", () => {
+    expect(diagnose("@container style(--writing: verticl) { .a {} }", writing)).toMatchObject([
+      {
+        rule: "tokens/unknown",
+        column: 29,
+        endColumn: 36,
+        message:
+          "verticl is not a value the global CSS gives --writing; it gives horizontal, vertical",
+      },
+    ]);
+  });
+
+  it("reads names in a name alone, in conditions joined with and / or, and after not", () => {
+    const css =
+      "@container style(--writng) and style((--writig: vertical) or (--writing: vertical)) { .a {} }\n@container not style(--writin: x) { .a {} }";
+    expect(check(css, writing)).toEqual([
+      "tokens/unknown: --writng is declared neither in the global CSS nor in this stylesheet; did you mean --writing?",
+      "tokens/unknown: --writig is declared neither in the global CSS nor in this stylesheet; did you mean --writing?",
+      "tokens/unknown: --writin is declared neither in the global CSS nor in this stylesheet; did you mean --writing?",
+    ]);
+  });
+
+  it("does not take a name inside a var() of the compared value for a name the query reads", () => {
+    expect(check("@container style((--writing: var(--writng))) { .a {} }", writing)).toEqual([]);
+  });
+
+  it("knows the names the stylesheet declares", () => {
+    const css =
+      ".a { --density: compact; }\n.b { @container style(--density: compact) {} @container style(--densty: compact) {} }";
+    expect(check(css, writing)).toEqual([
+      "tokens/unknown: --densty is declared neither in the global CSS nor in this stylesheet; did you mean --density?",
+    ]);
+  });
+
+  it("leaves a name that may be set in a style attribute alone", () => {
+    expect(check(".a { @container style(--open: 1) { display: block; } }", writing)).toEqual([]);
+  });
+
+  it("compares only keywords, and only with a name the global CSS gives only keywords", () => {
+    const globalCss = globalCssOf(`
+:root { --level: 1; --tone: quiet; }
+.loud { --tone: var(--loud); }`);
+    const css = "@container style(--level: 2) { .a {} } @container style(--tone: calm) { .a {} }";
+    expect(check(css, globalCss)).toEqual([]);
+  });
+
+  it("checks the project's global CSS too", () => {
+    const globalCss = globalCssOf(`
+:root { --writing: horizontal; }
+@container style(--writing: vertcal) { .icon { rotate: 90deg; } }`);
+    expect(checkGlobal(globalCss)).toEqual([
+      "tokens/unknown: vertcal is not a value the global CSS gives --writing; it gives horizontal",
+    ]);
+  });
+
+  it("can be silenced with a reason", () => {
+    const css =
+      "/* better-css-modules-disable-next-line tokens/unknown -- set inline by the date picker */\n@container style(--writng: vertical) { .a {} }";
+    expect(check(css, writing)).toEqual([]);
+  });
+});
+
 describe("checkCss: internal names", () => {
   const message =
     "tokens/internal: --gray-900 is internal to the global CSS; use a token with a category prefix";
@@ -515,6 +621,27 @@ describe("checkCss: var() in shorthands that hold a color", () => {
     const css =
       ".a { background: conic-gradient(from var(--angle) at 50% 50%, var(--color-fg-base), var(--color-bg-base)); }";
     expect(check(css)).toEqual([]);
+  });
+
+  // A gradient needs two color stops, so a lone var() before two of them may
+  // be the direction; before one it can only be a color.
+  it("leaves a lone var() before two color stops alone, as it may be the direction", () => {
+    const css =
+      ".a { background-image: linear-gradient(var(--direction), var(--color-fg-base), var(--color-bg-base)); }";
+    expect(check(css)).toEqual([]);
+  });
+
+  it("takes a lone var() for a color when only one color stop follows", () => {
+    const css = ".a { background-image: linear-gradient(var(--glow), var(--color-bg-base)); }";
+    expect(check(css)).toEqual([`tokens/color: --glow is not a color token; ${COLOR_HINT}`]);
+  });
+
+  it("takes a lone var() of a color token first for a color stop", () => {
+    const css =
+      ".a { background-image: linear-gradient(var(--color-fg-bsae), var(--color-fg-base), var(--color-bg-base)); }";
+    expect(check(css)).toEqual([
+      "tokens/unknown: --color-fg-bsae is not defined in the global CSS; did you mean --color-fg-base?",
+    ]);
   });
 
   it("does not take a var() that is a whole image or a whole shadow for a color", () => {

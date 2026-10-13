@@ -6,7 +6,7 @@ import { transform } from "lightningcss";
 import postcss, { CssSyntaxError } from "postcss";
 import postcssModules from "postcss-modules";
 import { ConfigError, resolveConfig } from "../src/config.js";
-import { type GlobalCss, loadGlobalCss } from "../src/global.js";
+import { type GlobalCss, globalCssFrom, loadGlobalCss } from "../src/global.js";
 import { createLayerWrapper, resolveLayer, wrapInLayer } from "../src/layer.js";
 import { cssCases } from "./fixtures/css-cases.js";
 
@@ -259,7 +259,7 @@ describe("resolveLayer", () => {
   });
 
   it("asks for global CSS when there is none", async () => {
-    expect(() => resolveLayer("ui", { files: [], tokens: new Map(), layers: [] })).toThrow(
+    expect(() => resolveLayer("ui", globalCssFrom([]))).toThrow(
       'layer "ui" needs global CSS that declares it; list one in globalCss with @layer ui;',
     );
   });

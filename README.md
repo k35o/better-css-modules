@@ -204,7 +204,7 @@ Every problem is an error. The rules of a check are named after it (`usage/`, `p
 | [`pure/value`](#pure-css-modules)                        | The `@value`                                                                             | Next line or file-wide                                                            |
 | [`pure/scope`](#markup-without-classes-scope)            | The selector                                                                             | Next line or file-wide                                                            |
 | [`tokens/<category>`](#what-passes-and-what-is-reported) | The value                                                                                | Next line or file-wide                                                            |
-| [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`                                                                              | Next line or file-wide                                                            |
+| [`tokens/unknown`](#what-passes-and-what-is-reported)    | The `var()`, or the name or value a style query reads                                    | Next line or file-wide                                                            |
 | [`tokens/internal`](#tokens-and-modes)                   | The `var()`                                                                              | Next line or file-wide                                                            |
 | [`tokens/declaration`](#tokens-and-modes)                | The custom property                                                                      | Next line or file-wide                                                            |
 | [`tokens/breakpoint`](#breakpoints)                      | The width in `@media`, or the token                                                      | Next line or file-wide                                                            |
@@ -533,7 +533,7 @@ These are reported as `tokens/<category>`:
 - A `var()` of a custom property that is not a token of the category: a token of another category, or a custom property declared in the file.
 - A raw value in the fallback of a `var()` (`var(--color-fg-base, red)`).
 
-`tokens/unknown` reports a `var()` of a name with the prefix of a restricted category that the global CSS does not declare (`--color-fg-bsae`), in any property and in the value of a custom property: most likely a typo. The message names the closest declared token of the category when one is within two edits. A name of a category the global CSS declares no token for is not checked.
+`tokens/unknown` reports a `var()` of a name with the prefix of a restricted category that the global CSS does not declare (`--color-fg-bsae`), in any property and in the value of a custom property: most likely a typo. The message names the closest declared token of the category when one is within two edits. A name of a category the global CSS declares no token for is not checked. It also reports what a [style query](#style-queries) reads that the CSS does not set.
 
 `tokens/declaration` reports a custom property a module declares under a token name of a restricted category (`--color-mine: red`), whatever its value. Otherwise a module could declare its own `--color-*` and feed any raw value through the category. (A module registers no custom property with `@property` at all: that is `pure/at-rule`.)
 
@@ -575,7 +575,7 @@ A `var()` in a shorthand could stand for any of its components. The tool reads i
 
 - In `background`, `border`, `outline`, the other color shorthands and each shadow, a `var()` of a color token is the color. Any other `var()` is taken for the color when nothing else in the same comma-separated layer is a color. `border: 1px solid var(--glow)` is reported; `border: var(--line) solid var(--color-border-base)` is not. Write the longhand when a `var()` is something else (`background-image: var(--hero)`).
 - A shadow that is a single `var()` is a whole shadow, not a color.
-- In a gradient, a `var()` in a color stop is a color. The first argument is left alone when it holds the direction or position (`to right`, `from var(--angle)`, `at 50% 50%`).
+- In a gradient, a `var()` in a color stop is a color. The first argument is left alone when it holds the direction or position (`to right`, `from var(--angle)`, `at 50% 50%`), and so is a lone `var()` there that is not a color token when two more arguments follow: it may be the direction (`linear-gradient(var(--direction), var(--color-fg-base), transparent)`). Before a single color stop it can only be a color, since a gradient needs two.
 - In `font`, the component before the slash is the size, the one after it the line height and the rest the families (`font: 700 var(--font-size-lg) / var(--line-height-tight) var(--font-family-sans)`). Without a slash a `var()` before the first comma could be the size as well as a family, so there only family names are checked (`Arial` in `font: var(--font-size-lg) Arial`); the families after the comma are checked like the longhand. No other `var()` in `font` is tied to a category.
 - In `transition` and `animation` a `var()` may be a time, an easing or a name, so none is tied to `duration` or `easing`; raw times and easings are still reported. Use `transition-duration` and `transition-timing-function` to have the tokens checked.
 
@@ -622,6 +622,49 @@ src/nav.module.css:12:20 error tokens/breakpoint: 768px is not a breakpoint; the
 - A breakpoint token must be one length, written out or through another token (`--breakpoint-md: var(--tablet)` with `--tablet: 48rem`). The project's global CSS reports any other value, and such a token is no breakpoint.
 - `@media` in the project's global CSS is checked like a module's.
 - Not checked: `height` and the other media features, `@container` (the size of a container is the component's, not the page's), `@custom-media`, and the conditions of `@import`.
+
+### Style queries
+
+Some modes change more than tokens can, such as turning an icon in vertical writing. The global CSS sets a custom property for the mode, and a module reads it with a style query of `@container`, which tests the custom properties of the parent. A style query may read an internal name.
+
+`src/globals.css`:
+
+```css
+:root {
+  --writing: horizontal;
+}
+
+.writing-v {
+  writing-mode: vertical-rl;
+  --writing: vertical;
+}
+```
+
+`src/icon.module.css`:
+
+```css
+.icon {
+  @container style(--writing: vertical) {
+    rotate: 90deg;
+  }
+  @container style(--writng: vertical) {
+  }
+  @container style(--writing: verticl) {
+  }
+}
+```
+
+```
+src/icon.module.css:5:20 error tokens/unknown: --writng is declared neither in the global CSS nor in this stylesheet; did you mean --writing?
+src/icon.module.css:7:31 error tokens/unknown: verticl is not a value the global CSS gives --writing; it gives horizontal, vertical
+[better-css-modules] 2 problem(s)
+```
+
+- A name with the prefix of a restricted category is held to the tokens as in a `var()`.
+- A name without a category is reported only when neither the global CSS nor the stylesheet declares it and it is within two edits of one of theirs. The markup can set any custom property in a `style` attribute, so a name unlike any declared one is left alone.
+- In `style(--name: value)`, a keyword is compared with the values the global CSS gives the name, at `:root` and in its modes, when all of them are keywords.
+- css-tree reads the names, not the values, of a name alone (`style(--writing)`), of conditions joined with `and` / `or` inside one `style()`, and of ranges.
+- `@container` in the project's global CSS is checked like a module's.
 
 ### Tailwind CSS v4
 
