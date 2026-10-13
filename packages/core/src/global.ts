@@ -46,6 +46,8 @@ export interface Token {
   category: TokenCategory | null;
   /** The value as text, with every var() of another token replaced by that token's value. */
   value: string;
+  /** The value as that declaration writes it. */
+  text: string;
   /** The file of the declaration the value comes from. */
   file: string;
   /**
@@ -134,11 +136,12 @@ export function globalCssFrom(files: GlobalCssFile[]): GlobalCss {
 
   const values = resolveValues(new Map([...sources].map(([name, { text }]) => [name, text])));
   const tokens = new Map<string, Token>();
-  for (const [name, { node, file }] of sources) {
+  for (const [name, { node, file, text }] of sources) {
     tokens.set(name, {
       name,
       category: categoryOf(name),
       value: values.get(name) ?? "",
+      text,
       file,
       node,
     });
