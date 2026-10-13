@@ -90,11 +90,12 @@ describe("checkCss: selectors without a local class (pure/selector)", () => {
     expect(rules("@scope (main) { p {} }")).toEqual(["pure/selector"]);
   });
 
-  it("does not count an @scope without a root selector, which is rooted outside the module", () => {
-    expect(check("@scope { p {} }")).toEqual([
-      `pure/selector: p has no local class, and ${UNROOTED_HINT}`,
-    ]);
-  });
+  it.each(["@scope { p {} }", "@scope (.prose) { @scope { p {} } }"])(
+    "does not count an @scope without a root selector, which is rooted outside the module: %s",
+    (css) => {
+      expect(check(css)).toEqual([`pure/selector: p has no local class, and ${UNROOTED_HINT}`]);
+    },
+  );
 
   it("accepts a nested rule through the rule it is nested in", () => {
     expect(rules(".a { @media (width > 40rem) { &:hover {} } }")).toEqual([]);
@@ -209,6 +210,7 @@ describe("checkCss: @scope rooted at a local class", () => {
     ".prose { @scope { p {} } }",
     ".prose { @scope to (.aside) { p {} } }",
     ".prose { @scope { .lead { p {} } } }",
+    ".prose { @scope (&) { @scope { p {} } } }",
     "@scope { .lead p {} }",
   ])("holds the subject of an @scope without a root selector to a local class in %s", (css) => {
     expect(check(css)).toEqual([`pure/subject: p is not a local class, and ${UNROOTED_HINT}`]);

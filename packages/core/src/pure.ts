@@ -125,8 +125,8 @@ function visitAtRule(atRule: AtRule, context: Context, checker: Checker): void {
 
 /**
  * The root of an @scope is local when its selectors have a local subject.
- * Without them, the root is the parent of the stylesheet's owner node, also
- * when the @scope is nested in a style rule.
+ * Without a root selector, the root is the parent of the stylesheet's owner
+ * node, also when the @scope is nested in a style rule or another @scope.
  */
 function visitScope(atRule: AtRule, context: Context, checker: Checker): Context {
   const text = atRule.raws.params?.raw ?? atRule.params;
@@ -154,11 +154,12 @@ function visitScope(atRule: AtRule, context: Context, checker: Checker): Context
     ...scan.globals.map((found) => globalDiagnostic(found, checker.file)),
     ...scan.ids.map((found) => idDiagnostic(found, checker.file)),
   ]);
+  const unrooted = !scope?.root;
   const rooted = root !== null && hasLocalSubjects(root, context.local, context.nested);
   return {
     ...context,
-    scoped: context.scoped || rooted,
-    unrooted: root === null,
+    scoped: !unrooted && (context.scoped || rooted),
+    unrooted,
     nestedScope: context.nested,
   };
 }
