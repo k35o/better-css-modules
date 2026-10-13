@@ -88,6 +88,18 @@ const GRADIENT_FUNCTIONS = new Set([
 
 const TIME_UNITS = new Set(["s", "ms"]);
 
+/** Keywords and functions that spell an easing out. */
+const EASING_KEYWORDS = new Set([
+  "linear",
+  "ease",
+  "ease-in",
+  "ease-out",
+  "ease-in-out",
+  "step-start",
+  "step-end",
+]);
+const EASING_FUNCTIONS = new Set(["linear", "cubic-bezier", "steps"]);
+
 const FONT_SIZE_KEYWORDS = new Set([
   "xx-small",
   "x-small",
@@ -105,7 +117,7 @@ const FONT_SIZE_KEYWORDS = new Set([
 const FONT_WEIGHT_KEYWORDS = new Set(["bold", "bolder", "lighter"]);
 
 /** Parts that take the whole value, leaving nothing to a category that takes a part of it. */
-const WHOLE_VALUE_PARTS = new Set<ValuePart>(["value", "colors", "shadows"]);
+const WHOLE_VALUE_PARTS = new Set<ValuePart>(["value", "colors", "items"]);
 
 interface PropertyPart {
   category: TokenCategory;
@@ -414,7 +426,7 @@ function checkDeclaredName(
   const category = categoryOf(name);
   if (category && context.restrictions.has(category)) {
     return report(
-      `${name} is a ${category} token name and cannot be declared here; rename the custom property`,
+      `${name} is ${aToken(category)} name and cannot be declared here; rename the custom property`,
     );
   }
   if (!category && context.tokens.has(name)) {
@@ -510,14 +522,14 @@ function checkPart(part: ValuePart, nodes: CssTree.CssNode[], scope: Scope): voi
     case "gradient-colors":
       checkColors(nodes, scope, "unknown");
       break;
-    case "shadows":
-      checkShadows(nodes, scope);
+    case "items":
+      checkItems(nodes, scope);
       break;
     case "font":
       checkFont(nodes, scope);
       break;
-    case "times":
-      checkTimes(nodes, scope);
+    case "transition":
+      checkTransition(nodes, scope);
       break;
   }
 }
@@ -628,12 +640,12 @@ function checkGradient(node: CssTree.FunctionNode, scope: Scope): void {
   });
 }
 
-function checkShadows(nodes: CssTree.CssNode[], scope: Scope): void {
+function checkItems(nodes: CssTree.CssNode[], scope: Scope): void {
   for (const layer of layersOf(nodes)) {
     const token = loneVar(layer);
     if (token) {
       checkToken(token, scope);
-      checkShadows(fallbackOf(token), scope);
+      checkItems(fallbackOf(token), scope);
     } else if (layer.length !== 1 || !isKeyword(layer[0], scope.restriction)) {
       reportRaw(scope, layer[0], layer[layer.length - 1]);
     }
@@ -641,9 +653,9 @@ function checkShadows(nodes: CssTree.CssNode[], scope: Scope): void {
 }
 
 /**
- * `font: <style, variant, weight, width> <size> / <line-height> <family>`. The
- * slash pins the size before it and the line height after it; without one only
- * raw values can be told apart.
+ * `font: <style, variant, weight, width> <size> / <line-height> <families>`.
+ * The slash pins the size before it, the line height after it and the families
+ * after that; without one only raw values can be told apart.
  */
 function checkFont(nodes: CssTree.CssNode[], scope: Scope): void {
   const slash = nodes.findIndex((node) => node.type === "Operator" && node.value === "/");
@@ -671,17 +683,49 @@ function checkFont(nodes: CssTree.CssNode[], scope: Scope): void {
         else if (isIdentifierIn(node, FONT_WEIGHT_KEYWORDS)) reportRaw(scope, node);
       }
       break;
+    case "font-family":
+      checkItems(nodes.slice(familiesStart(nodes, slash)), scope);
+      break;
   }
 }
 
-/** A var() in `transition` or `animation` may be a time, an easing or a name; only raw times are told apart. */
-function checkTimes(nodes: CssTree.CssNode[], scope: Scope): void {
+/**
+ * Where the families of `font` start. Without a slash a var() before the
+ * first comma may be the size as well as a family, so only the names that end
+ * it are taken: a string, or identifiers back to the size.
+ */
+function familiesStart(nodes: CssTree.CssNode[], slash: number): number {
+  if (slash !== -1) return slash + 2;
+  const comma = nodes.findIndex((node) => node.type === "Operator" && node.value === ",");
+  const end = comma === -1 ? nodes.length : comma;
+  if (nodes[end - 1]?.type === "String") return end - 1;
+  let start = end;
+  while (
+    nodes[start - 1]?.type === "Identifier" &&
+    (start === end || !isIdentifierIn(nodes[start - 1], FONT_SIZE_KEYWORDS))
+  ) {
+    start--;
+  }
+  return start;
+}
+
+/** A var() in `transition` or `animation` may be a time, an easing or a name; only raw values are told apart. */
+function checkTransition(nodes: CssTree.CssNode[], scope: Scope): void {
   for (const node of nodes) {
     walk(node, (child: CssTree.CssNode) => {
-      if (child.type === "Dimension" && TIME_UNITS.has(child.unit.toLowerCase())) {
-        checkQuantity(child, scope, "none");
-      } else if (child.type === "Function" && child.name.toLowerCase() === "var") {
-        checkTimes(fallbackOf(child), scope);
+      if (child.type === "Function" && child.name.toLowerCase() === "var") {
+        checkTransition(fallbackOf(child), scope);
+        return;
+      }
+      switch (scope.restriction.category) {
+        case "duration":
+          if (child.type === "Dimension" && TIME_UNITS.has(child.unit.toLowerCase())) {
+            checkQuantity(child, scope, "none");
+          }
+          break;
+        case "easing":
+          if (isEasing(child) && !isKeyword(child, scope.restriction)) reportRaw(scope, child);
+          break;
       }
     });
   }
@@ -705,9 +749,14 @@ function checkToken(node: CssTree.FunctionNode, scope: Scope, inShorthand = fals
     node,
     node,
     inShorthand
-      ? `${name.name} is taken for the ${category} of this shorthand and is not a ${category} token; ${hint}, or write the longhand`
-      : `${name.name} is not a ${category} token; ${hint}`,
+      ? `${name.name} is taken for the ${category} of this shorthand and is not ${aToken(category)}; ${hint}, or write the longhand`
+      : `${name.name} is not ${aToken(category)}; ${hint}`,
   );
+}
+
+/** `a color token`, `an easing token`. */
+function aToken(category: TokenCategory): string {
+  return `${/^[aeiou]/.test(category) ? "an" : "a"} ${category} token`;
 }
 
 /** The components of the fallback of a `var()`, which css-tree keeps as raw text. */
@@ -802,6 +851,11 @@ function isKeyword(node: CssTree.CssNode, restriction: Restriction): boolean {
 
 function isIdentifierIn(node: CssTree.CssNode, names: Set<string>): boolean {
   return node.type === "Identifier" && names.has(node.name.toLowerCase());
+}
+
+function isEasing(node: CssTree.CssNode): boolean {
+  if (node.type === "Function") return EASING_FUNCTIONS.has(node.name.toLowerCase());
+  return isIdentifierIn(node, EASING_KEYWORDS);
 }
 
 /** Named and system colors, which the grammar knows; the category's own keywords are not raw. */
