@@ -224,6 +224,54 @@ describe("checkCss: @scope rooted at a local class", () => {
   });
 });
 
+// lightningcss reads the rules of an @scope nested in a rule as nested rules
+// and puts `& ` before each selector without `&`, `:scope` or not.
+describe("checkCss: :scope in an @scope nested in a rule (pure/scope)", () => {
+  it("reports the selector, with & in place of :scope", () => {
+    expect(diagnose(".prose {\n  @scope (&) {\n    :scope > p {}\n  }\n}")).toMatchObject([
+      {
+        rule: "pure/scope",
+        line: 3,
+        column: 5,
+        endLine: 3,
+        endColumn: 15,
+        message:
+          "lightningcss (Turbopack) rewrites :scope > p to & :scope > p in an @scope nested in a rule, which matches nothing; write & > p",
+      },
+    ]);
+  });
+
+  it.each([
+    [".prose { @scope (&) { :scope {} } }", ":scope", "&"],
+    [".prose { @scope (.body) { :scope > p {} } }", ":scope > p", "& > p"],
+    [".prose { @scope (&) { :not(:scope) > p {} } }", ":not(:scope) > p", ":not(&) > p"],
+    [".prose { @scope (&) { @media (width > 40rem) { :scope > p {} } } }", ":scope > p", "& > p"],
+    [".prose { @scope (&) { @scope (.body) { :scope > p {} } } }", ":scope > p", "& > p"],
+    ["@scope (.prose) { .lead { @scope (&) { :scope > p {} } } }", ":scope > p", "& > p"],
+  ])("reports %s", (css, written, suggested) => {
+    expect(check(css)).toEqual([
+      `pure/scope: lightningcss (Turbopack) rewrites ${written} to & ${written} in an @scope nested in a rule, which matches nothing; write ${suggested}`,
+    ]);
+  });
+
+  it("reports each selector of a list on its own", () => {
+    expect(diagnose(".prose { @scope (&) { & > li, :scope > p {} } }")).toMatchObject([
+      { rule: "pure/scope", column: 31, endColumn: 41 },
+    ]);
+  });
+
+  it.each([
+    ".prose { @scope (&) { & > p {} } }",
+    ".prose { @scope (&) { > p {} } }",
+    ".prose { @scope (&) { :scope > p:is(&) {} } }",
+    ".prose { @scope (&) { .lead { :scope > p {} } } }",
+    "@scope (.prose) { :scope > .lead {} }",
+    "@scope (.prose) { @scope (.body) { :scope > .lead {} } }",
+  ])("leaves %s alone, which lightningcss keeps as written", (css) => {
+    expect(rules(css)).toEqual([]);
+  });
+});
+
 describe("checkCss: :global (pure/global)", () => {
   it("reports :global at its position", () => {
     expect(diagnose(".a,\n:global(.dark) .b {}")).toMatchObject([

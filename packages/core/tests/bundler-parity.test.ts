@@ -173,6 +173,18 @@ describe("@scope: what check reports and what the bundlers emit", () => {
       postcssModules: null,
     },
     {
+      css: ".a { @scope (&) { :scope > p { color: red } } }",
+      rules: ["pure/scope"],
+      lightningcss: ".a { @scope (&) { & :scope > p { color: red; } } }",
+      postcssModules: null,
+    },
+    {
+      css: ".a { @scope (.b) { :scope > p { color: red } } }",
+      rules: ["pure/scope"],
+      lightningcss: ".a { @scope (.b) { & :scope > p { color: red; } } }",
+      postcssModules: ".a { @scope (.b) { :scope > p { color: red } } }",
+    },
+    {
       css: ".a { @scope (.b) { p { color: red } } }",
       rules: [],
       lightningcss: ".a { @scope (.b) { & p { color: red; } } }",
@@ -201,6 +213,12 @@ describe("@scope: what check reports and what the bundlers emit", () => {
       rules: ["pure/selector"],
       lightningcss: "@scope (.a) { p { color: red; } }",
       postcssModules: "@scope (.a) { p { color: red } }",
+    },
+    {
+      css: "@scope (.a) { :scope > .b { color: red } }",
+      rules: [],
+      lightningcss: "@scope (.a) { :scope > .b { color: red; } }",
+      postcssModules: "@scope (.a) { :scope > .b { color: red } }",
     },
   ])("$css", async ({ css, rules, lightningcss, postcssModules }) => {
     const diagnostics = checkCss(analyzeCss(css, "/x.module.css"), globalCssFrom([]));

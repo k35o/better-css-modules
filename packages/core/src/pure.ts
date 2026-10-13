@@ -34,6 +34,11 @@ interface Context {
   scoped: boolean;
   /** Inside an @scope without a root selector, which is rooted outside the module. */
   unrooted: boolean;
+  /**
+   * Directly inside an @scope nested in a style rule, whose rules lightningcss
+   * reads as nested ones: it puts `& ` before a selector without `&`.
+   */
+  nestedScope: boolean;
   /** Not inside a `:global { ... }` block. */
   local: boolean;
 }
@@ -71,7 +76,11 @@ interface SubjectPart {
  */
 export function checkPure(root: Root, file: string, report: Report): void {
   const checker: Checker = { file, report };
-  walkContainer(root, { nested: false, scoped: false, unrooted: false, local: true }, checker);
+  walkContainer(
+    root,
+    { nested: false, scoped: false, unrooted: false, nestedScope: false, local: true },
+    checker,
+  );
   root.walkDecls((declaration) => {
     if (declaration.important) report(declaration, checkImportant(declaration, file));
   });
@@ -92,7 +101,7 @@ function visitRule(rule: Rule, context: Context, checker: Checker): void {
   if (list) checker.report(rule, checkSelectorList(list, text, context, checker.file));
   const trimmed = text.trim();
   const local = trimmed === ":global" ? false : trimmed === ":local" ? true : context.local;
-  walkContainer(rule, { ...context, nested: true, local }, checker);
+  walkContainer(rule, { ...context, nested: true, nestedScope: false, local }, checker);
 }
 
 function visitAtRule(atRule: AtRule, context: Context, checker: Checker): void {
@@ -146,7 +155,12 @@ function visitScope(atRule: AtRule, context: Context, checker: Checker): Context
     ...scan.ids.map((found) => idDiagnostic(found, checker.file)),
   ]);
   const rooted = root !== null && hasLocalSubjects(root, context.local, context.nested);
-  return { ...context, scoped: context.scoped || rooted, unrooted: root === null };
+  return {
+    ...context,
+    scoped: context.scoped || rooted,
+    unrooted: root === null,
+    nestedScope: context.nested,
+  };
 }
 
 function checkSelectorList(
@@ -192,6 +206,9 @@ function checkSelectorList(
       ) {
         diagnostics.push(subjectDiagnostic(subject, text, context.unrooted, file));
       }
+    }
+    if (context.nestedScope && find(selector, isScopePseudoClass) && !find(selector, isNesting)) {
+      diagnostics.push(scopeDiagnostic({ node: selector, text }, file));
     }
     diagnostics.push(
       ...scan.globals.map((found) => globalDiagnostic(found, file)),
@@ -353,6 +370,14 @@ function isReportedElsewhere(parts: SubjectPart[]): boolean {
   );
 }
 
+function isScopePseudoClass(node: CssTree.CssNode): boolean {
+  return node.type === "PseudoClassSelector" && node.name.toLowerCase() === "scope";
+}
+
+function isNesting(node: CssTree.CssNode): boolean {
+  return node.type === "NestingSelector";
+}
+
 function isScoping(node: CssTree.PseudoClassSelector): boolean {
   const name = node.name.toLowerCase();
   return name === "global" || name === "local";
@@ -387,6 +412,16 @@ function globalDiagnostic(found: Located, file: string): Diagnostic {
     "pure/global",
     (written) =>
       `${written} reaches outside this module; a mode overrides tokens in the global CSS, and markup the component does not write is styled inside @scope (&)`,
+  );
+}
+
+function scopeDiagnostic(found: Located, file: string): Diagnostic {
+  return diagnosticAt(
+    found,
+    file,
+    "pure/scope",
+    (written) =>
+      `lightningcss (Turbopack) rewrites ${written} to & ${written} in an @scope nested in a rule, which matches nothing; write ${written.replace(/:scope\b/gi, "&")}`,
   );
 }
 

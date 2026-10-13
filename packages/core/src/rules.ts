@@ -18,6 +18,7 @@ const RULES = {
   "pure/important": "either",
   "pure/at-rule": "either",
   "pure/value": "either",
+  "pure/scope": "either",
   "tokens/unknown": "either",
   "tokens/internal": "either",
   "tokens/declaration": "either",
