@@ -1,5 +1,15 @@
 # @better-css-modules/core
 
+## 0.2.1
+
+### Patch Changes
+
+- `check` no longer stops with a TypeError, exit code 2 and no output at a selector whose last compound is only a bare `:global` or `:local` or that ends with a combinator, such as `.a { :global { .b {} } }` or `.a > {}`; an empty selector and a selector that ends with a combinator are now reported as `syntax`, which the bundlers refuse too. A `tsconfig.json` the imports cannot be resolved through, such as one whose `extends` does not resolve, stops `check` with exit code 2 and the reason instead of reporting every module as `usage/unused-module`. `invalid-composes` also reports `composes` in a nested rule and in a rule inside `@media`, `@layer`, `@scope` or another at-rule, which lightningcss rejects. A selector without a local class that holds a `:global` is reported as `pure/global` alone, no longer as `pure/selector` at the same place too. The project's own global CSS may use its internal names in restricted properties, as the README said. A module reached through a symlink as well as directly is checked once, and a negated `include` pattern no longer makes `generate --watch` watch the whole project root.
+
+- An `@scope` without a root selector, such as `.prose { @scope { p {} } }` or `.prose { @scope to (.aside) { p {} } }`, is no longer taken for rooted at the rule it is nested in: browsers root it at the parent of the stylesheet's `<style>` or `<link>`, so it styles nothing inside `.prose`. Its selectors are now held to a local class, as in an `@scope` rooted elsewhere, and the message asks for `@scope (&)`, as the hints of `pure/subject` and `pure/global` now do. The new rule `pure/scope` reports `:scope` in an `@scope` nested in a rule, which lightningcss (Turbopack) rewrites to `& :scope` so that it matches nothing; write `&` in its place.
+
+- The layer wrapper puts the modules in the layer also when the config is reached through a symlink, with `--config` or a plugin's `config` option: the project root is compared by its real path, as the bundlers hand over real paths.
+
 ## 0.2.0
 
 ### Minor Changes
