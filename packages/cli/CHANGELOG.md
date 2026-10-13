@@ -1,5 +1,20 @@
 # @better-css-modules/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- `tokens/unknown` now checks what a style query of `@container` reads. A module that follows a mode the global CSS sets, such as `@container style(--writing: vertical)` under `.writing-v { --writing: vertical; }`, had a misspelt name or value pass silently. A token name the global CSS does not declare is reported as in a `var()`; a name without a category that neither the global CSS nor the stylesheet declares is reported when it is within two edits of one that is (any other may be set in a `style` attribute); and in `style(--name: value)`, a keyword the global CSS never gives the name is reported when the global CSS gives it only keywords. A style query may read an internal name. In a gradient, a lone `var()` first that is not a color token is no longer taken for a color stop when two more arguments follow: it may be the direction, as in `linear-gradient(var(--direction), …)`.
+
+- Add the token categories `font-family`, `letter-spacing` and `easing`. A `--font-family-*`, `--letter-spacing-*` or `--easing-*` token the global CSS declares is no longer internal, so a module can use it, and its category is restricted: `font-family` and the families of `font` take only tokens, so a family name or a generic family such as `sans-serif` is a raw value; `letter-spacing` takes its tokens, `normal` and zero, and reports lengths and percentages; `transition-timing-function`, `animation-timing-function` and the easings of `transition` and `animation` take their tokens and `linear`, and report `cubic-bezier()`, `linear()`, `steps()` and the keywords that name a curve (`ease`, `ease-out`, `step-end`…). A `var()` after the line height of `font` is held to the family tokens. A project that declares no such token is checked as before. The README maps Tailwind's `--font-*`, `--text-*`, `--leading-*`, `--tracking-*` and `--ease-*` to their categories.
+
+- `pure/global` no longer reports a `:global` inside an `@scope` nested in a rule and rooted at a local class, such as `.code { @scope (&) to (:global(.footnotes)) { :global(.line) {} } }`: what the `@scope` matches lies inside its root, so naming the classes of markup the component does not write, such as the lines of a syntax highlighter or the footnotes of a Markdown renderer, reaches no further. A `:global` that could reach outside the root is still reported: before `&` or `:scope` or in their compound, after `& +` or `& ~`, in the argument of another pseudo-class, in the root selector of the prelude, and in an `@scope` whose root bundlers do not count. `pure/scope` now also reports the root of an `@scope` nested in a rule that repeats the rule, such as `.prose { @scope (.prose) { p {} } }`: a root there is relative to the rule, so it is a `.prose` inside `.prose`; write `@scope (&)`.
+
+### Patch Changes
+
+- Updated dependencies:
+  - @better-css-modules/core@0.3.0
+
 ## 0.2.1
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @better-css-modules/esbuild
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies:
+  - @better-css-modules/core@0.3.0
+
 ## 0.2.1
 
 ### Patch Changes
