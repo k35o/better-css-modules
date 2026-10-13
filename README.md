@@ -364,16 +364,16 @@ src/list.module.css:7:1 error pure/at-rule: @font-face is global and takes effec
 [better-css-modules] 4 problem(s)
 ```
 
-| Rule             | Reported at   | What it reports                                                                                                                                                                                                                                                         |
-| ---------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)                                  |
-| `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                                    |
-| `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`. Modes switch by overriding tokens, not by reaching outside the module                                                                                                                                            |
-| `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                                            |
-| `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                                     |
-| `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@namespace`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS |
-| `pure/value`     | the `@value`  | `@value`, which is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks. Use a custom property                                                                                                                                           |
-| `pure/scope`     | the selector  | `:scope` in an `@scope` nested in a rule, which lightningcss (Turbopack) rewrites to `& :scope` so that it matches nothing. Write `&` in its place; see [`@scope`](#markup-without-classes-scope)                                                                       |
+| Rule             | Reported at   | What it reports                                                                                                                                                                                                                                                           |
+| ---------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pure/selector`  | the selector  | A selector without a local class: `a`, `:root`, `[data-state]`. This is the pure mode of lightningcss and css-loader, which refuse to build such a selector. Turbopack's own check is looser and builds some of them (`:root`, `html`)                                    |
+| `pure/subject`   | the subject   | A selector whose subject, the element it styles, is not a local class: `.list a`, `.list > *`, `.list :not(.item)`. Give the element a class of its own, and space children with `gap` on the parent                                                                      |
+| `pure/global`    | the `:global` | `:global` in any form, and `@keyframes :global(name)`, except inside an `@scope (&)` (see [`@scope`](#markup-without-classes-scope)). Modes switch by overriding tokens, not by reaching outside the module                                                               |
+| `pure/id`        | the id        | An id selector: its specificity defeats overrides from outside the component                                                                                                                                                                                              |
+| `pure/important` | `!important`  | `!important`, which defeats overrides from outside the component and reverses the order of `@layer`                                                                                                                                                                       |
+| `pure/at-rule`   | the at-rule   | `@font-face`, `@property`, `@import`, `@counter-style`, `@page`, `@font-palette-values`, `@font-feature-values`, `@namespace`, `@view-transition`, `@color-profile`. They act on the whole document, but only while the module is loaded; they belong in the global CSS   |
+| `pure/value`     | the `@value`  | `@value`, which is not CSS: lightningcss (Turbopack) ignores it, and its names bypass the token checks. Use a custom property                                                                                                                                             |
+| `pure/scope`     | the selector  | An `@scope` that does not match what it says: `:scope` in an `@scope` nested in a rule, which lightningcss (Turbopack) rewrites to `& :scope` so that it matches nothing, and a root that repeats the rule it is nested in. See [`@scope`](#markup-without-classes-scope) |
 
 - A nested rule is pure through the rule it is nested in, and `&` is a local subject: `.card { &:hover {} }` and `.card { .dark & {} }` pass; `.card { p {} }` is `pure/subject`.
 - A subject is local when it holds a local class (`button.primary:hover`), or is `:is()`, `:where()` or `:nth-child(… of …)` whose every selector has a local subject.
@@ -402,9 +402,32 @@ Inside an `@scope` rooted at a local class, any element may be the subject. This
 ```
 
 - The root is what the prelude names: `&` for the rule the `@scope` is nested in, or a local class of the markup inside it (`.prose { @scope (.body) to (.aside) { … } }`).
+- A root nested in a rule is relative to it, so `.prose { @scope (.prose) { … } }` is rooted at a `.prose` inside `.prose` and styles nothing in a `.prose` of its own; `pure/scope` reports it.
 - An `@scope` without a root selector, `.prose { @scope { … } }` or `.prose { @scope to (.aside) { … } }`, is rooted at the parent of the stylesheet's `<style>` or `<link>`, also when it is nested in a rule, so browsers style nothing inside `.prose` with it. Its selectors are held to a local class like any other.
 - Bundlers do not count the root of a top-level `@scope (.prose) { p {} }`, so its `p` is reported as `pure/selector`.
 - Write `&` for the root, not `:scope`. In an `@scope` nested in a rule, lightningcss rewrites `:scope > p` to `& :scope > p`, which matches nothing; `pure/scope` reports it.
+
+Markup the component does not write may carry classes of its own, such as the lines of a syntax highlighter or the footnotes of a Markdown renderer. Inside an `@scope` nested in a rule and rooted at a local class, name them with `:global`:
+
+```css
+.code {
+  @scope (&) to (:global(.footnotes)) {
+    :global(.line) {
+      display: block;
+    }
+    & > pre :global(.highlighted) {
+      background-color: var(--color-bg-mute);
+    }
+  }
+}
+```
+
+What the `@scope` matches lies inside its root, so these reach no further than the markup of the component. `pure/global` still reports a `:global` that could:
+
+- before `&` or `:scope`, or in their compound, which is the root or an ancestor of it: `:global(.dark) & p`, `&:global(.dark) p`
+- after `& +` or `& ~`, a sibling of the root
+- in the argument of another pseudo-class, such as `p:is(:global(.dark) *)`, which may match the ancestors of the root
+- in the root selector of the prelude, and in an `@scope` whose root bundlers do not count: a top-level one, or one without a root selector
 
 lightningcss builds `@scope (&)`: Turbopack, tsdown, and Vite with `css.transformer: "lightningcss"`. postcss-modules-local-by-default 4.2, which postcss-modules (Vite's default) and css-loader use, fails on `&` in the prelude. In Vite, install `lightningcss` and switch to it; PostCSS then no longer runs:
 
