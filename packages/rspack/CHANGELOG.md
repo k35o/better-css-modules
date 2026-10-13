@@ -1,5 +1,14 @@
 # @better-css-modules/rspack
 
+## 0.2.1
+
+### Patch Changes
+
+- The layer wrapper puts the modules in the layer also when the config is reached through a symlink, with `--config` or a plugin's `config` option: the project root is compared by its real path, as the bundlers hand over real paths.
+
+- Updated dependencies:
+  - @better-css-modules/core@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
