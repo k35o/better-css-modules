@@ -116,6 +116,8 @@ describe("pure/selector matches lightningcss's pure mode", () => {
     ".a { @scope { p {} } }",
     ".a { @scope to (.b) { p {} } }",
     ".a { @scope (&) { p {} } }",
+    ".a { @scope (&) { :global(.x) {} } }",
+    ".a { @scope (&) to (:global(.x)) { p {} } }",
     ".a { @scope (.b) { p {} } }",
     "a { @scope (.b) { p {} } }",
   ])("%s", (css) => {
@@ -225,6 +227,18 @@ describe("@scope: what check reports and what the bundlers emit", () => {
       rules: [],
       lightningcss: ".a { @scope (.button) { & p { color: red; } } }",
       postcssModules: ".a { @scope (.bu) to () { p { color: red } } }",
+    },
+    {
+      css: ".a { @scope (&) to (:global(.b)) { :global(.c) { color: red } } }",
+      rules: [],
+      lightningcss: ".a { @scope (&) to (.b) { & .c { color: red; } } }",
+      postcssModules: null,
+    },
+    {
+      css: ".a { @scope (.a) { p { color: red } } }",
+      rules: ["pure/scope"],
+      lightningcss: ".a { @scope (.a) { & p { color: red; } } }",
+      postcssModules: ".a { @scope (.a) { p { color: red } } }",
     },
     {
       css: ".a { @scope { p { color: red } } }",
