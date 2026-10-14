@@ -437,37 +437,39 @@ describe("loadGlobalCss", () => {
     );
     const globalCss = await load();
     expect(
-      globalCss.files.at(-1)?.imports.map(({ layer, conditional }) => [layer, conditional]),
+      globalCss.files.at(-1)?.imports.map(({ layer, condition }) => [layer, condition]),
     ).toEqual([
-      ["base", false],
-      [null, false],
+      ["base", null],
+      [null, null],
     ]);
     expect(globalCss.layers).toEqual(["base"]);
     expect([...globalCss.tokens.keys()]).toEqual(["--color-a", "--color-b"]);
   });
 
   it.each([
-    ["important", false],
-    ["layer(base) important", false],
-    ["screen", true],
-    ["print", true],
-    ["not print", true],
-    ["(width >= 40rem)", true],
-    ["screen and (width >= 40rem)", true],
-    ["important, print", true],
-  ])("reads an @import followed by %s as conditional: %s", async (condition, conditional) => {
+    ["important", null],
+    ["layer(base) important", null],
+    ["screen", "@media screen"],
+    ["print", "@media print"],
+    ["not print", "@media not print"],
+    ["(width >= 40rem)", "@media (width >= 40rem)"],
+    ["screen and (width >= 40rem)", "@media screen and (width >= 40rem)"],
+    ["important, print", "@media important, print"],
+    ["supports(display: grid)", "@supports (display: grid)"],
+    ["layer(base) supports(display: grid) print", "@supports (display: grid) @media print"],
+  ])("reads the condition of an @import followed by %s as %s", async (prelude, condition) => {
     const { load } = await fixture(
       {
-        "global.css": `@import "./base.css" ${condition};`,
+        "global.css": `@import "./base.css" ${prelude};`,
         "base.css": ":root { --color-a: #000; }",
       },
       ["./global.css"],
     );
     const globalCss = await load();
-    expect(globalCss.files.at(-1)?.imports.map((imported) => imported.conditional)).toEqual([
-      conditional,
+    expect(globalCss.files.at(-1)?.imports.map((imported) => imported.condition)).toEqual([
+      condition,
     ]);
-    expect([...globalCss.tokens.keys()]).toEqual(conditional ? [] : ["--color-a"]);
+    expect([...globalCss.tokens.keys()]).toEqual(condition === null ? ["--color-a"] : []);
   });
 
   it('reads Tailwind\'s entry through @import "tailwindcss", skipping its at-rules', async () => {

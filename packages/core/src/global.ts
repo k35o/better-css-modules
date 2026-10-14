@@ -34,8 +34,8 @@ export interface GlobalCssFile {
 interface GlobalCssImport {
   rule: AtRule;
   file: string;
-  /** Whether a media or supports condition guards the import. */
-  conditional: boolean;
+  /** The at-rules its media and supports conditions amount to, or null for none. */
+  condition: string | null;
   /** The layer it imports into: its name, "" for an anonymous one, or null for none. */
   layer: string | null;
 }
@@ -46,6 +46,8 @@ export interface Token {
   category: TokenCategory | null;
   /** The value as text, with every var() of another token replaced by that token's value. */
   value: string;
+  /** The value as that declaration writes it. */
+  text: string;
   /** The file of the declaration the value comes from. */
   file: string;
   /**
@@ -134,11 +136,12 @@ export function globalCssFrom(files: GlobalCssFile[]): GlobalCss {
 
   const values = resolveValues(new Map([...sources].map(([name, { text }]) => [name, text])));
   const tokens = new Map<string, Token>();
-  for (const [name, { node, file }] of sources) {
+  for (const [name, { node, file, text }] of sources) {
     tokens.set(name, {
       name,
       category: categoryOf(name),
       value: values.get(name) ?? "",
+      text,
       file,
       node,
     });
@@ -172,7 +175,7 @@ function layersOf(files: GlobalCssFile[]): string[] {
         return;
       }
       const imported = imports.get(node);
-      if (!imported || imported.conditional) return;
+      if (!imported || imported.condition !== null) return;
       const target = byFile.get(imported.file);
       if (imported.layer === null && target) visit(target);
       else if (imported.layer) names.add(imported.layer);
@@ -342,15 +345,15 @@ class Loader {
       if (node.type !== "atrule" || node.name.toLowerCase() !== "import") continue;
       const prelude = readImport(node.params);
       if (!prelude) fail(`${this.at(file, node)}: cannot read @import ${node.params}`);
-      const { url, layer, conditional: condition } = prelude;
+      const { url, layer, condition } = prelude;
       if (/^([a-z][a-z\d+.-]*:|\/\/)/i.test(url)) {
         fail(`${this.at(file, node)}: global CSS cannot import ${url}`);
       }
       const imported = this.imports.sync(path.dirname(file), url).path;
       if (!imported) fail(`${this.at(file, node)}: cannot resolve "${url}"`);
-      entry.imports.push({ rule: node, file: imported, conditional: condition, layer });
-      if (!condition) imports.push(imported);
-      await this.load(imported, conditional || condition, [...importers, file]);
+      entry.imports.push({ rule: node, file: imported, condition, layer });
+      if (condition === null) imports.push(imported);
+      await this.load(imported, conditional || condition !== null, [...importers, file]);
     }
     this.files.push(entry);
   }
@@ -392,8 +395,12 @@ interface ImportPrelude {
   urlEnd: number;
   /** The layer it imports into: its name, "" for an anonymous one, or null for none. */
   layer: string | null;
-  /** Whether a media or supports condition guards it. */
-  conditional: boolean;
+  /**
+   * The at-rules its media and supports conditions amount to, as the stylesheet
+   * wrapped in them would read (`@supports (display: grid) @media print`), or
+   * null when no condition guards it.
+   */
+  condition: string | null;
 }
 
 /** Read the prelude of an `@import`, or null when it is not one css-tree can read. */
@@ -411,21 +418,29 @@ export function readImport(params: string): ImportPrelude | null {
   const [target, ...rest] = prelude.type === "AtrulePrelude" ? prelude.children.toArray() : [];
   if ((target?.type !== "String" && target?.type !== "Url") || !target.loc) return null;
   let layer: string | null = null;
-  let conditional = false;
+  let supports: string | null = null;
+  let media: string | null = null;
+  const text = ({ loc }: CssTree.CssNode) =>
+    loc ? params.slice(loc.start.offset, loc.end.offset) : "";
   for (const node of rest) {
     const name =
       node.type === "Function" || node.type === "Identifier" ? node.name.toLowerCase() : "";
     if (name === "layer") {
       const [named] = node.type === "Function" ? node.children.toArray() : [];
       layer = named?.type === "Layer" ? named.name : "";
-    } else if (
-      (node.type === "MediaQueryList" && !isUnknownMediaType(node)) ||
-      (node.type === "Function" && name === "supports")
-    ) {
-      conditional = true;
+    } else if (node.type === "Function" && name === "supports") {
+      supports = `@supports (${text(node).slice("supports(".length, -1).trim()})`;
+    } else if (node.type === "MediaQueryList" && !isUnknownMediaType(node)) {
+      media = `@media ${text(node)}`;
     }
   }
-  return { url: target.value, urlEnd: target.loc.end.offset, layer, conditional };
+  const conditions = [supports, media].filter((condition) => condition !== null);
+  return {
+    url: target.value,
+    urlEnd: target.loc.end.offset,
+    layer,
+    condition: conditions.length > 0 ? conditions.join(" ") : null,
+  };
 }
 
 /**

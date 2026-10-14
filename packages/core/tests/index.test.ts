@@ -6,6 +6,7 @@ it("exports only the public API from the main entry", () => {
     "ConfigError",
     "check",
     "defineConfig",
+    "exportTokens",
     "formatDiagnostic",
     "formatGitHubAnnotation",
     "generate",

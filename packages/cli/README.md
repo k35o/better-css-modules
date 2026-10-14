@@ -1,6 +1,6 @@
 # @better-css-modules/cli
 
-The `generate` and `check` commands of better-css-modules: `.d.ts` files for CSS Modules, and a check for unused classes, impure modules and values that bypass the design tokens.
+The `generate`, `check` and `tokens` commands of better-css-modules: `.d.ts` files for CSS Modules, a check for unused classes, impure modules and values that bypass the design tokens, and the tokens written out as DTCG.
 
 ## Install
 
@@ -17,9 +17,10 @@ better-css-modules generate                # write the .d.ts files
 better-css-modules generate --watch        # and keep them in sync with the stylesheets
 better-css-modules check                   # report problems
 better-css-modules check --format github   # as GitHub Actions annotations
+better-css-modules tokens                  # print the tokens as DTCG
 ```
 
-Both commands read the `better-css-modules.config.*` in the working directory; `--config <path>` names another file, relative to the working directory. The directory of the config file is the project root.
+Every command reads the `better-css-modules.config.*` in the working directory; `--config <path>` names another file, relative to the working directory. The directory of the config file is the project root.
 
 `check` prints one line per problem, then how many there are:
 
@@ -40,11 +41,11 @@ and, when there are none:
 
 ## Exit codes
 
-| Code | `generate`                                                          | `check`                                                                                                                                            |
-| ---- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | The types are written, also when `include` matches no file          | No problems                                                                                                                                        |
-| 1    | A stylesheet does not parse; its `.d.ts` is left as it was          | Problems were found                                                                                                                                |
-| 2    | It could not run: an unknown command or option, or a config mistake | It could not run: the same, an unknown `--format`, or `include` matches no file, the global CSS cannot be read, or it does not declare the `layer` |
+| Code | `generate`                                                          | `check`                                                                                                                                            | `tokens`                                                                               |
+| ---- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 0    | The types are written, also when `include` matches no file          | No problems                                                                                                                                        | The document is printed                                                                |
+| 1    | A stylesheet does not parse; its `.d.ts` is left as it was          | Problems were found                                                                                                                                |                                                                                        |
+| 2    | It could not run: an unknown command or option, or a config mistake | It could not run: the same, an unknown `--format`, or `include` matches no file, the global CSS cannot be read, or it does not declare the `layer` | It could not run: the same, the global CSS cannot be read, or a token has no DTCG name |
 
 ## Configuration
 
@@ -53,6 +54,7 @@ The settings, the rules and how to disable them are described in the project REA
 - [Configuration](https://github.com/k35o/better-css-modules#configuration)
 - [Rules](https://github.com/k35o/better-css-modules#rules) and [disable comments](https://github.com/k35o/better-css-modules#disable-comments)
 - [Workflow](https://github.com/k35o/better-css-modules#workflow): `.gitignore`, type-checking, CI and pre-commit
+- [Token export](https://github.com/k35o/better-css-modules#token-export): the DTCG document `tokens` prints
 
 ## License
 

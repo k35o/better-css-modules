@@ -6,6 +6,7 @@ Types and design rules for CSS Modules. better-css-modules writes a `.d.ts` for 
 - Unused classes and modules, found across the whole project, reported with `file:line:col` or as GitHub Actions annotations
 - Pure modules: no `:global`, ids, `!important` or document-wide at-rules
 - Design tokens read from your global CSS: raw values, misspelt tokens, tokens of the wrong kind and media queries off the breakpoints are reported
+- The tokens and their modes written out as a DTCG resolver document
 - Cascade layers: name one, and the bundler plugins put every module in it
 - Vite, webpack, Rspack, Rollup, esbuild and Next.js (Turbopack)
 
@@ -111,6 +112,7 @@ better-css-modules generate                # write the .d.ts files
 better-css-modules generate --watch        # and keep them in sync with the stylesheets
 better-css-modules check                   # report problems
 better-css-modules check --format github   # as GitHub Actions annotations
+better-css-modules tokens                  # print the tokens as DTCG
 ```
 
 `check` looks at every file the config includes and every source file of the project, not only the ones a bundler happens to load:
@@ -124,15 +126,15 @@ src/orphan.module.css:1:1 error usage/unused-module: src/orphan.module.css is ne
 [better-css-modules] 5 problem(s)
 ```
 
-Both commands take `--config <path>` to use another config file, relative to the working directory. They exit with:
+Every command takes `--config <path>` to use another config file, relative to the working directory. They exit with:
 
-| Code | `generate`                                                          | `check`                                                                                                                                            |
-| ---- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | The types are written, also when `include` matches no file          | No problems                                                                                                                                        |
-| 1    | A stylesheet does not parse; its `.d.ts` is left as it was          | Problems were found                                                                                                                                |
-| 2    | It could not run: an unknown command or option, or a config mistake | It could not run: the same, an unknown `--format`, or `include` matches no file, the global CSS cannot be read, or it does not declare the `layer` |
+| Code | `generate`                                                          | `check`                                                                                                                                            | `tokens`                                                                               |
+| ---- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 0    | The types are written, also when `include` matches no file          | No problems                                                                                                                                        | The document is printed                                                                |
+| 1    | A stylesheet does not parse; its `.d.ts` is left as it was          | Problems were found                                                                                                                                |                                                                                        |
+| 2    | It could not run: an unknown command or option, or a config mistake | It could not run: the same, an unknown `--format`, or `include` matches no file, the global CSS cannot be read, or it does not declare the `layer` | It could not run: the same, the global CSS cannot be read, or a token has no DTCG name |
 
-`generate` prints its diagnostics to stderr, `check` its results to stdout. When the arguments or the config stop a command, it prints one line saying why to stderr, as an annotation with `--format github`.
+`generate` prints its diagnostics to stderr, `check` its results and `tokens` its document to stdout. When the arguments or the config stop a command, it prints one line saying why to stderr, as an annotation with `--format github`.
 
 ## Workflow
 
@@ -726,6 +728,93 @@ src/app/page.module.css:4:15 error tokens/unknown: --color-brand is not defined 
 
 Declare the layers in one statement before the import, `properties` first: Tailwind's compiled CSS declares that layer ahead of the others, but its source, which the tool reads, does not. With the modules in `components`, Tailwind's utilities win over them.
 
+## Token export
+
+`tokens` prints the tokens of the [global CSS](#global-css) as a [DTCG](https://www.designtokens.org/tr/2025.10/) resolver document (Resolver Module 2025.10), for a design-token tool or a script that turns them into code. From code, `exportTokens(await loadConfig())` returns the same document.
+
+```bash
+better-css-modules tokens > tokens.resolver.json
+```
+
+`src/globals.css`:
+
+```css
+:root {
+  --gray-900: oklch(0.25 0.002 235);
+  --gray-50: oklch(0.975 0.001 235);
+  --color-fg-base: var(--gray-900);
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --color-fg-base: var(--gray-50);
+}
+```
+
+`tokens.resolver.json`:
+
+```json
+{
+  "version": "2025.10",
+  "resolutionOrder": [
+    {
+      "type": "set",
+      "name": ":root",
+      "sources": [
+        {
+          "gray-900": {
+            "$type": "color",
+            "$value": { "colorSpace": "oklch", "components": [0.25, 0.002, 235] }
+          },
+          "gray-50": {
+            "$type": "color",
+            "$value": { "colorSpace": "oklch", "components": [0.975, 0.001, 235] }
+          },
+          "color-fg-base": { "$type": "color", "$value": "{gray-900}" },
+          "spacing": { "$type": "dimension", "$value": { "value": 0.25, "unit": "rem" } }
+        }
+      ]
+    },
+    {
+      "type": "modifier",
+      "name": ".dark",
+      "contexts": {
+        "off": [],
+        "on": [{ "color-fg-base": { "$type": "color", "$value": "{gray-50}" } }]
+      },
+      "default": "off"
+    }
+  ]
+}
+```
+
+### Modes
+
+- The tokens declared at `:root` make the set `:root`, internal names included, in source order. A token is named without its `--`, and a value that is one `var()` of a token is an alias of it (`{gray-900}`).
+- Each place that overrides tokens, a [mode](#tokens-and-modes), is a modifier that is `off` unless the input turns it `on`. It is named by its conditions as written: the rules and at-rules around it, outermost first, without `@layer`, after the conditions of the first `@import` that reaches a stylesheet read only under conditions (`@media (prefers-color-scheme: dark) :root`). Places with the same conditions make one modifier.
+- The modifiers follow the source order of their first place. As elsewhere, specificity and `@layer` are not weighed.
+- The input turns on every mode whose conditions hold at once, as the cascade applies them all. With `.dark` and `@media (prefers-contrast: more) .dark`, dark with more contrast is `{ ".dark": "on", "@media (prefers-contrast: more) .dark": "on" }`.
+
+### Values
+
+| Category                                                         | `$type`       | Written as                                                                                                     |
+| ---------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `color`                                                          | `color`       | Hex, `rgb()`, `hsl()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color()`, `transparent`               |
+| `spacing`, `radius`, `font-size`, `letter-spacing`, `breakpoint` | `dimension`   | `px`, `rem`, and zero in any unit                                                                              |
+| `line-height`                                                    | `number`      | A number; `px` and `rem` make a `dimension`                                                                    |
+| `z-index`                                                        | `number`      | An integer                                                                                                     |
+| `font-weight`                                                    | `fontWeight`  | 1 to 1000, `normal`, `bold`                                                                                    |
+| `font-family`                                                    | `fontFamily`  | The families, quoted or not; one family is a string                                                            |
+| `duration`                                                       | `duration`    | `ms`, `s`                                                                                                      |
+| `easing`                                                         | `cubicBezier` | `cubic-bezier()`, and the curves of `ease`, `ease-in`, `ease-out`, `ease-in-out` and `linear`                  |
+| `shadow`                                                         | `shadow`      | One shadow or a list: two to four lengths in `px` or `rem`, a color or a `var()` of a color token, and `inset` |
+| None: an internal name                                           | By its value  | A color, a length in `px` or `rem`, a time, a number or `cubic-bezier()`                                       |
+
+- A color keeps its color space, on the scales DTCG gives its channels: a percentage becomes that share of the channel's reference range in CSS Color 4 (`oklch(50% 50% 0.5turn)` is `[0.5, 0.2, 180]`), a number in `rgb()` is divided by 255, and a hue is in degrees from 0 up to 360. A channel out of its range is not clamped.
+- An alias takes the type of the token its chain of aliases ends at.
+- A value DTCG has no form for keeps its CSS text and has no `$type`, which DTCG takes for an invalid token: other units (`0.025em`, `50%`), `calc()` and the other math functions, `color-mix()`, `light-dark()`, relative colors, named colors and `currentColor`, `steps()`, a `var()` inside a larger value or of a name the global CSS does not declare, and aliases that loop. A script reading the document can use the text as CSS.
+- DTCG names hold no `.`, `{` or `}` and start with no `$`. A token named so (`--spacing-0\.5`) stops `tokens` with exit code 2.
+
 ## Cascade layers
 
 Name a layer, and the bundler plugins put every CSS Modules file the config includes in it, before the bundler's own CSS Modules transform runs. Styles in a later layer, or in no layer, then win over the modules whatever their specificity or load order. Without `layer` the plugins leave the CSS as written.
@@ -803,7 +892,7 @@ The wrapping has to happen before the CSS Modules transform. Builds in the tests
 
 | Package                                               | Description                                                                          |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [@better-css-modules/cli](./packages/cli)             | The `generate` and `check` commands                                                  |
+| [@better-css-modules/cli](./packages/cli)             | The `generate`, `check` and `tokens` commands                                        |
 | [@better-css-modules/core](./packages/core)           | `defineConfig` for the config file, and the API the CLI and the plugins are built on |
 | [@better-css-modules/turbopack](./packages/turbopack) | Next.js (Turbopack) integration                                                      |
 | [@better-css-modules/vite](./packages/vite)           | Vite plugin                                                                          |
