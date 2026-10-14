@@ -1,6 +1,6 @@
 {
   "name": "@better-css-modules/cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The generate, check and tokens commands of better-css-modules",
   "keywords": [
     "css-modules",
