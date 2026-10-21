@@ -143,7 +143,7 @@ export function resolveConfig(
     for (const pattern of value) {
       const glob = key === "include" && pattern.startsWith("!") ? pattern.slice(1) : pattern;
       if (glob === "") fail(`"${key}" must not contain an empty string`);
-      // fast-glob resolves these against the file system, while the matcher of
+      // `globFiles` resolves these against the file system, while the matcher of
       // the watcher and the plugins compares them with paths relative to the
       // root, so the two would take in different files.
       if (path.isAbsolute(glob) || glob.split("/").includes("..")) {

@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import fg from "fast-glob";
 import picomatch from "picomatch";
 import { CssSyntaxError } from "postcss";
 import type { ResolvedConfig } from "./config.js";
 import { analyzeCss, type CssModuleAnalysis } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
+import { globFiles } from "./glob.js";
 
 /** What telling the included CSS Modules files apart reads of the config. */
 export type ModuleOptions = Pick<ResolvedConfig, "root" | "include" | "exclude" | "outDir">;
@@ -44,7 +44,7 @@ export function createMatcher(config: ModuleOptions): (file: string) => boolean 
   const { root } = config;
   const patterns = patternsOf(config);
   const include = picomatch(patterns.include);
-  // fast-glob matches its ignore patterns with `dot`, so an exclusion reaches dot directories.
+  // An exclusion reaches dot directories, as `globFiles` does.
   const exclude = picomatch(patterns.exclude, { dot: true });
   return (file) => {
     const relative = path.relative(root, path.resolve(root, file)).split(path.sep).join("/");
@@ -56,7 +56,7 @@ export function createMatcher(config: ModuleOptions): (file: string) => boolean 
 /** The CSS Modules files the config includes. */
 export async function findCssModules(config: ResolvedConfig): Promise<string[]> {
   const { include, exclude } = patternsOf(config);
-  const files = await fg(include, { cwd: config.root, ignore: exclude, absolute: true });
+  const files = await globFiles(include, { cwd: config.root, ignore: exclude });
   return files.sort();
 }
 

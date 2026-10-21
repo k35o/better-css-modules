@@ -38,13 +38,13 @@
     "@csstools/css-syntax-patches-for-csstree": "1.1.14",
     "chokidar": "5.0.0",
     "css-tree": "3.2.1",
-    "fast-glob": "3.3.3",
     "jiti": "2.6.1",
     "oxc-parser": "0.151.0",
     "oxc-resolver": "11.24.2",
     "picomatch": "4.0.7",
-    "postcss": "8.5.8",
-    "source-map-js": "1.2.1"
+    "postcss": "8.5.31",
+    "source-map-js": "1.2.2",
+    "tinyglobby": "0.2.17"
   },
   "devDependencies": {
     "@types/css-tree": "3.2.0",
