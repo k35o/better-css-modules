@@ -1,6 +1,6 @@
 {
   "name": "@better-css-modules/webpack",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "webpack plugin for better-css-modules",
   "keywords": [
     "css-modules",
