@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import fg from "fast-glob";
 import { parseSync, type ParseResult } from "oxc-parser";
 import type { Node } from "postcss";
 import { ResolverFactory } from "oxc-resolver";
@@ -8,12 +7,13 @@ import { isReferenceIdentifier, ScopeTracker, walk } from "oxc-walker";
 import { ConfigError, type ResolvedConfig } from "./config.js";
 import type { ClassOccurrence, CssModuleAnalysis, SourcePosition } from "./css.js";
 import type { Diagnostic } from "./diagnostic.js";
+import { globFiles } from "./glob.js";
 import { defaultIgnore } from "./project.js";
 
 const SOURCE_GLOBS = ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"];
 // Build outputs, which can hold megabytes of bundled JS. Only at the root:
 // below it, a directory of one of these names is as likely a route or a
-// component folder. Dot directories such as .next need no entry: fast-glob
+// component folder. Dot directories such as .next need no entry: `globFiles`
 // does not enter them.
 const IGNORED_DIRS = ["dist", "build", "out", "coverage", "storybook-static"];
 
@@ -510,7 +510,7 @@ function isUsed(moduleUsage: ModuleUsage, name: string): boolean {
 
 async function findSources(config: ResolvedConfig, cwd: string): Promise<string[]> {
   const ignore = [...defaultIgnore(config), ...IGNORED_DIRS.map((dir) => `${dir}/**`)];
-  const files = await fg(SOURCE_GLOBS, { cwd, ignore, absolute: true });
+  const files = await globFiles(SOURCE_GLOBS, { cwd, ignore });
   return files.filter((file) => !/\.d\.[mc]?ts$/.test(file)).sort();
 }
 

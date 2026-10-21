@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import fg from "fast-glob";
 import { SourceMapGenerator } from "source-map-js";
 import { isOutside, type ResolvedConfig } from "./config.js";
 import type { CssModuleAnalysis, SourcePosition, SourceRange } from "./css.js";
 import { type Diagnostic, sortDiagnostics } from "./diagnostic.js";
+import { globFiles } from "./glob.js";
 import { findCssModules, loadCssModule, loadCssModules } from "./project.js";
 
 /** Generated files mirror paths relative to the root. */
@@ -271,10 +271,9 @@ async function outputsIn(config: ResolvedConfig): Promise<string[]> {
   const patterns = config.include
     .filter((pattern) => !pattern.startsWith("!"))
     .flatMap((pattern) => [`${pattern}.d.ts`, `${pattern}.d.ts.map`]);
-  const outputs = await fg(patterns, {
+  const outputs = await globFiles(patterns, {
     cwd: path.join(config.root, config.outDir),
     ignore: ["**/node_modules/**"],
-    absolute: true,
   });
   return [...new Set(outputs.map((file) => path.resolve(file.replace(/\.map$/, ""))))].sort();
 }
