@@ -1,6 +1,6 @@
 {
   "name": "@better-css-modules/core",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Analysis, type generation, unused-class detection, token checks, watcher and config for better-css-modules",
   "keywords": [
     "css-modules",
