@@ -3,7 +3,7 @@ import type { AtRule, Node, Rule } from "postcss";
 import type * as CssTree from "css-tree";
 import { CSS_WIDE_KEYWORDS } from "./check.js";
 import { ConfigError, type ResolvedConfig } from "./config.js";
-import { lexer, parse } from "./csstree.js";
+import { lexer, parse, walk } from "./csstree.js";
 import {
   declaresToken,
   type GlobalCss,
@@ -12,7 +12,7 @@ import {
   loadGlobalCss,
   type Token,
 } from "./global.js";
-import type { TokenCategory } from "./tokens.js";
+import { categoryOf, type TokenCategory } from "./tokens.js";
 
 /** A reference to another token: its name without the leading `--`, in braces. */
 export type DtcgAlias = `{${string}}`;
@@ -85,7 +85,11 @@ export interface DtcgSet {
   sources: [DtcgTokens];
 }
 
-/** A place other than `:root` that overrides tokens, named by its conditions as written. */
+/**
+ * A place other than `:root` that overrides tokens, named by its conditions as
+ * written; or what the `light-dark()` of a place gives in the dark color
+ * scheme, named by the place followed by ` color-scheme: dark`.
+ */
 export interface DtcgModifier {
   type: "modifier";
   name: string;
@@ -96,8 +100,10 @@ export interface DtcgModifier {
 /**
  * The tokens as a DTCG resolver document (Resolver Module 2025.10): the tokens
  * at `:root` as a set, then each mode as a modifier the input turns on, in the
- * source order of its first place. The input turns on every mode whose
- * conditions hold at once.
+ * source order of its first place. A place takes each `light-dark()` as its
+ * first color, and a modifier right after the place as its second. The input
+ * turns on every mode whose conditions hold at once, and in the dark color
+ * scheme the dark side of each.
  */
 export interface DtcgResolver {
   version: "2025.10";
@@ -113,24 +119,33 @@ export async function exportTokens(config: ResolvedConfig): Promise<DtcgResolver
 export function dtcgFrom(globalCss: GlobalCss): DtcgResolver {
   const { tokens } = globalCss;
   for (const token of tokens.values()) checkName(token);
-  const writer = new Writer(tokens);
-  const write = (values: Iterable<[string, string]>): DtcgTokens =>
+  const root = schemesOf(new Map([...tokens].map(([name, { text }]) => [name, text] as const)));
+  const writer = new Writer(root.light);
+  const write = (values: Map<string, string>): DtcgTokens =>
     Object.fromEntries(
       [...values].map(([name, text]) => [
         name.slice(2),
         writer.token(text, tokens.get(name)?.category ?? null),
       ]),
     );
-  const modifiers = [...modesOf(globalCss)].map(([name, values]): DtcgModifier => ({
+  const modifier = (name: string, values: Map<string, string>): DtcgModifier => ({
     type: "modifier",
     name,
     contexts: { off: [], on: [write(values)] },
     default: "off",
-  }));
-  const root = write([...tokens.values()].map(({ name, text }) => [name, text]));
+  });
+  const darkOf = (place: string, dark: Map<string, string>): DtcgModifier[] =>
+    dark.size === 0 ? [] : [modifier(`${place} color-scheme: dark`, dark)];
   return {
     version: "2025.10",
-    resolutionOrder: [{ type: "set", name: ":root", sources: [root] }, ...modifiers],
+    resolutionOrder: [
+      { type: "set", name: ":root", sources: [write(root.light)] },
+      ...darkOf(":root", root.dark),
+      ...[...modesOf(globalCss)].flatMap(([name, values]) => {
+        const { light, dark } = schemesOf(values);
+        return [modifier(name, light), ...darkOf(name, dark)];
+      }),
+    ],
   };
 }
 
@@ -202,6 +217,66 @@ function joined(parts: string[]): string {
   return parts.join(" ").replace(/\s+/g, " ").trim();
 }
 
+function schemesOf(values: Map<string, string>): {
+  light: Map<string, string>;
+  dark: Map<string, string>;
+} {
+  const light = new Map<string, string>();
+  const dark = new Map<string, string>();
+  for (const [name, text] of values) {
+    const read = readLightDark(text);
+    light.set(name, read?.light ?? text);
+    if (read) dark.set(name, read.dark);
+  }
+  return { light, dark };
+}
+
+function readLightDark(text: string): { light: string; dark: string } | null {
+  let value: CssTree.CssNode;
+  try {
+    // css-tree keeps the fallback of a var() as raw text unless it parses the
+    // value as a custom property's, and a light-dark() there would go unread.
+    value = parse(text, { context: "value", positions: true, parseCustomProperty: true });
+  } catch {
+    return null;
+  }
+  const colors = new Map<CssTree.CssNode, CssTree.CssNode[][]>();
+  walk(value, (node: CssTree.CssNode) => {
+    if (node.type === "Function" && node.name.toLowerCase() === "light-dark") {
+      colors.set(node, items(node.children.toArray()));
+    }
+  });
+  const readable = [...colors.values()].every(
+    (args) => args.length === 2 && args.every((arg) => arg.length > 0),
+  );
+  if (colors.size === 0 || !readable) return null;
+  const textIn = (
+    side: 0 | 1,
+    nodes: CssTree.CssNode[],
+    [start, end]: [number, number],
+  ): string => {
+    let result = "";
+    let at = start;
+    for (const node of nodes) {
+      walk(node, (inner: CssTree.CssNode) => {
+        const color = colors.get(inner)?.[side];
+        if (!color) return;
+        const [from, to] = spanOf([inner]);
+        result += text.slice(at, from) + textIn(side, color, spanOf(color));
+        at = to;
+        return walk.skip;
+      });
+    }
+    return result + text.slice(at, end);
+  };
+  const whole: [number, number] = [0, text.length];
+  return { light: textIn(0, [value], whole), dark: textIn(1, [value], whole) };
+}
+
+function spanOf(nodes: CssTree.CssNode[]): [number, number] {
+  return [nodes[0].loc!.start.offset, nodes.at(-1)!.loc!.end.offset];
+}
+
 type Reader = (nodes: CssTree.CssNode[], writer: Writer) => DtcgToken | null;
 
 /** Writes the values of the custom properties of the global CSS as tokens. */
@@ -209,7 +284,7 @@ class Writer {
   private readonly references = new Map<string, string | null>();
   private readonly types = new Map<string, DtcgType | undefined>();
 
-  constructor(private readonly tokens: Map<string, Token>) {}
+  constructor(private readonly set: Map<string, string>) {}
 
   token(text: string, category: TokenCategory | null): DtcgToken {
     const nodes = valueNodes(text);
@@ -248,7 +323,7 @@ class Writer {
       return null;
     }
     const [name] = node.children.toArray();
-    return name?.type === "Identifier" && this.tokens.has(name.name) ? name.name : null;
+    return name?.type === "Identifier" && this.set.has(name.name) ? name.name : null;
   }
 
   /** The token a chain of aliases from a token ends at, or null when it loops. */
@@ -263,21 +338,20 @@ class Writer {
     return current;
   }
 
-  /** The token the value a token is declared with is one var() of, or null. */
   private referenceOf(name: string): string | null {
     if (!this.references.has(name)) {
-      const nodes = valueNodes(this.tokens.get(name)?.text ?? "");
+      const nodes = valueNodes(this.set.get(name) ?? "");
       this.references.set(name, nodes && this.reference(nodes));
     }
     return this.references.get(name) ?? null;
   }
 
   private typeOf(name: string): DtcgType | undefined {
-    const token = this.tokens.get(name);
-    if (!this.types.has(name) && token) {
+    const text = this.set.get(name);
+    if (!this.types.has(name) && text !== undefined) {
       // A value that reaches itself through a shadow's color has no type.
       this.types.set(name, undefined);
-      this.types.set(name, this.token(token.text, token.category).$type);
+      this.types.set(name, this.token(text, categoryOf(name)).$type);
     }
     return this.types.get(name);
   }

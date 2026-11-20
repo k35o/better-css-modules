@@ -237,7 +237,6 @@ describe("dtcgFrom: colors", () => {
     "red",
     "currentColor",
     "color-mix(in oklch, #000, #fff)",
-    "light-dark(#fff, #000)",
     "oklch(from #000 l c h)",
     "oklch(calc(0.5) 0 0)",
     "rgb(0 0 0 / none)",
@@ -386,6 +385,299 @@ describe("dtcgFrom: internal names", () => {
     "keeps %s as written",
     (value) => {
       expect(token("--gray", value)).toEqual({ $value: value });
+    },
+  );
+});
+
+describe("dtcgFrom: light-dark()", () => {
+  const oklch = (l: number, c = 0, h = 0) => ({ colorSpace: "oklch", components: [l, c, h] });
+  const color = (l: number, c = 0, h = 0) => ({ $type: "color", $value: oklch(l, c, h) });
+  const px = (value: number) => ({ value, unit: "px" });
+  const ring = (shadowColor: unknown) => ({
+    color: shadowColor,
+    offsetX: px(0),
+    offsetY: px(0),
+    blur: px(0),
+    spread: px(2),
+  });
+
+  function resolved(
+    { resolutionOrder: [set, ...modifiers] }: DtcgResolver,
+    on: string[],
+  ): DtcgTokens {
+    return Object.assign(
+      {},
+      set.sources[0],
+      ...modifiers.filter(({ name }) => on.includes(name)).map(({ contexts }) => contexts.on[0]),
+    );
+  }
+
+  it("reads light-dark() as its first color at its place, and as its second in a modifier named after the place", () => {
+    expect(
+      exported(
+        ":root { --color-bg: light-dark(oklch(1 0 0), oklch(0.2 0 0)); --spacing: 0.25rem; }",
+      ),
+    ).toEqual({
+      version: "2025.10",
+      resolutionOrder: [
+        {
+          type: "set",
+          name: ":root",
+          sources: [
+            {
+              "color-bg": color(1),
+              spacing: { $type: "dimension", $value: { value: 0.25, unit: "rem" } },
+            },
+          ],
+        },
+        {
+          type: "modifier",
+          name: ":root color-scheme: dark",
+          contexts: { off: [], on: [{ "color-bg": color(0.2) }] },
+          default: "off",
+        },
+      ],
+    });
+  });
+
+  it("makes either color an alias when it is one var() of a token", () => {
+    const css = `
+      :root {
+        --gray-900: oklch(0.25 0 0);
+        --gray-50: oklch(0.975 0 0);
+        --color-fg-base: light-dark(var(--gray-900), var(--gray-50));
+      }
+    `;
+    expect(rooted(css)["color-fg-base"]).toEqual({ $type: "color", $value: "{gray-900}" });
+    expect(modes(css)).toEqual([
+      [":root color-scheme: dark", { "color-fg-base": { $type: "color", $value: "{gray-50}" } }],
+    ]);
+  });
+
+  it("reads every light-dark() in a value, in a shadow and in another function too", () => {
+    const css = `
+      :root {
+        --color-shadow: oklch(0 0 0);
+        --shadow-ring: 0 0 0 2px light-dark(oklch(0 0 0), oklch(1 0 0)), inset 0 1px light-dark(var(--color-shadow), transparent);
+        --color-tint: color-mix(in oklch, light-dark(oklch(0 0 0), oklch(1 0 0)) 10%, transparent);
+      }
+    `;
+    const inset = (shadowColor: unknown) => ({
+      color: shadowColor,
+      offsetX: px(0),
+      offsetY: px(1),
+      blur: px(0),
+      spread: px(0),
+      inset: true,
+    });
+    expect(rooted(css)).toEqual({
+      "color-shadow": color(0),
+      "shadow-ring": { $type: "shadow", $value: [ring(oklch(0)), inset("{color-shadow}")] },
+      "color-tint": { $value: "color-mix(in oklch, oklch(0 0 0) 10%, transparent)" },
+    });
+    expect(modes(css)).toEqual([
+      [
+        ":root color-scheme: dark",
+        {
+          "shadow-ring": {
+            $type: "shadow",
+            $value: [
+              ring(oklch(1)),
+              inset({ colorSpace: "srgb", components: [0, 0, 0], alpha: 0 }),
+            ],
+          },
+          "color-tint": { $value: "color-mix(in oklch, oklch(1 0 0) 10%, transparent)" },
+        },
+      ],
+    ]);
+  });
+
+  it("types an alias of a token with light-dark(), and a shadow with it as its color, by the first color", () => {
+    const css = `
+      :root {
+        --blue-500: oklch(0.66 0.17 250);
+        --color-border-info: light-dark(var(--blue-500), color-mix(in oklch, var(--blue-500), white));
+        --color-ring: var(--color-border-info);
+        --shadow-ring-info: 0 0 0 2px var(--color-border-info);
+      }
+    `;
+    expect(rooted(css)).toEqual({
+      "blue-500": color(0.66, 0.17, 250),
+      "color-border-info": { $type: "color", $value: "{blue-500}" },
+      "color-ring": { $type: "color", $value: "{color-border-info}" },
+      "shadow-ring-info": { $type: "shadow", $value: ring("{color-border-info}") },
+    });
+    expect(modes(css)).toEqual([
+      [
+        ":root color-scheme: dark",
+        { "color-border-info": { $value: "color-mix(in oklch, var(--blue-500), white)" } },
+      ],
+    ]);
+  });
+
+  it("puts the dark side of each place right after the place", () => {
+    expect(
+      exported(`
+        :root {
+          --gray-900: oklch(0.25 0.0015 235);
+          --gray-50: oklch(0.975 0.001 235);
+          --blue-500: oklch(0.66 0.17 250);
+          --blue-400: oklch(0.75 0.15 250);
+          --color-fg-base: light-dark(var(--gray-900), var(--gray-50));
+          --color-border-info: light-dark(var(--blue-500), var(--blue-400));
+          --shadow-ring-info: 0 0 0 2px var(--color-border-info);
+        }
+        @media (prefers-contrast: more) {
+          :root {
+            --color-fg-base: light-dark(oklch(0.18 0.001 235), oklch(1 0 0));
+          }
+        }
+      `).resolutionOrder,
+    ).toEqual([
+      {
+        type: "set",
+        name: ":root",
+        sources: [
+          {
+            "gray-900": color(0.25, 0.0015, 235),
+            "gray-50": color(0.975, 0.001, 235),
+            "blue-500": color(0.66, 0.17, 250),
+            "blue-400": color(0.75, 0.15, 250),
+            "color-fg-base": { $type: "color", $value: "{gray-900}" },
+            "color-border-info": { $type: "color", $value: "{blue-500}" },
+            "shadow-ring-info": { $type: "shadow", $value: ring("{color-border-info}") },
+          },
+        ],
+      },
+      {
+        type: "modifier",
+        name: ":root color-scheme: dark",
+        contexts: {
+          off: [],
+          on: [
+            {
+              "color-fg-base": { $type: "color", $value: "{gray-50}" },
+              "color-border-info": { $type: "color", $value: "{blue-400}" },
+            },
+          ],
+        },
+        default: "off",
+      },
+      {
+        type: "modifier",
+        name: "@media (prefers-contrast: more) :root",
+        contexts: { off: [], on: [{ "color-fg-base": color(0.18, 0.001, 235) }] },
+        default: "off",
+      },
+      {
+        type: "modifier",
+        name: "@media (prefers-contrast: more) :root color-scheme: dark",
+        contexts: { off: [], on: [{ "color-fg-base": color(1) }] },
+        default: "off",
+      },
+    ]);
+  });
+
+  it("lets a later place win over the dark side of an earlier one in both color schemes, as the cascade does", () => {
+    const resolver = exported(`
+      :root {
+        --color-fg: light-dark(oklch(0 0 0), oklch(1 0 0));
+        --color-border: light-dark(oklch(0.5 0 0), oklch(0.6 0 0));
+      }
+      @media (prefers-contrast: more) {
+        :root {
+          --color-fg: light-dark(oklch(0.1 0 0), oklch(0.9 0 0));
+          --color-border: oklch(0.3 0 0);
+        }
+      }
+    `);
+    const contrast = "@media (prefers-contrast: more) :root";
+    expect(resolved(resolver, [contrast])).toEqual({
+      "color-fg": color(0.1),
+      "color-border": color(0.3),
+    });
+    expect(
+      resolved(resolver, [":root color-scheme: dark", contrast, `${contrast} color-scheme: dark`]),
+    ).toEqual({ "color-fg": color(0.9), "color-border": color(0.3) });
+  });
+
+  it("makes no dark side for a place without light-dark(), and reads no color-scheme", () => {
+    expect(
+      modes(`
+        :root {
+          color-scheme: light dark;
+          --color-fg: light-dark(oklch(0 0 0), oklch(1 0 0));
+          --color-bg: oklch(1 0 0);
+        }
+        .dark { color-scheme: dark; --color-bg: oklch(0 0 0); }
+        @media print { :root { color-scheme: light; --color-fg: oklch(0 0 0); } }
+      `),
+    ).toEqual([
+      [":root color-scheme: dark", { "color-fg": color(1) }],
+      [".dark", { "color-bg": color(0) }],
+      ["@media print :root", { "color-fg": color(0) }],
+    ]);
+  });
+
+  it("takes the dark side, like the value, from the last declaration of a name in a place", () => {
+    const css = `
+      :root { --color-a: light-dark(oklch(0 0 0), oklch(1 0 0)); --color-b: oklch(0.1 0 0); }
+      :root { --color-a: oklch(0.2 0 0); --color-b: light-dark(oklch(0.3 0 0), oklch(0.4 0 0)); }
+      .x { --color-a: light-dark(oklch(0.5 0 0), oklch(0.6 0 0)); --color-a: oklch(0.7 0 0); }
+    `;
+    expect(rooted(css)).toEqual({ "color-a": color(0.2), "color-b": color(0.3) });
+    expect(modes(css)).toEqual([
+      [":root color-scheme: dark", { "color-b": color(0.4) }],
+      [".x", { "color-a": color(0.7) }],
+    ]);
+  });
+
+  it("reads a light-dark() inside another in the same color scheme", () => {
+    const css = `
+      :root {
+        --color-a: light-dark(light-dark(oklch(0 0 0), oklch(0.1 0 0)), light-dark(oklch(0.9 0 0), oklch(1 0 0)));
+      }
+    `;
+    expect(rooted(css)).toEqual({ "color-a": color(0) });
+    expect(modes(css)).toEqual([[":root color-scheme: dark", { "color-a": color(1) }]]);
+  });
+
+  it("reads a light-dark() in the fallback of a var()", () => {
+    const css = ":root { --color-a: var(--color-brand, light-dark(oklch(0 0 0), oklch(1 0 0))); }";
+    expect(rooted(css)).toEqual({ "color-a": { $value: "var(--color-brand, oklch(0 0 0))" } });
+    expect(modes(css)).toEqual([
+      [":root color-scheme: dark", { "color-a": { $value: "var(--color-brand, oklch(1 0 0))" } }],
+    ]);
+  });
+
+  it("types each color on its own, keeping one DTCG has no form for as written", () => {
+    const css = `
+      :root {
+        --color-a: light-dark(currentColor, oklch(1 0 0));
+        --color-b: light-dark(oklch(0 0 0), color-mix(in oklch, red, blue));
+      }
+    `;
+    expect(rooted(css)).toEqual({ "color-a": { $value: "currentColor" }, "color-b": color(0) });
+    expect(modes(css)).toEqual([
+      [
+        ":root color-scheme: dark",
+        { "color-a": color(1), "color-b": { $value: "color-mix(in oklch, red, blue)" } },
+      ],
+    ]);
+  });
+
+  it.each([
+    "light-dark(oklch(1 0 0))",
+    "light-dark(oklch(1 0 0), oklch(0 0 0), oklch(0.5 0 0))",
+    "light-dark()",
+    "light-dark(, oklch(0 0 0))",
+    "light-dark(light-dark(oklch(1 0 0)), oklch(0 0 0))",
+  ])(
+    "keeps %s as written, with no dark side, since a light-dark() in it lacks two colors",
+    (value) => {
+      expect(exported(`:root { --color-a: ${value}; }`).resolutionOrder).toEqual([
+        { type: "set", name: ":root", sources: [{ "color-a": { $value: value } }] },
+      ]);
     },
   );
 });
