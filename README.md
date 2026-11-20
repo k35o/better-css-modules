@@ -792,8 +792,33 @@ better-css-modules tokens > tokens.resolver.json
 
 - The tokens declared at `:root` make the set `:root`, internal names included, in source order. A token is named without its `--`, and a value that is one `var()` of a token is an alias of it (`{gray-900}`).
 - Each place that overrides tokens, a [mode](#tokens-and-modes), is a modifier that is `off` unless the input turns it `on`. It is named by its conditions as written: the rules and at-rules around it, outermost first, without `@layer`, after the conditions of the first `@import` that reaches a stylesheet read only under conditions (`@media (prefers-color-scheme: dark) :root`). Places with the same conditions make one modifier.
-- The modifiers follow the source order of their first place. As elsewhere, specificity and `@layer` are not weighed.
-- The input turns on every mode whose conditions hold at once, as the cascade applies them all. With `.dark` and `@media (prefers-contrast: more) .dark`, dark with more contrast is `{ ".dark": "on", "@media (prefers-contrast: more) .dark": "on" }`.
+- `light-dark()` is a mode written inside a value. Where a place's values hold it, the set or modifier of the place reads every `light-dark()` as its first color, and a modifier named after the place followed by ` color-scheme: dark` holds those values read as their second color: `:root color-scheme: dark`, `@media (prefers-contrast: more) :root color-scheme: dark`. Each color is then read like any other value. A place without `light-dark()` has no such modifier, and `color-scheme` itself is not read: whatever makes the page dark, the input turns these modifiers on.
+- The modifiers follow the source order of their first place, each dark side right after its place. As elsewhere, specificity and `@layer` are not weighed.
+- The input turns on every mode whose conditions hold at once, as the cascade applies them all. With `.dark` and `@media (prefers-contrast: more) .dark`, dark with more contrast is `{ ".dark": "on", "@media (prefers-contrast: more) .dark": "on" }`. With `light-dark()` at `:root` and in `@media (prefers-contrast: more) :root`, it is `{ ":root color-scheme: dark": "on", "@media (prefers-contrast: more) :root": "on", "@media (prefers-contrast: more) :root color-scheme: dark": "on" }`. A token the `@media` place sets without `light-dark()` comes after `:root color-scheme: dark`, so it keeps that value in both color schemes, as in the cascade.
+
+The colors of the example above, written with `light-dark()`:
+
+```css
+:root {
+  --gray-900: oklch(0.25 0.002 235);
+  --gray-50: oklch(0.975 0.001 235);
+  --color-fg-base: light-dark(var(--gray-900), var(--gray-50));
+}
+```
+
+give `"color-fg-base": { "$type": "color", "$value": "{gray-900}" }` in the set `:root`, and right after it the modifier:
+
+```json
+{
+  "type": "modifier",
+  "name": ":root color-scheme: dark",
+  "contexts": {
+    "off": [],
+    "on": [{ "color-fg-base": { "$type": "color", "$value": "{gray-50}" } }]
+  },
+  "default": "off"
+}
+```
 
 ### Values
 
@@ -811,8 +836,8 @@ better-css-modules tokens > tokens.resolver.json
 | None: an internal name                                           | By its value  | A color, a length in `px` or `rem`, a time, a number or `cubic-bezier()`                                       |
 
 - A color keeps its color space, on the scales DTCG gives its channels: a percentage becomes that share of the channel's reference range in CSS Color 4 (`oklch(50% 50% 0.5turn)` is `[0.5, 0.2, 180]`), a number in `rgb()` is divided by 255, and a hue is in degrees from 0 up to 360. A channel out of its range is not clamped.
-- An alias takes the type of the token its chain of aliases ends at.
-- A value DTCG has no form for keeps its CSS text and has no `$type`, which DTCG takes for an invalid token: other units (`0.025em`, `50%`), `calc()` and the other math functions, `color-mix()`, `light-dark()`, relative colors, named colors and `currentColor`, `steps()`, a `var()` inside a larger value or of a name the global CSS does not declare, and aliases that loop. A script reading the document can use the text as CSS.
+- An alias takes the type of the token its chain of aliases ends at, following the values of the set `:root`: an alias of a token whose value holds `light-dark()`, and a shadow with that token as its color, are typed by its first color.
+- A value DTCG has no form for keeps its CSS text and has no `$type`, which DTCG takes for an invalid token: other units (`0.025em`, `50%`), `calc()` and the other math functions, `color-mix()`, relative colors, named colors and `currentColor`, `steps()`, a `var()` inside a larger value or of a name the global CSS does not declare, aliases that loop, and a value with a `light-dark()` that does not have two colors. A script reading the document can use the text as CSS.
 - DTCG names hold no `.`, `{` or `}` and start with no `$`. A token named so (`--spacing-0\.5`) stops `tokens` with exit code 2.
 
 ## Cascade layers
