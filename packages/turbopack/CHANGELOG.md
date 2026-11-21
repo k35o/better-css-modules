@@ -1,5 +1,12 @@
 # @better-css-modules/turbopack
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies:
+  - @better-css-modules/core@0.5.0
+
 ## 0.4.1
 
 ### Patch Changes
